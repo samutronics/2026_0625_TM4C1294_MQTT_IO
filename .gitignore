@@ -1,0 +1,37 @@
+# --- CCS / Code Composer Studio build output ---
+Debug/
+Release/
+**/Debug/
+**/Release/
+.launches/
+.ccsproject.bak
+
+# Build artifacts
+*.obj
+*.o
+*.out
+*.map
+*.lst
+*.d
+*.dep
+*.opt
+*.rov.json
+*.elf
+*.bin
+*.hex
+
+# CCS / Theia / Eclipse workspace metadata
+.metadata/
+RemoteSystemsTempFiles/
+.DS_Store
+Thumbs.db
+
+# Local CCS user settings that shouldn't be shared
+.settings/org.eclipse.*
+
+# --- Tool / editor noise ---
+*.swp
+*~
+
+# --- Local Claude/CCS session artifacts (keep project CLAUDE.md & .mcp.json at root) ---
+.claude/
