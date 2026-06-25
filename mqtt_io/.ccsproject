@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<?ccsproject version="1.0"?>
+<projectOptions>
+	<ccsVariant value="50:Theia-based"/>
+	<ccsVersion value="71.0.0"/>
+	<deviceFamily value="TMS470"/>
+	<connection value="common/targetdb/connections/Stellaris_ICDI_Connection.xml"/>
+	<executableActions value=""/>
+	<createSlaveProjects value=""/>
+	<ignoreDefaultDeviceSettings value="true"/>
+	<ignoreDefaultCCSSettings value="true"/>
+	<templateProperties value="id=mqtt_io.projectspec.mqtt_io"/>
+	<activeTargetConfiguration value="targetConfigs/Tiva TM4C1294NCPDT.ccxml"/>
+	<isTargetConfigurationManual value="false"/>
+	<origin value="C:\Users\tomik\Workspaces\Workspace2026_0625_TM4C1294_MQTT_IO\mqtt_io.projectspec"/>
+	<filesToOpen value=""/>
+</projectOptions>

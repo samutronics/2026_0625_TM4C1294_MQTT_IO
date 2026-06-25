@@ -1,0 +1,109 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<projectSpec>
+    <applicability>
+        <when>
+            <context
+                deviceFamily="ARM"
+                deviceId="TM4C1294NCPDT"
+            />
+        </when>
+    </applicability>
+
+    <project
+        title="mqtt_io"
+        name="mqtt_io"
+        configurations="Debug"
+        toolChain="TICLANG"
+        connection="Stellaris_ICDI_Connection.xml"
+        device="TM4C1294NCPDT"
+        ignoreDefaultDeviceSettings="true"
+        ignoreDefaultCCSSettings="true"
+        compilerBuildOptions="
+            -mcpu=cortex-m4
+            -mfloat-abi=hard
+            -mfpu=fpv4-sp-d16
+            -mthumb
+            -Dgcc
+            -DPART_TM4C1294NCPDT
+            -DTARGET_IS_TM4C129_RA2
+            -O2
+            -gdwarf-3
+            -ffunction-sections
+            -fdata-sections
+            -Wno-implicit-function-declaration
+            -Wno-implicit-int
+            -I${PROJECT_ROOT}
+            -IC:/ti/TivaWare_C_Series-2.2.0.295/examples/boards/ek-tm4c1294xl
+            -IC:/ti/TivaWare_C_Series-2.2.0.295
+            -IC:/ti/TivaWare_C_Series-2.2.0.295/third_party/lwip-1.4.1/src/include
+            -IC:/ti/TivaWare_C_Series-2.2.0.295/third_party/lwip-1.4.1/src/include/ipv4
+            -IC:/ti/TivaWare_C_Series-2.2.0.295/third_party/lwip-1.4.1/apps
+            -IC:/ti/TivaWare_C_Series-2.2.0.295/third_party/lwip-1.4.1/apps/httpserver_raw
+            -IC:/ti/TivaWare_C_Series-2.2.0.295/third_party/lwip-1.4.1/ports/tiva-tm4c129/include
+            -IC:/ti/TivaWare_C_Series-2.2.0.295/third_party
+        "
+        linkerBuildOptions="
+            -Wl,--rom_model
+            -Wl,--warn_sections
+            -Wl,--stack_size=1024
+            -Wl,--heap_size=0
+            -L${CG_TOOL_ROOT}/lib
+            -llibc.a
+        "
+        description="TM4C1294 MQTT IO - web-configurable MQTT node (TivaWare 2.2.0.295, lwIP 1.4.1, TI Clang)">
+
+        <!-- ===== Application sources (editable copies, version-controlled) ===== -->
+        <file path="C:/ti/TivaWare_C_Series-2.2.0.295/examples/boards/ek-tm4c1294xl/enet_io/enet_io.c" action="copy"/>
+        <file path="C:/ti/TivaWare_C_Series-2.2.0.295/examples/boards/ek-tm4c1294xl/enet_io/io.c" action="copy"/>
+        <file path="C:/ti/TivaWare_C_Series-2.2.0.295/examples/boards/ek-tm4c1294xl/enet_io/io.h" action="copy"/>
+        <file path="C:/ti/TivaWare_C_Series-2.2.0.295/examples/boards/ek-tm4c1294xl/enet_io/io_fs.c" action="copy"/>
+        <file path="C:/ti/TivaWare_C_Series-2.2.0.295/examples/boards/ek-tm4c1294xl/enet_io/cgifuncs.c" action="copy"/>
+        <file path="C:/ti/TivaWare_C_Series-2.2.0.295/examples/boards/ek-tm4c1294xl/enet_io/cgifuncs.h" action="copy"/>
+        <file path="C:/ti/TivaWare_C_Series-2.2.0.295/examples/boards/ek-tm4c1294xl/enet_io/lwipopts.h" action="copy"/>
+        <file path="C:/ti/TivaWare_C_Series-2.2.0.295/examples/boards/ek-tm4c1294xl/enet_io/io_fsdata.h" action="copy"/>
+        <file path="C:/ti/TivaWare_C_Series-2.2.0.295/examples/boards/ek-tm4c1294xl/enet_io/startup_ccs.c" action="copy"/>
+        <file path="C:/ti/TivaWare_C_Series-2.2.0.295/examples/boards/ek-tm4c1294xl/enet_io/enet_io_ccs.cmd" action="copy"/>
+
+        <!-- ===== TivaWare support sources (linked from SDK, not modified) ===== -->
+        <file path="C:/ti/TivaWare_C_Series-2.2.0.295/utils/lwiplib.c" action="copy" targetDirectory="utils"/>
+        <file path="C:/ti/TivaWare_C_Series-2.2.0.295/utils/locator.c" action="copy" targetDirectory="utils"/>
+        <file path="C:/ti/TivaWare_C_Series-2.2.0.295/utils/uartstdio.c" action="copy" targetDirectory="utils"/>
+        <file path="C:/ti/TivaWare_C_Series-2.2.0.295/utils/ustdlib.c" action="copy" targetDirectory="utils"/>
+        <file path="C:/ti/TivaWare_C_Series-2.2.0.295/examples/boards/ek-tm4c1294xl/drivers/pinout.c" action="copy" targetDirectory="drivers"/>
+        <file path="C:/ti/TivaWare_C_Series-2.2.0.295/third_party/lwip-1.4.1/apps/httpserver_raw/httpd.c" action="copy" targetDirectory="third_party"/>
+
+        <!-- ===== TivaWare driverlib (compiled from source for ABI match with TI Clang) ===== -->
+        <file path="C:/ti/TivaWare_C_Series-2.2.0.295/driverlib/adc.c" action="copy" targetDirectory="driverlib"/>
+        <file path="C:/ti/TivaWare_C_Series-2.2.0.295/driverlib/aes.c" action="copy" targetDirectory="driverlib"/>
+        <file path="C:/ti/TivaWare_C_Series-2.2.0.295/driverlib/can.c" action="copy" targetDirectory="driverlib"/>
+        <file path="C:/ti/TivaWare_C_Series-2.2.0.295/driverlib/comp.c" action="copy" targetDirectory="driverlib"/>
+        <file path="C:/ti/TivaWare_C_Series-2.2.0.295/driverlib/cpu.c" action="copy" targetDirectory="driverlib"/>
+        <file path="C:/ti/TivaWare_C_Series-2.2.0.295/driverlib/crc.c" action="copy" targetDirectory="driverlib"/>
+        <file path="C:/ti/TivaWare_C_Series-2.2.0.295/driverlib/des.c" action="copy" targetDirectory="driverlib"/>
+        <file path="C:/ti/TivaWare_C_Series-2.2.0.295/driverlib/eeprom.c" action="copy" targetDirectory="driverlib"/>
+        <file path="C:/ti/TivaWare_C_Series-2.2.0.295/driverlib/emac.c" action="copy" targetDirectory="driverlib"/>
+        <file path="C:/ti/TivaWare_C_Series-2.2.0.295/driverlib/epi.c" action="copy" targetDirectory="driverlib"/>
+        <file path="C:/ti/TivaWare_C_Series-2.2.0.295/driverlib/flash.c" action="copy" targetDirectory="driverlib"/>
+        <file path="C:/ti/TivaWare_C_Series-2.2.0.295/driverlib/fpu.c" action="copy" targetDirectory="driverlib"/>
+        <file path="C:/ti/TivaWare_C_Series-2.2.0.295/driverlib/gpio.c" action="copy" targetDirectory="driverlib"/>
+        <file path="C:/ti/TivaWare_C_Series-2.2.0.295/driverlib/hibernate.c" action="copy" targetDirectory="driverlib"/>
+        <file path="C:/ti/TivaWare_C_Series-2.2.0.295/driverlib/i2c.c" action="copy" targetDirectory="driverlib"/>
+        <file path="C:/ti/TivaWare_C_Series-2.2.0.295/driverlib/interrupt.c" action="copy" targetDirectory="driverlib"/>
+        <file path="C:/ti/TivaWare_C_Series-2.2.0.295/driverlib/lcd.c" action="copy" targetDirectory="driverlib"/>
+        <file path="C:/ti/TivaWare_C_Series-2.2.0.295/driverlib/mpu.c" action="copy" targetDirectory="driverlib"/>
+        <file path="C:/ti/TivaWare_C_Series-2.2.0.295/driverlib/onewire.c" action="copy" targetDirectory="driverlib"/>
+        <file path="C:/ti/TivaWare_C_Series-2.2.0.295/driverlib/pwm.c" action="copy" targetDirectory="driverlib"/>
+        <file path="C:/ti/TivaWare_C_Series-2.2.0.295/driverlib/qei.c" action="copy" targetDirectory="driverlib"/>
+        <file path="C:/ti/TivaWare_C_Series-2.2.0.295/driverlib/shamd5.c" action="copy" targetDirectory="driverlib"/>
+        <file path="C:/ti/TivaWare_C_Series-2.2.0.295/driverlib/ssi.c" action="copy" targetDirectory="driverlib"/>
+        <file path="C:/ti/TivaWare_C_Series-2.2.0.295/driverlib/sw_crc.c" action="copy" targetDirectory="driverlib"/>
+        <file path="C:/ti/TivaWare_C_Series-2.2.0.295/driverlib/sysctl.c" action="copy" targetDirectory="driverlib"/>
+        <file path="C:/ti/TivaWare_C_Series-2.2.0.295/driverlib/sysexc.c" action="copy" targetDirectory="driverlib"/>
+        <file path="C:/ti/TivaWare_C_Series-2.2.0.295/driverlib/systick.c" action="copy" targetDirectory="driverlib"/>
+        <file path="C:/ti/TivaWare_C_Series-2.2.0.295/driverlib/timer.c" action="copy" targetDirectory="driverlib"/>
+        <file path="C:/ti/TivaWare_C_Series-2.2.0.295/driverlib/uart.c" action="copy" targetDirectory="driverlib"/>
+        <file path="C:/ti/TivaWare_C_Series-2.2.0.295/driverlib/udma.c" action="copy" targetDirectory="driverlib"/>
+        <file path="C:/ti/TivaWare_C_Series-2.2.0.295/driverlib/usb.c" action="copy" targetDirectory="driverlib"/>
+        <file path="C:/ti/TivaWare_C_Series-2.2.0.295/driverlib/watchdog.c" action="copy" targetDirectory="driverlib"/>
+    </project>
+</projectSpec>
