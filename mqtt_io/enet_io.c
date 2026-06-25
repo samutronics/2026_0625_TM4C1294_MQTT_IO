@@ -45,6 +45,8 @@
 #include "drivers/pinout.h"
 #include "io.h"
 #include "cgifuncs.h"
+#include "config.h"
+#include "mqtt_app.h"
 
 //*****************************************************************************
 //
@@ -149,9 +151,14 @@ extern void httpd_init(void);
 // SSI tag indices for each entry in the g_pcSSITags array.
 //
 //*****************************************************************************
-#define SSI_INDEX_LEDSTATE  0
-#define SSI_INDEX_FORMVARS  1
-#define SSI_INDEX_SPEED     2
+#define SSI_INDEX_HOST      0
+#define SSI_INDEX_PORT      1
+#define SSI_INDEX_CLIENT    2
+#define SSI_INDEX_USER      3
+#define SSI_INDEX_TOPIC     4
+#define SSI_INDEX_AUTH      5
+#define SSI_INDEX_STATUS    6
+#define SSI_INDEX_IP        7
 
 //*****************************************************************************
 //
@@ -164,9 +171,14 @@ extern void httpd_init(void);
 //*****************************************************************************
 static const char *g_pcConfigSSITags[] =
 {
-    "LEDtxt",        // SSI_INDEX_LEDSTATE
-    "FormVars",      // SSI_INDEX_FORMVARS
-    "speed"          // SSI_INDEX_SPEED
+    "mqhost",        // SSI_INDEX_HOST
+    "mqport",        // SSI_INDEX_PORT
+    "mqclient",      // SSI_INDEX_CLIENT
+    "mquser",        // SSI_INDEX_USER
+    "mqtopic",       // SSI_INDEX_TOPIC
+    "mqauth",        // SSI_INDEX_AUTH
+    "mqstatus",      // SSI_INDEX_STATUS
+    "ipaddr"         // SSI_INDEX_IP
 };
 
 //*****************************************************************************
@@ -182,10 +194,8 @@ static const char *g_pcConfigSSITags[] =
 // Prototypes for the various CGI handler functions.
 //
 //*****************************************************************************
-static char *ControlCGIHandler(int32_t iIndex, int32_t i32NumParams,
-                               char *pcParam[], char *pcValue[]);
-static char *SetTextCGIHandler(int32_t iIndex, int32_t i32NumParams,
-                               char *pcParam[], char *pcValue[]);
+static char *MQTTConfigCGIHandler(int32_t iIndex, int32_t i32NumParams,
+                                  char *pcParam[], char *pcValue[]);
 
 //*****************************************************************************
 //
@@ -200,8 +210,7 @@ static int32_t SSIHandler(int32_t iIndex, char *pcInsert, int32_t iInsertLen);
 // CGI URI indices for each entry in the g_psConfigCGIURIs array.
 //
 //*****************************************************************************
-#define CGI_INDEX_CONTROL       0
-#define CGI_INDEX_TEXT          1
+#define CGI_INDEX_MQTTCFG       0
 
 //*****************************************************************************
 //
@@ -213,8 +222,7 @@ static int32_t SSIHandler(int32_t iIndex, char *pcInsert, int32_t iInsertLen);
 //*****************************************************************************
 static const tCGI g_psConfigCGIURIs[] =
 {
-    { "/iocontrol.cgi", (tCGIHandler)ControlCGIHandler }, // CGI_INDEX_CONTROL
-    { "/settxt.cgi", (tCGIHandler)SetTextCGIHandler }     // CGI_INDEX_TEXT
+    { "/mqttcfg.cgi", (tCGIHandler)MQTTConfigCGIHandler } // CGI_INDEX_MQTTCFG
 };
 
 //*****************************************************************************
@@ -231,7 +239,7 @@ static const tCGI g_psConfigCGIURIs[] =
 // to load in response to it being called.
 //
 //*****************************************************************************
-#define DEFAULT_CGI_RESPONSE    "/io_cgi.ssi"
+#define DEFAULT_CGI_RESPONSE    "/index.shtml"
 
 //*****************************************************************************
 //
@@ -266,6 +274,16 @@ uint32_t g_ui32IPAddress;
 
 //*****************************************************************************
 //
+// MQTT IO integration state: a periodic tick flag set by SysTick, and a
+// request flag asking the main loop to (re)start the MQTT connection (set
+// when an IP is acquired or the configuration changes via the web UI).
+//
+//*****************************************************************************
+static volatile bool g_bSysTickFlag;
+static volatile bool g_bStartMQTT;
+
+//*****************************************************************************
+//
 // The system clock frequency.  Used by the SD card driver.
 //
 //*****************************************************************************
@@ -285,88 +303,81 @@ __error__(char *pcFilename, uint32_t ui32Line)
 
 //*****************************************************************************
 //
-// This CGI handler is called whenever the web browser requests iocontrol.cgi.
+// Helper: copy a (possibly URL-encoded) CGI parameter into a fixed buffer.
 //
 //*****************************************************************************
-static char *
-ControlCGIHandler(int32_t iIndex, int32_t i32NumParams, char *pcParam[],
-                  char *pcValue[])
+static void
+GetStringParam(const char *pcName, char *pcParam[], char *pcValue[],
+               int32_t i32NumParams, char *pcDest, int32_t i32DestLen)
 {
-    int32_t i32LEDState, i32Speed;
-    bool bParamError;
-
-    //
-    // We have not encountered any parameter errors yet.
-    //
-    bParamError = false;
-
-    //
-    // Get each of the expected parameters.
-    //
-    i32LEDState = FindCGIParameter("LEDOn", pcParam, i32NumParams);
-    i32Speed = GetCGIParam("speed_percent", pcParam, pcValue, i32NumParams,
-            &bParamError);
-
-    //
-    // Was there any error reported by the parameter parser?
-    //
-    if(bParamError || (i32Speed < 0) || (i32Speed > 100))
+    int32_t i32Idx = FindCGIParameter(pcName, pcParam, i32NumParams);
+    if(i32Idx != -1)
     {
-        return(PARAM_ERROR_RESPONSE);
+        DecodeFormString(pcValue[i32Idx], pcDest, i32DestLen);
     }
-
-    //
-    // We got all the parameters and the values were within the expected ranges
-    // so go ahead and make the changes.
-    //
-    io_set_led((i32LEDState == -1) ? false : true);
-    io_set_animation_speed(i32Speed);
-
-    //
-    // Send back the default response page.
-    //
-    return(DEFAULT_CGI_RESPONSE);
 }
 
 //*****************************************************************************
 //
-// This CGI handler is called whenever the web browser requests settxt.cgi.
+// CGI handler for /mqttcfg.cgi.  Parses the configuration form, stores the
+// new settings in EEPROM and requests a reconnect.
 //
 //*****************************************************************************
 static char *
-SetTextCGIHandler(int32_t i32Index, int32_t i32NumParams, char *pcParam[],
-                  char *pcValue[])
+MQTTConfigCGIHandler(int32_t iIndex, int32_t i32NumParams, char *pcParam[],
+                     char *pcValue[])
 {
-    long lStringParam;
-    char pcDecodedString[48];
+    tMQTTConfig *psCfg = ConfigGet();
+    int32_t i32Idx;
+
+    (void)iIndex;
 
     //
-    // Find the parameter that has the string we need to display.
+    // String fields.  Empty values are accepted (e.g. to clear the host).
     //
-    lStringParam = FindCGIParameter("DispText", pcParam, i32NumParams);
+    psCfg->pcHost[0] = '\0';
+    GetStringParam("host", pcParam, pcValue, i32NumParams, psCfg->pcHost,
+                   CFG_HOST_LEN);
+    GetStringParam("client", pcParam, pcValue, i32NumParams, psCfg->pcClientID,
+                   CFG_CLIENTID_LEN);
+    GetStringParam("user", pcParam, pcValue, i32NumParams, psCfg->pcUser,
+                   CFG_USER_LEN);
+    GetStringParam("topic", pcParam, pcValue, i32NumParams, psCfg->pcTopicBase,
+                   CFG_TOPIC_LEN);
 
     //
-    // If the parameter was not found, show the error page.
+    // Password: only overwrite the stored value when a non-empty value is
+    // submitted (the form never echoes the current password back).
     //
-    if(lStringParam == -1)
+    i32Idx = FindCGIParameter("pass", pcParam, i32NumParams);
+    if((i32Idx != -1) && (pcValue[i32Idx][0] != '\0'))
     {
-        return(PARAM_ERROR_RESPONSE);
+        DecodeFormString(pcValue[i32Idx], psCfg->pcPass, CFG_PASS_LEN);
     }
 
     //
-    // The parameter is present. We need to decode the text for display.
+    // Port number.
     //
-    DecodeFormString(pcValue[lStringParam], pcDecodedString, 48);
+    i32Idx = FindCGIParameter("port", pcParam, i32NumParams);
+    if(i32Idx != -1)
+    {
+        uint32_t ui32Port = ustrtoul(pcValue[i32Idx], 0, 10);
+        psCfg->ui16Port = (ui32Port && (ui32Port <= 65535)) ?
+                          (uint16_t)ui32Port : 1883;
+    }
 
     //
-    // Print sting over the UART
+    // Authentication checkbox (present in the form only when ticked).
     //
-    UARTprintf(pcDecodedString);
-    UARTprintf("\n");
+    psCfg->ui8UseAuth =
+        (FindCGIParameter("auth", pcParam, i32NumParams) != -1) ? 1 : 0;
 
     //
-    // Tell the HTTPD server which file to send back to the client.
+    // Persist and ask the main loop to apply the new settings.
     //
+    ConfigSave();
+    g_bStartMQTT = true;
+
     return(DEFAULT_CGI_RESPONSE);
 }
 
@@ -381,26 +392,48 @@ SetTextCGIHandler(int32_t i32Index, int32_t i32NumParams, char *pcParam[],
 static int32_t
 SSIHandler(int32_t iIndex, char *pcInsert, int32_t iInsertLen)
 {
+    tMQTTConfig *psCfg = ConfigGet();
+
     //
-    // Which SSI tag have we been passed?
+    // Which SSI tag have we been passed?  (The password is intentionally never
+    // echoed back to the browser.)
     //
     switch(iIndex)
     {
-        case SSI_INDEX_LEDSTATE:
-            io_get_ledstate(pcInsert, iInsertLen);
+        case SSI_INDEX_HOST:
+            usnprintf(pcInsert, iInsertLen, "%s", psCfg->pcHost);
             break;
 
-        case SSI_INDEX_FORMVARS:
-            usnprintf(pcInsert, iInsertLen,
-                    "%sls=%d;\nsp=%d;\n%s",
-                    JAVASCRIPT_HEADER,
-                    io_is_led_on(),
-                    io_get_animation_speed(),
-                    JAVASCRIPT_FOOTER);
+        case SSI_INDEX_PORT:
+            usnprintf(pcInsert, iInsertLen, "%d", psCfg->ui16Port);
             break;
 
-        case SSI_INDEX_SPEED:
-            io_get_animation_speed_string(pcInsert, iInsertLen);
+        case SSI_INDEX_CLIENT:
+            usnprintf(pcInsert, iInsertLen, "%s", psCfg->pcClientID);
+            break;
+
+        case SSI_INDEX_USER:
+            usnprintf(pcInsert, iInsertLen, "%s", psCfg->pcUser);
+            break;
+
+        case SSI_INDEX_TOPIC:
+            usnprintf(pcInsert, iInsertLen, "%s", psCfg->pcTopicBase);
+            break;
+
+        case SSI_INDEX_AUTH:
+            usnprintf(pcInsert, iInsertLen, "%s",
+                      psCfg->ui8UseAuth ? "checked" : "");
+            break;
+
+        case SSI_INDEX_STATUS:
+            usnprintf(pcInsert, iInsertLen, "%s", MQTTAppStatusStr());
+            break;
+
+        case SSI_INDEX_IP:
+            usnprintf(pcInsert, iInsertLen, "%d.%d.%d.%d",
+                      g_ui32IPAddress & 0xff, (g_ui32IPAddress >> 8) & 0xff,
+                      (g_ui32IPAddress >> 16) & 0xff,
+                      (g_ui32IPAddress >> 24) & 0xff);
             break;
 
         default:
@@ -426,6 +459,12 @@ SysTickIntHandler(void)
     // Call the lwIP timer handler.
     //
     lwIPTimer(SYSTICKMS);
+
+    //
+    // Flag a periodic application tick for the main loop (button polling and
+    // MQTT keep-alive/reconnect service).
+    //
+    g_bSysTickFlag = true;
 }
 
 //*****************************************************************************
@@ -516,6 +555,12 @@ lwIPHostTimerHandler(void)
             DisplayIPAddress(ui32NewIPAddress);
             UARTprintf("\n");
             UARTprintf("Open a browser and enter the IP address.\n");
+
+            //
+            // We now have network connectivity: ask the main loop to bring up
+            // the MQTT connection (if a broker has been configured).
+            //
+            g_bStartMQTT = true;
         }
 
         //
@@ -537,9 +582,22 @@ lwIPHostTimerHandler(void)
 
 //*****************************************************************************
 //
-// This example demonstrates the use of the Ethernet Controller and lwIP
-// TCP/IP stack to control various peripherals on the board via a web
-// browser.
+// Pushbutton transition callback.  Invoked by io_poll_buttons() for each
+// debounced SW1/SW2 edge; logs and publishes the event over MQTT.
+//
+//*****************************************************************************
+static void
+ButtonEventHandler(int iButton, bool bPressed)
+{
+    UARTprintf("Button SW%d %s\n", iButton, bPressed ? "PRESSED" : "RELEASED");
+    MQTTAppPublishButton(iButton, bPressed);
+}
+
+//*****************************************************************************
+//
+// This application uses the Ethernet controller and lwIP TCP/IP stack to
+// implement a web-configurable MQTT node: board pushbuttons are published to
+// a remote broker and the broker parameters are set via an on-board web page.
 //
 //*****************************************************************************
 int
@@ -580,7 +638,12 @@ main(void)
     // Clear the terminal and print a banner.
     //
     UARTprintf("\033[2J\033[H");
-    UARTprintf("Ethernet IO Example\n\n");
+    UARTprintf("TM4C1294 MQTT IO\n\n");
+
+    //
+    // Load persistent MQTT configuration from EEPROM.
+    //
+    ConfigInit();
 
     //
     // Configure SysTick for a periodic interrupt.
@@ -634,7 +697,7 @@ main(void)
     //
     LocatorInit();
     LocatorMACAddrSet(pui8MACArray);
-    LocatorAppTitleSet("EK-TM4C1294XL enet_io");
+    LocatorAppTitleSet("EK-TM4C1294XL MQTT IO");
 
     //
     // Initialize a sample httpd server.
@@ -663,36 +726,56 @@ main(void)
     http_set_cgi_handlers(g_psConfigCGIURIs, NUM_CONFIG_CGI_URIS);
 
     //
-    // Initialize IO controls
+    // Initialize IO controls (status LEDs) and the user pushbuttons.
     //
     io_init();
+    io_buttons_init();
 
     //
-    // Loop forever, processing the on-screen animation.  All other work is
-    // done in the interrupt handlers.
+    // Initialize the MQTT client subsystem.
+    //
+    MQTTAppInit();
+
+    //
+    // Main loop.  Networking (lwIP, httpd, MQTT receive) runs in interrupt
+    // context; here we service the periodic application tick: poll buttons,
+    // drive the MQTT keep-alive/reconnect timers and update the status LEDs.
     //
     while(1)
     {
         //
-        // Wait for a new tick to occur.
+        // Wait for the next SysTick (~10 ms) application tick.
         //
-        while(!g_ulFlags)
+        while(!g_bSysTickFlag)
         {
-            //
-            // Do nothing.
-            //
+        }
+        g_bSysTickFlag = false;
+
+        //
+        // Apply a pending (re)connect request from DHCP completion or a web
+        // configuration change.
+        //
+        if(g_bStartMQTT)
+        {
+            g_bStartMQTT = false;
+            MQTTAppStart();
         }
 
         //
-        // Clear the flag now that we have seen it.
+        // Poll the pushbuttons and publish any transitions.
         //
-        HWREGBITW(&g_ulFlags, FLAG_TICK) = 0;
+        io_poll_buttons(ButtonEventHandler);
 
         //
-        // Toggle the GPIO
+        // Service MQTT keep-alive and reconnect timers.
         //
-        MAP_GPIOPinWrite(GPIO_PORTN_BASE, GPIO_PIN_1,
-                (MAP_GPIOPinRead(GPIO_PORTN_BASE, GPIO_PIN_1) ^
-                 GPIO_PIN_1));
+        MQTTAppTick(SYSTICKMS);
+
+        //
+        // Reflect connectivity on the status LEDs.
+        //
+        io_set_net_led((g_ui32IPAddress != 0) &&
+                       (g_ui32IPAddress != 0xffffffff));
+        io_set_mqtt_led(MQTTAppIsConnected());
     }
 }

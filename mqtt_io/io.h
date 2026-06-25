@@ -51,6 +51,14 @@ void io_set_animation_speed(unsigned long ulSpeedPercent);
 unsigned long io_get_animation_speed(void);
 int io_is_led_on(void);
 
+//
+// MQTT IO additions: status LEDs and user pushbuttons.
+//
+void io_buttons_init(void);
+void io_poll_buttons(void (*pfnEvent)(int iButton, bool bPressed));
+void io_set_net_led(bool bOn);      // D2 (PN0): network/IP status.
+void io_set_mqtt_led(bool bOn);     // D1 (PN1): MQTT connection status.
+
 #ifdef __cplusplus
 }
 #endif

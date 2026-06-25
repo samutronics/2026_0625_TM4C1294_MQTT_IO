@@ -1,0 +1,72 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>TM4C1294 MQTT IO</title>
+<style>
+  body{font-family:Segoe UI,Arial,sans-serif;max-width:540px;margin:24px auto;
+       padding:0 14px;color:#222}
+  h2{margin-bottom:4px}
+  .status{padding:10px 12px;background:#eef3ff;border:1px solid #ccd6f5;
+          border-radius:8px;margin:12px 0;line-height:1.6}
+  label{display:block;margin-top:12px;font-weight:600;font-size:.9em}
+  input[type=text],input[type=number],input[type=password]{width:100%;
+       padding:7px;box-sizing:border-box;border:1px solid #bbb;border-radius:5px}
+  .chk{margin-top:14px;font-weight:600}
+  button{margin-top:18px;padding:10px 22px;background:#1763d6;color:#fff;
+         border:0;border-radius:6px;font-size:1em;cursor:pointer}
+  .note{color:#666;font-size:.82em;margin-top:18px;line-height:1.5}
+  code{background:#f3f3f3;padding:1px 4px;border-radius:3px}
+</style>
+</head>
+<body>
+<h2>TM4C1294 MQTT IO</h2>
+<div class="status">
+  Device IP: <b><!--#ipaddr--></b><br>
+  MQTT broker status: <b><!--#mqstatus--></b>
+</div>
+
+<form method="get" action="/mqttcfg.cgi">
+  <label for="host">Broker host or IP</label>
+  <input type="text" id="host" name="host" value="<!--#mqhost-->"
+         maxlength="63" placeholder="e.g. 192.168.1.10 or broker.local">
+
+  <label for="port">Port</label>
+  <input type="number" id="port" name="port" value="<!--#mqport-->"
+         min="1" max="65535">
+
+  <label for="client">Client ID</label>
+  <input type="text" id="client" name="client" value="<!--#mqclient-->"
+         maxlength="31">
+
+  <label for="topic">Base topic</label>
+  <input type="text" id="topic" name="topic" value="<!--#mqtopic-->"
+         maxlength="47">
+
+  <div class="chk">
+    <label style="font-weight:600">
+      <input type="checkbox" name="auth" <!--#mqauth-->> Use authentication
+    </label>
+  </div>
+
+  <label for="user">Username</label>
+  <input type="text" id="user" name="user" value="<!--#mquser-->"
+         maxlength="31">
+
+  <label for="pass">Password</label>
+  <input type="password" id="pass" name="pass" value=""
+         maxlength="31" placeholder="(unchanged if left blank)">
+
+  <button type="submit">Save &amp; Connect</button>
+</form>
+
+<p class="note">
+  Pushbuttons publish to <code>&lt;base&gt;/button/sw1</code> and
+  <code>&lt;base&gt;/button/sw2</code> (payload <code>PRESSED</code> /
+  <code>RELEASED</code>). On connect the device publishes a retained
+  <code>online</code> to <code>&lt;base&gt;/status</code>; its last will is
+  <code>offline</code>. Settings are stored in EEPROM and survive reset.
+</p>
+</body>
+</html>
