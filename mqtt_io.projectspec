@@ -30,6 +30,7 @@
             -gdwarf-3
             -ffunction-sections
             -fdata-sections
+            -fno-strict-aliasing
             -Wno-implicit-function-declaration
             -Wno-implicit-int
             -I${PROJECT_ROOT}

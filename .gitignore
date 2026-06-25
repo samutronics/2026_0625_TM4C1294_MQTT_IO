@@ -33,5 +33,11 @@ Thumbs.db
 *.swp
 *~
 
+# --- Serial capture logs ---
+serial_logs/
+
+# --- Theia/CCS transient session config ---
+.theia/
+
 # --- Local Claude/CCS session artifacts (keep project CLAUDE.md & .mcp.json at root) ---
 .claude/
