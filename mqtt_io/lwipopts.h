@@ -41,6 +41,7 @@
 #define HOST_TMR_INTERVAL               100         // default is 0
 #define DHCP_EXPIRE_TIMER_MSECS         (10 * 1000)
 #define LWIP_HTTPD_SSI                  1
+#define LWIP_HTTPD_SSI_INCLUDE_TAG      0   // replace SSI tags rather than keep them
 #define LWIP_HTTPD_CGI                  1
 #define LWIP_HTTPD_DYNAMIC_HEADERS      1
 //#define HTTPD_DEBUG                     LWIP_DBG_ON

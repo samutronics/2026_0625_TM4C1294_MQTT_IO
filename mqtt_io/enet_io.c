@@ -732,9 +732,9 @@ main(void)
     io_buttons_init();
 
     //
-    // Initialize the MQTT client subsystem.
+    // Initialize the MQTT client subsystem (MAC seeds the HA device id).
     //
-    MQTTAppInit();
+    MQTTAppInit(pui8MACArray);
 
     //
     // Main loop.  Networking (lwIP, httpd, MQTT receive) runs in interrupt
@@ -767,15 +767,9 @@ main(void)
         io_poll_buttons(ButtonEventHandler);
 
         //
-        // Service MQTT keep-alive and reconnect timers.
+        // Service MQTT keep-alive, reconnect timers and the post-connect
+        // Home Assistant discovery / LED-state publish sequence.
         //
         MQTTAppTick(SYSTICKMS);
-
-        //
-        // Reflect connectivity on the status LEDs.
-        //
-        io_set_net_led((g_ui32IPAddress != 0) &&
-                       (g_ui32IPAddress != 0xffffffff));
-        io_set_mqtt_led(MQTTAppIsConnected());
     }
 }

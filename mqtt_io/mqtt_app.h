@@ -17,9 +17,10 @@ extern "C"
 #endif
 
 //
-// Initialise the MQTT subsystem (call once at start-up).
+// Initialise the MQTT subsystem (call once at start-up).  pui8MAC is the
+// 6-byte board MAC address, used to derive a stable Home Assistant device id.
 //
-void MQTTAppInit(void);
+void MQTTAppInit(const uint8_t *pui8MAC);
 
 //
 // (Re)start the connection using the current EEPROM configuration.  Safe to

@@ -38,7 +38,7 @@
 //
 #define MQTT_KEEPALIVE_S    60          // Keep-alive interval (seconds).
 #define MQTT_RECONNECT_MS   5000        // Delay between reconnect attempts.
-#define MQTT_TXBUF_SIZE     512
+#define MQTT_TXBUF_SIZE     768
 #define MQTT_RXBUF_SIZE     512
 #define MQTT_HOST_LEN       64
 #define MQTT_STR_LEN        64
@@ -307,7 +307,13 @@ MQTTClientStart(const char *pcHost, uint16_t ui16Port, const char *pcClientID,
     //
     if(g_sCli.psPcb)
     {
+        //
+        // Detach all callbacks before aborting so the intentional teardown
+        // does not fire the error callback (and log a spurious error).
+        //
         tcp_arg(g_sCli.psPcb, NULL);
+        tcp_err(g_sCli.psPcb, NULL);
+        tcp_recv(g_sCli.psPcb, NULL);
         tcp_abort(g_sCli.psPcb);
         g_sCli.psPcb = NULL;
     }
@@ -342,7 +348,13 @@ MQTTClientStop(void)
     g_sCli.bEnabled = false;
     if(g_sCli.psPcb)
     {
+        //
+        // Detach all callbacks before aborting so the intentional teardown
+        // does not fire the error callback (and log a spurious error).
+        //
         tcp_arg(g_sCli.psPcb, NULL);
+        tcp_err(g_sCli.psPcb, NULL);
+        tcp_recv(g_sCli.psPcb, NULL);
         tcp_abort(g_sCli.psPcb);
         g_sCli.psPcb = NULL;
     }

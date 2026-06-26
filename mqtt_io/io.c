@@ -369,3 +369,27 @@ io_set_mqtt_led(bool bOn)
 {
     MAP_GPIOPinWrite(MQTT_LED_PORT_BASE, MQTT_LED_PIN, bOn ? MQTT_LED_PIN : 0);
 }
+
+//*****************************************************************************
+//
+// User-controllable LEDs (exposed via MQTT / Home Assistant).
+// iLed 1 -> D1 (PN1), iLed 2 -> D2 (PN0).
+//
+//*****************************************************************************
+static bool g_pbUserLed[2];
+
+void
+io_set_user_led(int iLed, bool bOn)
+{
+    uint32_t ui32Base = (iLed == 2) ? NET_LED_PORT_BASE : MQTT_LED_PORT_BASE;
+    uint32_t ui32Pin = (iLed == 2) ? NET_LED_PIN : MQTT_LED_PIN;
+
+    MAP_GPIOPinWrite(ui32Base, ui32Pin, bOn ? ui32Pin : 0);
+    g_pbUserLed[(iLed == 2) ? 1 : 0] = bOn;
+}
+
+bool
+io_get_user_led(int iLed)
+{
+    return(g_pbUserLed[(iLed == 2) ? 1 : 0]);
+}
