@@ -623,7 +623,6 @@ DINChainScan(void)
     static bool bPrimed;
     uint8_t pui8Cur[DIN_MAX_BYTES];
     uint8_t ui8Bytes, i;
-    bool bChanged;
 
     ui8Bytes = DINChainRead(pui8Cur, sizeof(pui8Cur));
     if(ui8Bytes == 0)
@@ -632,24 +631,31 @@ DINChainScan(void)
     }
 
     //
-    // Report on the first scan and whenever any device byte changes.
+    // Publish each channel that changed since the previous scan.  Channel c of
+    // device d maps to bit (7 - c) of byte d and to input index d*8 + c.  The
+    // first scan only primes the baseline; the initial retained state of every
+    // input is published by the MQTT post-connect sequence.
     //
-    bChanged = !bPrimed;
     for(i = 0; i < ui8Bytes; i++)
     {
-        if(pui8Cur[i] != pui8Prev[i])
+        uint8_t ui8Diff = (uint8_t)(pui8Cur[i] ^ pui8Prev[i]);
+
+        if(bPrimed && ui8Diff)
         {
-            bChanged = true;
+            int iBit;
+            for(iBit = 0; iBit < 8; iBit++)
+            {
+                uint8_t ui8Mask = (uint8_t)(0x80 >> iBit);
+                if(ui8Diff & ui8Mask)
+                {
+                    int iInput = (i * 8) + iBit;
+                    bool bOn = (pui8Cur[i] & ui8Mask) != 0;
+                    UARTprintf("DIN in%d: %s\n", iInput, bOn ? "ON" : "OFF");
+                    MQTTAppPublishInput(iInput, bOn);
+                }
+            }
         }
         pui8Prev[i] = pui8Cur[i];
-    }
-
-    if(bChanged)
-    {
-        for(i = 0; i < ui8Bytes; i++)
-        {
-            UARTprintf("DIN dev%d: 0x%02x\n", i, pui8Cur[i]);
-        }
     }
     bPrimed = true;
 }
@@ -681,6 +687,7 @@ RelayFaultScan(void)
 //*****************************************************************************
 int
 main(void)
+
 {
     uint32_t ui32User0, ui32User1;
     uint8_t pui8MACArray[8];

@@ -22,6 +22,7 @@
 #include "utils/uartstdio.h"
 #include "config.h"
 #include "relay_chain.h"
+#include "din_chain.h"
 #include "mqtt_client.h"
 #include "mqtt_app.h"
 
@@ -59,6 +60,12 @@ static char g_pcScratchTopic[80];
 static char g_pcDiscTopic[96];
 static char g_pcDiscPayload[384];
 
+//
+// Snapshot of the input chain taken at connect, used to publish the initial
+// retained state of every input during the post-connect sequence.
+//
+static uint8_t g_pui8InSnap[DIN_MAX_BYTES];
+
 //*****************************************************************************
 //
 // Publish one relay's current state (retained).
@@ -91,11 +98,52 @@ MQTTAppPublishRelayDiscovery(int iRelay)
               "\"cmd_t\":\"~/relay/%d/set\",\"stat_t\":\"~/relay/%d/state\","
               "\"pl_on\":\"ON\",\"pl_off\":\"OFF\",\"avty_t\":\"~/status\","
               "\"dev\":{\"ids\":[\"%s\"],\"name\":\"TM4C1294 MQTT IO\","
-              "\"mdl\":\"EK-TM4C1294XL\",\"mf\":\"Texas Instruments\"}}",
+              "\"mdl\":\"EK-TM4C1294XL\",\"mf\":\"TomArts\"}}",
               g_pcBase, iRelay + 1, g_pcDevId, iRelay, iRelay, iRelay, g_pcDevId);
 
     MQTTClientPublish(g_pcDiscTopic, (const uint8_t *)g_pcDiscPayload,
                       (uint16_t)strlen(g_pcDiscPayload), 1);
+}
+
+//*****************************************************************************
+//
+// Publish one input channel's Home Assistant discovery config (binary_sensor).
+//
+//*****************************************************************************
+static void
+MQTTAppPublishInputDiscovery(int iInput)
+{
+    usnprintf(g_pcDiscTopic, sizeof(g_pcDiscTopic),
+              HA_PREFIX "/binary_sensor/%s/input%d/config", g_pcDevId, iInput);
+
+    usnprintf(g_pcDiscPayload, sizeof(g_pcDiscPayload),
+              "{\"~\":\"%s\",\"name\":\"In%02d\",\"uniq_id\":\"%s_input%d\","
+              "\"stat_t\":\"~/input/%d/state\",\"pl_on\":\"ON\",\"pl_off\":"
+              "\"OFF\",\"avty_t\":\"~/status\",\"dev\":{\"ids\":[\"%s\"],"
+              "\"name\":\"TM4C1294 MQTT IO\",\"mdl\":\"EK-TM4C1294XL\","
+              "\"mf\":\"TomArts\"}}",
+              g_pcBase, iInput + 1, g_pcDevId, iInput, iInput, g_pcDevId);
+
+    MQTTClientPublish(g_pcDiscTopic, (const uint8_t *)g_pcDiscPayload,
+                      (uint16_t)strlen(g_pcDiscPayload), 1);
+}
+
+//*****************************************************************************
+//
+// Publish one input channel's state (retained).
+//
+//*****************************************************************************
+void
+MQTTAppPublishInput(int iInput, bool bOn)
+{
+    if(!MQTTClientIsReady())
+    {
+        return;
+    }
+    usnprintf(g_pcScratchTopic, sizeof(g_pcScratchTopic), "%s/input/%d/state",
+              g_pcBase, iInput);
+    MQTTClientPublish(g_pcScratchTopic, (const uint8_t *)(bOn ? "ON" : "OFF"),
+                      (uint16_t)(bOn ? 2 : 3), 1);
 }
 
 //*****************************************************************************
@@ -281,6 +329,8 @@ static void
 MQTTAppPostConnect(int iStep)
 {
     int iRelays = (int)RelayChainCount();
+    int iInputs = (int)DINChainInputCount();
+    int iSub = 2 + (2 * iRelays);   // relay command-topic subscribe step
 
     if(iStep == 1)
     {
@@ -294,7 +344,7 @@ MQTTAppPostConnect(int iStep)
     {
         MQTTAppPublishRelayState(iStep - (2 + iRelays));
     }
-    else if(iStep == (2 + (2 * iRelays)))
+    else if(iStep == iSub)
     {
         //
         // One wildcard subscription covers every relay command topic.
@@ -303,6 +353,24 @@ MQTTAppPostConnect(int iStep)
                   "%s/relay/+/set", g_pcBase);
         MQTTClientSubscribe(g_pcScratchTopic);
         UARTprintf("MQTT: %d relays published (HA discovery).\n", iRelays);
+    }
+    else if(iStep <= (iSub + iInputs))
+    {
+        MQTTAppPublishInputDiscovery(iStep - iSub - 1);
+    }
+    else if(iStep <= (iSub + (2 * iInputs)))
+    {
+        //
+        // Initial retained state of each input, taken from the connect-time
+        // snapshot (channel c of device d = bit 7-c of snapshot byte d).
+        //
+        int iInput = iStep - iSub - iInputs - 1;
+        int iMask = 0x80 >> (iInput & 7);
+        MQTTAppPublishInput(iInput, (g_pui8InSnap[iInput / 8] & iMask) != 0);
+        if(iInput == (iInputs - 1))
+        {
+            UARTprintf("MQTT: %d inputs published (HA discovery).\n", iInputs);
+        }
     }
 }
 
@@ -323,10 +391,13 @@ MQTTAppTick(uint32_t ui32ElapsedMs)
     if(bConnected && !g_bWasConnected)
     {
         //
-        // Freshly connected: kick off the post-connect publish sequence.
+        // Freshly connected: kick off the post-connect publish sequence and
+        // snapshot the inputs so their initial retained state is published.
         //
         g_iPubStep = 1;
-        g_iPubMax = 2 + (2 * (int)RelayChainCount());
+        g_iPubMax = 2 + (2 * (int)RelayChainCount()) +
+                    (2 * (int)DINChainInputCount());
+        DINChainRead(g_pui8InSnap, sizeof(g_pui8InSnap));
     }
     if(!bConnected)
     {

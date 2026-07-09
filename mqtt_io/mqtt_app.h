@@ -40,6 +40,12 @@ void MQTTAppStop(void);
 void MQTTAppTick(uint32_t ui32ElapsedMs);
 
 //
+// Publish one SN65HVS882 input channel's state (retained "ON"/"OFF").  Called
+// from the input-chain scan when a channel transitions.
+//
+void MQTTAppPublishInput(int iInput, bool bOn);
+
+//
 // True once connected to the broker (CONNACK received).
 //
 bool MQTTAppIsConnected(void);
