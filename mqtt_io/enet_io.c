@@ -47,6 +47,8 @@
 #include "cgifuncs.h"
 #include "config.h"
 #include "mqtt_app.h"
+#include "din_chain.h"
+#include "relay_chain.h"
 
 //*****************************************************************************
 //
@@ -159,6 +161,8 @@ extern void httpd_init(void);
 #define SSI_INDEX_AUTH      5
 #define SSI_INDEX_STATUS    6
 #define SSI_INDEX_IP        7
+#define SSI_INDEX_DIN       8
+#define SSI_INDEX_RELAY     9
 
 //*****************************************************************************
 //
@@ -178,7 +182,9 @@ static const char *g_pcConfigSSITags[] =
     "mqtopic",       // SSI_INDEX_TOPIC
     "mqauth",        // SSI_INDEX_AUTH
     "mqstatus",      // SSI_INDEX_STATUS
-    "ipaddr"         // SSI_INDEX_IP
+    "ipaddr",        // SSI_INDEX_IP
+    "mqdin",         // SSI_INDEX_DIN
+    "mqrelay"        // SSI_INDEX_RELAY
 };
 
 //*****************************************************************************
@@ -367,6 +373,21 @@ MQTTConfigCGIHandler(int32_t iIndex, int32_t i32NumParams, char *pcParam[],
     }
 
     //
+    // Cascaded device counts (8 channels each).  The setters clamp out-of-range
+    // values to the compiled-in default.
+    //
+    i32Idx = FindCGIParameter("din", pcParam, i32NumParams);
+    if(i32Idx != -1)
+    {
+        ConfigSetDinDevices((uint8_t)ustrtoul(pcValue[i32Idx], 0, 10));
+    }
+    i32Idx = FindCGIParameter("relay", pcParam, i32NumParams);
+    if(i32Idx != -1)
+    {
+        ConfigSetRelayDevices((uint8_t)ustrtoul(pcValue[i32Idx], 0, 10));
+    }
+
+    //
     // Authentication checkbox (present in the form only when ticked).
     //
     psCfg->ui8UseAuth =
@@ -420,6 +441,14 @@ SSIHandler(int32_t iIndex, char *pcInsert, int32_t iInsertLen)
             usnprintf(pcInsert, iInsertLen, "%s", psCfg->pcTopicBase);
             break;
 
+        case SSI_INDEX_DIN:
+            usnprintf(pcInsert, iInsertLen, "%d", ConfigGetDinDevices());
+            break;
+
+        case SSI_INDEX_RELAY:
+            usnprintf(pcInsert, iInsertLen, "%d", ConfigGetRelayDevices());
+            break;
+
         case SSI_INDEX_AUTH:
             usnprintf(pcInsert, iInsertLen, "%s",
                       psCfg->ui8UseAuth ? "checked" : "");
@@ -461,8 +490,8 @@ SysTickIntHandler(void)
     lwIPTimer(SYSTICKMS);
 
     //
-    // Flag a periodic application tick for the main loop (button polling and
-    // MQTT keep-alive/reconnect service).
+    // Flag a periodic application tick for the main loop (MQTT keep-alive /
+    // reconnect service).
     //
     g_bSysTickFlag = true;
 }
@@ -582,22 +611,72 @@ lwIPHostTimerHandler(void)
 
 //*****************************************************************************
 //
-// Pushbutton transition callback.  Invoked by io_poll_buttons() for each
-// debounced SW1/SW2 edge; logs and publishes the event over MQTT.
+// Poll the SN65HVS882 input chain and log any change over UART.  Called from
+// the periodic application tick.  This is bring-up instrumentation - MQTT
+// publishing of the inputs will hook in here next.
 //
 //*****************************************************************************
 static void
-ButtonEventHandler(int iButton, bool bPressed)
+DINChainScan(void)
 {
-    UARTprintf("Button SW%d %s\n", iButton, bPressed ? "PRESSED" : "RELEASED");
-    MQTTAppPublishButton(iButton, bPressed);
+    static uint8_t pui8Prev[DIN_MAX_BYTES];
+    static bool bPrimed;
+    uint8_t pui8Cur[DIN_MAX_BYTES];
+    uint8_t ui8Bytes, i;
+    bool bChanged;
+
+    ui8Bytes = DINChainRead(pui8Cur, sizeof(pui8Cur));
+    if(ui8Bytes == 0)
+    {
+        return;
+    }
+
+    //
+    // Report on the first scan and whenever any device byte changes.
+    //
+    bChanged = !bPrimed;
+    for(i = 0; i < ui8Bytes; i++)
+    {
+        if(pui8Cur[i] != pui8Prev[i])
+        {
+            bChanged = true;
+        }
+        pui8Prev[i] = pui8Cur[i];
+    }
+
+    if(bChanged)
+    {
+        for(i = 0; i < ui8Bytes; i++)
+        {
+            UARTprintf("DIN dev%d: 0x%02x\n", i, pui8Cur[i]);
+        }
+    }
+    bPrimed = true;
+}
+
+//*****************************************************************************
+//
+// Log DRV8860 nFAULT transitions (overcurrent / over-temperature / open-load).
+//
+//*****************************************************************************
+static void
+RelayFaultScan(void)
+{
+    static bool bPrevFault;
+    bool bFault = RelayChainFault();
+
+    if(bFault != bPrevFault)
+    {
+        UARTprintf("Relay nFAULT %s\n", bFault ? "ASSERTED" : "cleared");
+        bPrevFault = bFault;
+    }
 }
 
 //*****************************************************************************
 //
 // This application uses the Ethernet controller and lwIP TCP/IP stack to
-// implement a web-configurable MQTT node: board pushbuttons are published to
-// a remote broker and the broker parameters are set via an on-board web page.
+// implement a web-configurable MQTT node.  Broker parameters are set via an
+// on-board web page; the control board's field I/O is exposed over MQTT.
 //
 //*****************************************************************************
 int
@@ -726,10 +805,18 @@ main(void)
     http_set_cgi_handlers(g_psConfigCGIURIs, NUM_CONFIG_CGI_URIS);
 
     //
-    // Initialize IO controls (status LEDs) and the user pushbuttons.
+    // Initialize IO controls (legacy web-demo LED / animation timer).
     //
     io_init();
-    io_buttons_init();
+
+    //
+    // Initialize the field-I/O chains with the configured device counts.  The
+    // relay chain powers up with all relays off and outputs enabled.
+    //
+    DINChainInit(ConfigGetDinDevices());
+    RelayChainInit(ConfigGetRelayDevices());
+    UARTprintf("IO: %d input dev, %d relay dev.\n", ConfigGetDinDevices(),
+               ConfigGetRelayDevices());
 
     //
     // Initialize the MQTT client subsystem (MAC seeds the HA device id).
@@ -738,8 +825,8 @@ main(void)
 
     //
     // Main loop.  Networking (lwIP, httpd, MQTT receive) runs in interrupt
-    // context; here we service the periodic application tick: poll buttons,
-    // drive the MQTT keep-alive/reconnect timers and update the status LEDs.
+    // context; here we service the periodic application tick: apply pending
+    // (re)connect requests and drive the MQTT keep-alive/reconnect timers.
     //
     while(1)
     {
@@ -758,17 +845,28 @@ main(void)
         if(g_bStartMQTT)
         {
             g_bStartMQTT = false;
+            //
+            // A config change may also have altered the device counts.  Only
+            // reconfigure the relay chain when its count actually changed, so an
+            // unrelated setting change does not switch the relays off.
+            //
+            DINChainSetDevices(ConfigGetDinDevices());
+            if(RelayChainGetDevices() != ConfigGetRelayDevices())
+            {
+                RelayChainSetDevices(ConfigGetRelayDevices());
+            }
             MQTTAppStart();
         }
 
         //
-        // Poll the pushbuttons and publish any transitions.
+        // Poll the input chain and the relay fault line; log any transitions.
         //
-        io_poll_buttons(ButtonEventHandler);
+        DINChainScan();
+        RelayFaultScan();
 
         //
         // Service MQTT keep-alive, reconnect timers and the post-connect
-        // Home Assistant discovery / LED-state publish sequence.
+        // publish sequence.
         //
         MQTTAppTick(SYSTICKMS);
     }

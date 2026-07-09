@@ -71,6 +71,8 @@ ConfigSetDefaults(tMQTTConfig *psCfg)
     psCfg->ui32Magic = CFG_MAGIC;
     psCfg->ui16Port = 1883;
     psCfg->ui8UseAuth = 0;
+    psCfg->ui8IoDevices = (uint8_t)((CFG_RELAY_DEFAULT_DEVICES << 4) |
+                                    CFG_DIN_DEFAULT_DEVICES);
     psCfg->pcHost[0] = '\0';
     strcpy(psCfg->pcClientID, "tm4c1294");
     strcpy(psCfg->pcTopicBase, "tm4c1294");
@@ -120,6 +122,53 @@ ConfigInit(void)
         UARTprintf("Loaded MQTT config: broker '%s:%d'\n",
                    g_sConfig.pcHost, g_sConfig.ui16Port);
     }
+
+    //
+    // Clamp the packed device counts to sane values.  This also upgrades older
+    // records (whose reserved byte held only the input count, or read as 0) to a
+    // working default without discarding the rest of the stored configuration.
+    //
+    ConfigSetDinDevices(g_sConfig.ui8IoDevices & 0x0F);
+    ConfigSetRelayDevices((g_sConfig.ui8IoDevices >> 4) & 0x0F);
+}
+
+//*****************************************************************************
+//
+// Packed input/output device-count accessors.
+//
+//*****************************************************************************
+uint8_t
+ConfigGetDinDevices(void)
+{
+    return(g_sConfig.ui8IoDevices & 0x0F);
+}
+
+void
+ConfigSetDinDevices(uint8_t ui8Devices)
+{
+    if((ui8Devices == 0) || (ui8Devices > CFG_DIN_MAX_DEVICES))
+    {
+        ui8Devices = CFG_DIN_DEFAULT_DEVICES;
+    }
+    g_sConfig.ui8IoDevices = (uint8_t)((g_sConfig.ui8IoDevices & 0xF0) |
+                                       ui8Devices);
+}
+
+uint8_t
+ConfigGetRelayDevices(void)
+{
+    return((g_sConfig.ui8IoDevices >> 4) & 0x0F);
+}
+
+void
+ConfigSetRelayDevices(uint8_t ui8Devices)
+{
+    if((ui8Devices == 0) || (ui8Devices > CFG_RELAY_MAX_DEVICES))
+    {
+        ui8Devices = CFG_RELAY_DEFAULT_DEVICES;
+    }
+    g_sConfig.ui8IoDevices = (uint8_t)((g_sConfig.ui8IoDevices & 0x0F) |
+                                       (ui8Devices << 4));
 }
 
 //*****************************************************************************

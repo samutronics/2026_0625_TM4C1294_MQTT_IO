@@ -51,21 +51,6 @@ void io_set_animation_speed(unsigned long ulSpeedPercent);
 unsigned long io_get_animation_speed(void);
 int io_is_led_on(void);
 
-//
-// MQTT IO additions: status LEDs and user pushbuttons.
-//
-void io_buttons_init(void);
-void io_poll_buttons(void (*pfnEvent)(int iButton, bool bPressed));
-void io_set_net_led(bool bOn);      // D2 (PN0): network/IP status.
-void io_set_mqtt_led(bool bOn);     // D1 (PN1): MQTT connection status.
-
-//
-// User-controllable LEDs exposed over MQTT / Home Assistant.
-// iLed 1 = D1 (PN1), iLed 2 = D2 (PN0).
-//
-void io_set_user_led(int iLed, bool bOn);
-bool io_get_user_led(int iLed);
-
 #ifdef __cplusplus
 }
 #endif

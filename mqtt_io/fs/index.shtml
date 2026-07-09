@@ -44,6 +44,14 @@
   <input type="text" id="topic" name="topic" value="<!--#mqtopic-->"
          maxlength="47">
 
+  <label for="din">Input devices (SN65HVS882, 8 inputs each)</label>
+  <input type="number" id="din" name="din" value="<!--#mqdin-->"
+         min="1" max="15">
+
+  <label for="relay">Relay devices (DRV8860, 8 relays each)</label>
+  <input type="number" id="relay" name="relay" value="<!--#mqrelay-->"
+         min="1" max="15">
+
   <div class="chk">
     <label style="font-weight:600">
       <input type="checkbox" name="auth" <!--#mqauth-->> Use authentication
@@ -62,11 +70,13 @@
 </form>
 
 <p class="note">
-  Pushbuttons publish to <code>&lt;base&gt;/button/sw1</code> and
-  <code>&lt;base&gt;/button/sw2</code> (payload <code>PRESSED</code> /
-  <code>RELEASED</code>). On connect the device publishes a retained
-  <code>online</code> to <code>&lt;base&gt;/status</code>; its last will is
-  <code>offline</code>. Settings are stored in EEPROM and survive reset.
+  Relays are exposed as MQTT switches: send <code>ON</code> / <code>OFF</code>
+  to <code>&lt;base&gt;/relay/&lt;n&gt;/set</code> and the state is retained on
+  <code>&lt;base&gt;/relay/&lt;n&gt;/state</code> (also auto-discovered by Home
+  Assistant). Inputs are read from the SN65HVS882 chain. On connect the device
+  publishes a retained <code>online</code> to <code>&lt;base&gt;/status</code>;
+  its last will is <code>offline</code>. Settings are stored in EEPROM and
+  survive reset.
 </p>
 </body>
 </html>

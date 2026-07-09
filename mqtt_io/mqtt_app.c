@@ -1,20 +1,17 @@
 //*****************************************************************************
 //
 // mqtt_app.c - Application glue between configuration, board I/O and the MQTT
-// client, including Home Assistant MQTT auto-discovery.
+// client, including Home Assistant MQTT auto-discovery for the relay outputs.
 //
 // Topic scheme (base topic is configurable on the web page):
-//   <base>/status         -> "online" (retained) / LWT "offline"
-//   <base>/button/sw1      -> "PRESSED" / "RELEASED"
-//   <base>/button/sw2      -> "PRESSED" / "RELEASED"
-//   <base>/led/d1/set      <- "ON" / "OFF"   (subscribed)
-//   <base>/led/d1/state    -> "ON" / "OFF"   (retained)
-//   <base>/led/d2/set      <- "ON" / "OFF"   (subscribed)
-//   <base>/led/d2/state    -> "ON" / "OFF"   (retained)
+//   <base>/status            -> "online" (retained) / LWT "offline"
+//   <base>/relay/<n>/set      <- "ON" / "OFF"   (subscribed, wildcard)
+//   <base>/relay/<n>/state    -> "ON" / "OFF"   (retained)
 //
 // On each connection the device publishes retained Home Assistant discovery
-// configuration messages under "homeassistant/..." so the two pushbuttons
-// (binary_sensor) and two LEDs (light) appear automatically as one device.
+// configs under "homeassistant/switch/..." so every relay appears automatically
+// as a switch under one device, then publishes each relay's current state and
+// subscribes to the command wildcard.
 //
 //*****************************************************************************
 
@@ -23,8 +20,8 @@
 #include <string.h>
 #include "utils/ustdlib.h"
 #include "utils/uartstdio.h"
-#include "io.h"
 #include "config.h"
+#include "relay_chain.h"
 #include "mqtt_client.h"
 #include "mqtt_app.h"
 
@@ -34,94 +31,167 @@
 #define HA_PREFIX           "homeassistant"
 
 //
-// The on-connect publish sequence is spread one item per service tick to keep
-// each TCP segment small.  These are the step indices.
-//
-#define STEP_STATUS         1
-#define STEP_DISC_SW1       2
-#define STEP_DISC_SW2       3
-#define STEP_DISC_D1        4
-#define STEP_DISC_D2        5
-#define STEP_STATE_D1       6
-#define STEP_STATE_D2       7
-#define STEP_SUB_D1         8
-#define STEP_SUB_D2         9
-#define STEP_DONE           10
-
-//
 // Stable device id derived from the MAC (e.g. "tm4c1294_a1b2c3").
 //
 static char g_pcDevId[24];
 
 //
-// Fully-qualified topic strings, rebuilt from the base topic at each start.
+// Base topic and the fully-qualified status topic, rebuilt at each start.
 //
-static char g_pcTopicStatus[CFG_TOPIC_LEN + 16];
-static char g_pcTopicBtn1[CFG_TOPIC_LEN + 24];
-static char g_pcTopicBtn2[CFG_TOPIC_LEN + 24];
-static char g_pcTopicLed1Set[CFG_TOPIC_LEN + 24];
-static char g_pcTopicLed1State[CFG_TOPIC_LEN + 24];
-static char g_pcTopicLed2Set[CFG_TOPIC_LEN + 24];
-static char g_pcTopicLed2State[CFG_TOPIC_LEN + 24];
-
 static char g_pcBase[CFG_TOPIC_LEN];
+static char g_pcTopicStatus[CFG_TOPIC_LEN + 16];
 
 //
-// Connection-edge tracking and the post-connect publish sequencer.
+// Connection-edge tracking and the post-connect publish sequencer.  Steps:
+//   1                    -> status "online"
+//   2 .. 1+N             -> relay discovery config (N = relay count)
+//   2+N .. 1+2N          -> relay state
+//   2+2N                 -> subscribe to the command wildcard
 //
 static bool g_bWasConnected;
 static int  g_iPubStep;
+static int  g_iPubMax;
 
 //
-// Scratch buffers for building discovery topic/payload.
+// Scratch buffers for building topics / discovery payloads.
 //
+static char g_pcScratchTopic[80];
 static char g_pcDiscTopic[96];
 static char g_pcDiscPayload[384];
 
 //*****************************************************************************
 //
-// Publish the current LED state (retained).
+// Publish one relay's current state (retained).
 //
 //*****************************************************************************
 static void
-MQTTAppPublishLedState(int iLed)
+MQTTAppPublishRelayState(int iRelay)
 {
-    const char *pcTopic = (iLed == 2) ? g_pcTopicLed2State : g_pcTopicLed1State;
-    const char *pcMsg = io_get_user_led(iLed) ? "ON" : "OFF";
-    MQTTClientPublish(pcTopic, (const uint8_t *)pcMsg, (uint16_t)strlen(pcMsg),
-                      1);
+    const char *pcMsg = RelayChainGet((uint16_t)iRelay) ? "ON" : "OFF";
+
+    usnprintf(g_pcScratchTopic, sizeof(g_pcScratchTopic), "%s/relay/%d/state",
+              g_pcBase, iRelay);
+    MQTTClientPublish(g_pcScratchTopic, (const uint8_t *)pcMsg,
+                      (uint16_t)strlen(pcMsg), 1);
 }
 
 //*****************************************************************************
 //
-// Incoming-message callback: handle LED command topics.
+// Publish one relay's Home Assistant discovery config (retained switch).
+//
+//*****************************************************************************
+static void
+MQTTAppPublishRelayDiscovery(int iRelay)
+{
+    usnprintf(g_pcDiscTopic, sizeof(g_pcDiscTopic),
+              HA_PREFIX "/switch/%s/relay%d/config", g_pcDevId, iRelay);
+
+    usnprintf(g_pcDiscPayload, sizeof(g_pcDiscPayload),
+              "{\"~\":\"%s\",\"name\":\"Relay %d\",\"uniq_id\":\"%s_relay%d\","
+              "\"cmd_t\":\"~/relay/%d/set\",\"stat_t\":\"~/relay/%d/state\","
+              "\"pl_on\":\"ON\",\"pl_off\":\"OFF\",\"avty_t\":\"~/status\","
+              "\"dev\":{\"ids\":[\"%s\"],\"name\":\"TM4C1294 MQTT IO\","
+              "\"mdl\":\"EK-TM4C1294XL\",\"mf\":\"Texas Instruments\"}}",
+              g_pcBase, iRelay, g_pcDevId, iRelay, iRelay, iRelay, g_pcDevId);
+
+    MQTTClientPublish(g_pcDiscTopic, (const uint8_t *)g_pcDiscPayload,
+                      (uint16_t)strlen(g_pcDiscPayload), 1);
+}
+
+//*****************************************************************************
+//
+// Parse a "<base>/relay/<n>/set" topic and extract the relay index.  Returns
+// true and sets *piRelay on a match.
+//
+//*****************************************************************************
+static bool
+MQTTAppParseRelaySet(const char *pcTopic, uint16_t ui16Len, int *piRelay)
+{
+    static const char pcMid[] = "/relay/";
+    static const char pcSuf[] = "/set";
+    int iBaseLen = (int)strlen(g_pcBase);
+    int iMidLen = (int)(sizeof(pcMid) - 1);
+    int iSufLen = (int)(sizeof(pcSuf) - 1);
+    int iPos = 0;
+    int iNum = 0;
+    int iDigits = 0;
+
+    //
+    // Base prefix + "/relay/".
+    //
+    if((int)ui16Len < iBaseLen + iMidLen + 1 + iSufLen)
+    {
+        return(false);
+    }
+    if(memcmp(pcTopic, g_pcBase, iBaseLen) != 0)
+    {
+        return(false);
+    }
+    iPos = iBaseLen;
+    if(memcmp(pcTopic + iPos, pcMid, iMidLen) != 0)
+    {
+        return(false);
+    }
+    iPos += iMidLen;
+
+    //
+    // Decimal relay index.
+    //
+    while((iPos < (int)ui16Len) && (pcTopic[iPos] >= '0') &&
+          (pcTopic[iPos] <= '9'))
+    {
+        iNum = (iNum * 10) + (pcTopic[iPos] - '0');
+        iPos++;
+        iDigits++;
+    }
+    if(iDigits == 0)
+    {
+        return(false);
+    }
+
+    //
+    // Trailing "/set".
+    //
+    if(((int)ui16Len - iPos) != iSufLen)
+    {
+        return(false);
+    }
+    if(memcmp(pcTopic + iPos, pcSuf, iSufLen) != 0)
+    {
+        return(false);
+    }
+
+    *piRelay = iNum;
+    return(true);
+}
+
+//*****************************************************************************
+//
+// Incoming-message callback: handle relay command topics.
 //
 //*****************************************************************************
 static void
 MQTTAppMsgCB(const char *pcTopic, uint16_t ui16TopicLen,
              const uint8_t *pui8Payload, uint16_t ui16PayloadLen)
 {
-    bool bOn = (ui16PayloadLen >= 2) && (pui8Payload[0] == 'O') &&
-               (pui8Payload[1] == 'N');
-    int iLed = 0;
+    int iRelay;
+    bool bOn;
 
-    if((ui16TopicLen == strlen(g_pcTopicLed1Set)) &&
-       (memcmp(pcTopic, g_pcTopicLed1Set, ui16TopicLen) == 0))
+    if(!MQTTAppParseRelaySet(pcTopic, ui16TopicLen, &iRelay))
     {
-        iLed = 1;
+        return;
     }
-    else if((ui16TopicLen == strlen(g_pcTopicLed2Set)) &&
-            (memcmp(pcTopic, g_pcTopicLed2Set, ui16TopicLen) == 0))
+    if((uint16_t)iRelay >= RelayChainCount())
     {
-        iLed = 2;
+        return;
     }
 
-    if(iLed)
-    {
-        io_set_user_led(iLed, bOn);
-        MQTTAppPublishLedState(iLed);
-        UARTprintf("MQTT: LED D%d -> %s\n", iLed, bOn ? "ON" : "OFF");
-    }
+    bOn = (ui16PayloadLen >= 2) && (pui8Payload[0] == 'O') &&
+          (pui8Payload[1] == 'N');
+
+    RelayChainSet((uint16_t)iRelay, bOn);
+    MQTTAppPublishRelayState(iRelay);
+    UARTprintf("MQTT: relay %d -> %s\n", iRelay, bOn ? "ON" : "OFF");
 }
 
 //*****************************************************************************
@@ -136,62 +206,6 @@ MQTTAppBuildTopics(const char *pcBase)
     g_pcBase[sizeof(g_pcBase) - 1] = '\0';
 
     usnprintf(g_pcTopicStatus, sizeof(g_pcTopicStatus), "%s/status", pcBase);
-    usnprintf(g_pcTopicBtn1, sizeof(g_pcTopicBtn1), "%s/button/sw1", pcBase);
-    usnprintf(g_pcTopicBtn2, sizeof(g_pcTopicBtn2), "%s/button/sw2", pcBase);
-    usnprintf(g_pcTopicLed1Set, sizeof(g_pcTopicLed1Set), "%s/led/d1/set",
-              pcBase);
-    usnprintf(g_pcTopicLed1State, sizeof(g_pcTopicLed1State), "%s/led/d1/state",
-              pcBase);
-    usnprintf(g_pcTopicLed2Set, sizeof(g_pcTopicLed2Set), "%s/led/d2/set",
-              pcBase);
-    usnprintf(g_pcTopicLed2State, sizeof(g_pcTopicLed2State), "%s/led/d2/state",
-              pcBase);
-}
-
-//*****************************************************************************
-//
-// Publish a Home Assistant discovery config (retained).  The "~" base-topic
-// abbreviation keeps payloads short, and the shared "dev" block groups all
-// entities under a single HA device.
-//
-//*****************************************************************************
-static void
-MQTTAppPublishDiscoveryButton(const char *pcComponent, const char *pcObj,
-                              const char *pcName, const char *pcStateSub)
-{
-    usnprintf(g_pcDiscTopic, sizeof(g_pcDiscTopic),
-              HA_PREFIX "/%s/%s/%s/config", pcComponent, g_pcDevId, pcObj);
-
-    usnprintf(g_pcDiscPayload, sizeof(g_pcDiscPayload),
-              "{\"~\":\"%s\",\"name\":\"%s\",\"uniq_id\":\"%s_%s\","
-              "\"stat_t\":\"~/%s\",\"pl_on\":\"PRESSED\",\"pl_off\":\"RELEASED\","
-              "\"avty_t\":\"~/status\",\"dev\":{\"ids\":[\"%s\"],"
-              "\"name\":\"TM4C1294 MQTT IO\",\"mdl\":\"EK-TM4C1294XL\","
-              "\"mf\":\"Texas Instruments\"}}",
-              g_pcBase, pcName, g_pcDevId, pcObj, pcStateSub, g_pcDevId);
-
-    MQTTClientPublish(g_pcDiscTopic, (const uint8_t *)g_pcDiscPayload,
-                      (uint16_t)strlen(g_pcDiscPayload), 1);
-}
-
-static void
-MQTTAppPublishDiscoveryLed(const char *pcObj, const char *pcName,
-                           const char *pcSetSub, const char *pcStateSub)
-{
-    usnprintf(g_pcDiscTopic, sizeof(g_pcDiscTopic),
-              HA_PREFIX "/light/%s/%s/config", g_pcDevId, pcObj);
-
-    usnprintf(g_pcDiscPayload, sizeof(g_pcDiscPayload),
-              "{\"~\":\"%s\",\"name\":\"%s\",\"uniq_id\":\"%s_%s\","
-              "\"cmd_t\":\"~/%s\",\"stat_t\":\"~/%s\","
-              "\"pl_on\":\"ON\",\"pl_off\":\"OFF\",\"avty_t\":\"~/status\","
-              "\"dev\":{\"ids\":[\"%s\"],\"name\":\"TM4C1294 MQTT IO\","
-              "\"mdl\":\"EK-TM4C1294XL\",\"mf\":\"Texas Instruments\"}}",
-              g_pcBase, pcName, g_pcDevId, pcObj, pcSetSub, pcStateSub,
-              g_pcDevId);
-
-    MQTTClientPublish(g_pcDiscTopic, (const uint8_t *)g_pcDiscPayload,
-                      (uint16_t)strlen(g_pcDiscPayload), 1);
 }
 
 //*****************************************************************************
@@ -266,49 +280,36 @@ MQTTAppStop(void)
 static void
 MQTTAppPostConnect(int iStep)
 {
-    switch(iStep)
+    int iRelays = (int)RelayChainCount();
+
+    if(iStep == 1)
     {
-        case STEP_STATUS:
-            MQTTClientPublish(g_pcTopicStatus, (const uint8_t *)"online", 6, 1);
-            break;
-        case STEP_DISC_SW1:
-            MQTTAppPublishDiscoveryButton("binary_sensor", "sw1", "SW1",
-                                          "button/sw1");
-            break;
-        case STEP_DISC_SW2:
-            MQTTAppPublishDiscoveryButton("binary_sensor", "sw2", "SW2",
-                                          "button/sw2");
-            break;
-        case STEP_DISC_D1:
-            MQTTAppPublishDiscoveryLed("d1", "LED D1", "led/d1/set",
-                                       "led/d1/state");
-            break;
-        case STEP_DISC_D2:
-            MQTTAppPublishDiscoveryLed("d2", "LED D2", "led/d2/set",
-                                       "led/d2/state");
-            break;
-        case STEP_STATE_D1:
-            MQTTAppPublishLedState(1);
-            break;
-        case STEP_STATE_D2:
-            MQTTAppPublishLedState(2);
-            break;
-        case STEP_SUB_D1:
-            MQTTClientSubscribe(g_pcTopicLed1Set);
-            break;
-        case STEP_SUB_D2:
-            MQTTClientSubscribe(g_pcTopicLed2Set);
-            UARTprintf("MQTT: HA discovery published.\n");
-            break;
-        default:
-            break;
+        MQTTClientPublish(g_pcTopicStatus, (const uint8_t *)"online", 6, 1);
+    }
+    else if(iStep <= (1 + iRelays))
+    {
+        MQTTAppPublishRelayDiscovery(iStep - 2);
+    }
+    else if(iStep <= (1 + (2 * iRelays)))
+    {
+        MQTTAppPublishRelayState(iStep - (2 + iRelays));
+    }
+    else if(iStep == (2 + (2 * iRelays)))
+    {
+        //
+        // One wildcard subscription covers every relay command topic.
+        //
+        usnprintf(g_pcScratchTopic, sizeof(g_pcScratchTopic),
+                  "%s/relay/+/set", g_pcBase);
+        MQTTClientSubscribe(g_pcScratchTopic);
+        UARTprintf("MQTT: %d relays published (HA discovery).\n", iRelays);
     }
 }
 
 //*****************************************************************************
 //
 // Periodic service.  Detects the connect edge and drives the staggered
-// post-connect publish sequence (status, discovery, LED state, subscribe).
+// post-connect publish sequence (status, discovery, state, subscribe).
 //
 //*****************************************************************************
 void
@@ -324,7 +325,8 @@ MQTTAppTick(uint32_t ui32ElapsedMs)
         //
         // Freshly connected: kick off the post-connect publish sequence.
         //
-        g_iPubStep = STEP_STATUS;
+        g_iPubStep = 1;
+        g_iPubMax = 2 + (2 * (int)RelayChainCount());
     }
     if(!bConnected)
     {
@@ -335,7 +337,7 @@ MQTTAppTick(uint32_t ui32ElapsedMs)
     //
     // Advance the publish sequence, one item per tick.
     //
-    if(bConnected && (g_iPubStep > 0) && (g_iPubStep < STEP_DONE))
+    if(bConnected && (g_iPubStep > 0) && (g_iPubStep <= g_iPubMax))
     {
         MQTTAppPostConnect(g_iPubStep);
         g_iPubStep++;
@@ -351,25 +353,6 @@ bool
 MQTTAppIsConnected(void)
 {
     return(MQTTClientIsReady());
-}
-
-//*****************************************************************************
-//
-// Publish a pushbutton transition.
-//
-//*****************************************************************************
-void
-MQTTAppPublishButton(int iButton, bool bPressed)
-{
-    const char *pcTopic = (iButton == 2) ? g_pcTopicBtn2 : g_pcTopicBtn1;
-    const char *pcMsg = bPressed ? "PRESSED" : "RELEASED";
-
-    if(!MQTTClientIsReady())
-    {
-        return;
-    }
-    MQTTClientPublish(pcTopic, (const uint8_t *)pcMsg,
-                      (uint16_t)strlen(pcMsg), 0);
 }
 
 //*****************************************************************************

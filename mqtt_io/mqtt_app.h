@@ -45,12 +45,6 @@ void MQTTAppTick(uint32_t ui32ElapsedMs);
 bool MQTTAppIsConnected(void);
 
 //
-// Publish a pushbutton transition.  iButton is 1 or 2; bPressed selects the
-// "PRESSED"/"RELEASED" payload.
-//
-void MQTTAppPublishButton(int iButton, bool bPressed);
-
-//
 // A short human-readable status string for the web UI (e.g. "Connected").
 //
 const char *MQTTAppStatusStr(void);
