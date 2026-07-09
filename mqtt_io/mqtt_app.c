@@ -87,12 +87,12 @@ MQTTAppPublishRelayDiscovery(int iRelay)
               HA_PREFIX "/switch/%s/relay%d/config", g_pcDevId, iRelay);
 
     usnprintf(g_pcDiscPayload, sizeof(g_pcDiscPayload),
-              "{\"~\":\"%s\",\"name\":\"Relay %d\",\"uniq_id\":\"%s_relay%d\","
+              "{\"~\":\"%s\",\"name\":\"Out%02d\",\"uniq_id\":\"%s_relay%d\","
               "\"cmd_t\":\"~/relay/%d/set\",\"stat_t\":\"~/relay/%d/state\","
               "\"pl_on\":\"ON\",\"pl_off\":\"OFF\",\"avty_t\":\"~/status\","
               "\"dev\":{\"ids\":[\"%s\"],\"name\":\"TM4C1294 MQTT IO\","
               "\"mdl\":\"EK-TM4C1294XL\",\"mf\":\"Texas Instruments\"}}",
-              g_pcBase, iRelay, g_pcDevId, iRelay, iRelay, iRelay, g_pcDevId);
+              g_pcBase, iRelay + 1, g_pcDevId, iRelay, iRelay, iRelay, g_pcDevId);
 
     MQTTClientPublish(g_pcDiscTopic, (const uint8_t *)g_pcDiscPayload,
                       (uint16_t)strlen(g_pcDiscPayload), 1);
