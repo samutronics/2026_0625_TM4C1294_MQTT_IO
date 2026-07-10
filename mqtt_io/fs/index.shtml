@@ -2,81 +2,154 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>TM4C1294 MQTT IO</title>
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>SaKaHub &mdash; Settings</title>
 <style>
-  body{font-family:Segoe UI,Arial,sans-serif;max-width:540px;margin:24px auto;
-       padding:0 14px;color:#222}
-  h2{margin-bottom:4px}
-  .status{padding:10px 12px;background:#eef3ff;border:1px solid #ccd6f5;
-          border-radius:8px;margin:12px 0;line-height:1.6}
-  label{display:block;margin-top:12px;font-weight:600;font-size:.9em}
-  input[type=text],input[type=number],input[type=password]{width:100%;
-       padding:7px;box-sizing:border-box;border:1px solid #bbb;border-radius:5px}
-  .chk{margin-top:14px;font-weight:600}
-  button{margin-top:18px;padding:10px 22px;background:#1763d6;color:#fff;
-         border:0;border-radius:6px;font-size:1em;cursor:pointer}
-  .note{color:#666;font-size:.82em;margin-top:18px;line-height:1.5}
-  code{background:#f3f3f3;padding:1px 4px;border-radius:3px}
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:"Segoe UI","Helvetica Neue",Arial,sans-serif;background:#f2f2f2;color:#333;font-size:14px;line-height:1.5}
+/* ── Header ── */
+.ti-header{background:#1a1a1a;height:50px;display:flex;align-items:center;justify-content:space-between;padding:0 24px}
+.ti-brand{display:flex;align-items:baseline;gap:6px}
+.ti-brand-name{font-size:20px;font-weight:700;color:#fff;letter-spacing:.5px}
+.ti-brand-name em{color:#cc0000;font-style:normal}
+.ti-brand-sub{font-size:10px;color:#888;letter-spacing:1.5px;text-transform:uppercase}
+.ti-tagline{font-size:10px;color:#777;letter-spacing:1.5px;text-transform:uppercase}
+/* ── Nav tabs ── */
+.ti-nav{background:#fff;border-bottom:2px solid #e0e0e0;display:flex;padding:0 24px}
+.ti-nav a{display:inline-block;padding:13px 18px;font-size:13px;font-weight:600;color:#555;text-decoration:none;border-bottom:3px solid transparent;margin-bottom:-2px;letter-spacing:.2px;transition:color .15s,border-color .15s}
+.ti-nav a:hover{color:#cc0000}
+.ti-nav a.active{color:#cc0000;border-bottom-color:#cc0000}
+/* ── Status bar ── */
+.ti-status{background:#f7f7f7;border-bottom:1px solid #ddd;padding:9px 24px;display:flex;gap:28px;font-size:12px;color:#444;align-items:center}
+.ti-status-item{display:flex;align-items:center;gap:6px}
+.ti-status-item b{font-weight:600;color:#222}
+.ti-dot{width:7px;height:7px;border-radius:50%;background:#22a832;display:inline-block;flex-shrink:0}
+/* ── Main layout ── */
+main{padding:28px 24px;max-width:620px}
+/* ── Card ── */
+.ti-card{background:#fff;border:1px solid #d8d8d8}
+.ti-card-head{padding:14px 20px;border-bottom:1px solid #e8e8e8;background:#fafafa;display:flex;align-items:center;gap:10px}
+.ti-card-head h2{font-size:15px;font-weight:600;color:#1a1a1a;letter-spacing:.1px}
+.ti-card-body{padding:22px 20px}
+/* ── Form ── */
+.ti-field{margin-bottom:18px}
+.ti-field label{display:block;font-size:10px;font-weight:700;color:#767676;text-transform:uppercase;letter-spacing:1px;margin-bottom:5px}
+.ti-field input[type=text],
+.ti-field input[type=number],
+.ti-field input[type=password]{width:100%;padding:8px 10px;border:1px solid #bbb;font-size:13px;font-family:inherit;color:#222;outline:none;background:#fff;transition:border-color .15s}
+.ti-field input:focus{border-color:#cc0000;box-shadow:0 0 0 2px rgba(204,0,0,.08)}
+.ti-field input::placeholder{color:#bbb}
+.ti-2col{display:grid;grid-template-columns:2fr 1fr;gap:16px}
+.ti-2col-eq{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+.ti-divider{border:none;border-top:1px solid #ebebeb;margin:20px 0}
+.ti-section-lbl{font-size:10px;font-weight:700;color:#767676;text-transform:uppercase;letter-spacing:1px;display:block;margin-bottom:12px}
+.ti-check{display:flex;align-items:center;gap:8px;margin-bottom:14px}
+.ti-check input[type=checkbox]{width:14px;height:14px;accent-color:#cc0000;cursor:pointer}
+.ti-check span{font-size:13px;color:#333}
+/* ── Button ── */
+.ti-btn{display:inline-block;padding:9px 26px;background:#cc0000;color:#fff;border:none;font-size:12px;font-weight:700;letter-spacing:.8px;text-transform:uppercase;cursor:pointer;font-family:inherit;transition:background .15s}
+.ti-btn:hover{background:#aa0000}
+.ti-btn:active{background:#880000}
+.ti-btn-row{margin-top:22px}
+/* ── Note ── */
+.ti-note{margin-top:18px;padding:11px 14px;background:#f7f7f7;border-left:3px solid #cc0000;font-size:12px;color:#555;line-height:1.7}
+.ti-note a{color:#cc0000;text-decoration:none;font-weight:600}
+.ti-note a:hover{text-decoration:underline}
+/* ── Footer ── */
+.ti-footer{margin-top:36px;padding:16px 24px;border-top:1px solid #d8d8d8;font-size:11px;color:#999;display:flex;justify-content:space-between}
 </style>
 </head>
 <body>
-<h2>TM4C1294 MQTT IO</h2>
-<div class="status">
-  Device IP: <b><!--#ipaddr--></b><br>
-  MQTT broker status: <b><!--#mqstatus--></b>
+
+<div class="ti-header">
+  <div class="ti-brand">
+    <span class="ti-brand-name"><em>Sa</em>Ka<em>Hub</em></span>
+    <span class="ti-brand-sub">EK-TM4C1294XL</span>
+  </div>
+  <span class="ti-tagline">MQTT I/O Gateway</span>
 </div>
 
-<form method="get" action="/mqttcfg.cgi">
-  <label for="host">Broker host or IP</label>
-  <input type="text" id="host" name="host" value="<!--#mqhost-->"
-         maxlength="63" placeholder="e.g. 192.168.1.10 or broker.local">
+<div class="ti-nav">
+  <a href="/index.shtml" class="active">Settings</a>
+  <a href="/iocfg.shtml">I/O Config</a>
+</div>
 
-  <label for="port">Port</label>
-  <input type="number" id="port" name="port" value="<!--#mqport-->"
-         min="1" max="65535">
+<div class="ti-status">
+  <div class="ti-status-item"><span class="ti-dot"></span><b>IP&nbsp;</b><!--#ipaddr--></div>
+  <div class="ti-status-item"><b>MQTT&nbsp;</b><!--#mqstatus--></div>
+</div>
 
-  <label for="client">Client ID</label>
-  <input type="text" id="client" name="client" value="<!--#mqclient-->"
-         maxlength="31">
+<main>
+  <div class="ti-card">
+    <div class="ti-card-head">
+      <h2>MQTT Broker Settings</h2>
+    </div>
+    <div class="ti-card-body">
+      <form method="get" action="/mqttcfg.cgi">
 
-  <label for="topic">Base topic</label>
-  <input type="text" id="topic" name="topic" value="<!--#mqtopic-->"
-         maxlength="47">
+        <div class="ti-2col">
+          <div class="ti-field">
+            <label>Broker host / IP</label>
+            <input type="text" name="host" value="<!--#mqhost-->"
+                   maxlength="63" placeholder="e.g. 192.168.1.10">
+          </div>
+          <div class="ti-field">
+            <label>Port</label>
+            <input type="number" name="port" value="<!--#mqport-->"
+                   min="1" max="65535">
+          </div>
+        </div>
 
-  <label for="din">Input devices (SN65HVS882, 8 inputs each)</label>
-  <input type="number" id="din" name="din" value="<!--#mqdin-->"
-         min="1" max="15">
+        <div class="ti-2col-eq">
+          <div class="ti-field">
+            <label>Client ID</label>
+            <input type="text" name="client" value="<!--#mqclient-->" maxlength="31">
+          </div>
+          <div class="ti-field">
+            <label>Base topic</label>
+            <input type="text" name="topic" value="<!--#mqtopic-->" maxlength="47">
+          </div>
+        </div>
 
-  <label for="relay">Relay devices (DRV8860, 8 relays each)</label>
-  <input type="number" id="relay" name="relay" value="<!--#mqrelay-->"
-         min="1" max="15">
+        <hr class="ti-divider">
+        <span class="ti-section-lbl">Authentication</span>
 
-  <div class="chk">
-    <label style="font-weight:600">
-      <input type="checkbox" name="auth" <!--#mqauth-->> Use authentication
-    </label>
+        <div class="ti-check">
+          <input type="checkbox" name="auth" id="auth" <!--#mqauth-->>
+          <span>Enable username / password</span>
+        </div>
+
+        <div class="ti-2col-eq">
+          <div class="ti-field">
+            <label>Username</label>
+            <input type="text" name="user" value="<!--#mquser-->" maxlength="31">
+          </div>
+          <div class="ti-field">
+            <label>Password</label>
+            <input type="password" name="pass" value=""
+                   maxlength="31" placeholder="unchanged if blank">
+          </div>
+        </div>
+
+        <div class="ti-btn-row">
+          <button type="submit" class="ti-btn">Save &amp; Connect</button>
+        </div>
+
+      </form>
+
+      <div class="ti-note">
+        Use <a href="/iocfg.shtml">I/O Config</a> to set device counts,
+        configure each input as Switch or Pushbutton, and assign up to 4
+        relay bindings per input. Settings persist in EEPROM across resets.
+      </div>
+    </div>
   </div>
+</main>
 
-  <label for="user">Username</label>
-  <input type="text" id="user" name="user" value="<!--#mquser-->"
-         maxlength="31">
+<div class="ti-footer">
+  <span>SaKaHub &copy; TomArts</span>
+  <span>EK-TM4C1294XL &mdash; TivaWare 2.2.0</span>
+</div>
 
-  <label for="pass">Password</label>
-  <input type="password" id="pass" name="pass" value=""
-         maxlength="31" placeholder="(unchanged if left blank)">
-
-  <button type="submit">Save &amp; Connect</button>
-</form>
-
-<p class="note">
-  Relays are exposed as MQTT switches: send <code>ON</code> / <code>OFF</code>
-  to <code>&lt;base&gt;/relay/&lt;n&gt;/set</code> and the state is retained on
-  <code>&lt;base&gt;/relay/&lt;n&gt;/state</code> (also auto-discovered by Home
-  Assistant). Inputs are read from the SN65HVS882 chain. On connect the device
-  publishes a retained <code>online</code> to <code>&lt;base&gt;/status</code>;
-  its last will is <code>offline</code>. Settings are stored in EEPROM and
-  survive reset.
-</p>
 </body>
 </html>

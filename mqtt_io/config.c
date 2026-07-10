@@ -25,9 +25,11 @@
 #define CFG_EEPROM_ADDR         0
 
 //
-// The live, in-RAM copy of the configuration.
+// The live, in-RAM copies of the two EEPROM records.
 //
 static tMQTTConfig g_sConfig;
+static tIOSettings g_sIOSettings;
+static tIOBindings g_sBindings;
 
 //*****************************************************************************
 //
@@ -130,6 +132,38 @@ ConfigInit(void)
     //
     ConfigSetDinDevices(g_sConfig.ui8IoDevices & 0x0F);
     ConfigSetRelayDevices((g_sConfig.ui8IoDevices >> 4) & 0x0F);
+
+    //
+    // Load the I/O settings record (per-input type) from its own EEPROM block.
+    // A missing or corrupt record silently defaults to all-switches (all zeros).
+    //
+    EEPROMRead((uint32_t *)&g_sIOSettings, CFG_IO_EEPROM_ADDR,
+               sizeof(tIOSettings));
+    ui32Crc = ConfigCRC32((const uint8_t *)&g_sIOSettings,
+                          sizeof(tIOSettings) - sizeof(uint32_t));
+    if((g_sIOSettings.ui32Magic != CFG_IO_MAGIC) ||
+       (g_sIOSettings.ui32Crc != ui32Crc))
+    {
+        memset(&g_sIOSettings, 0, sizeof(tIOSettings));
+        g_sIOSettings.ui32Magic = CFG_IO_MAGIC;
+        UARTprintf("No I/O settings in EEPROM; all inputs default to switch.\n");
+    }
+
+    //
+    // Load the binding table (per-input → relay action map).
+    // On invalid record default to all slots disabled (all zeros).
+    //
+    EEPROMRead((uint32_t *)&g_sBindings, CFG_IO_BINDINGS_ADDR,
+               sizeof(tIOBindings));
+    ui32Crc = ConfigCRC32((const uint8_t *)&g_sBindings,
+                          sizeof(tIOBindings) - sizeof(uint32_t));
+    if((g_sBindings.ui32Magic != CFG_IO_BINDINGS_MAGIC) ||
+       (g_sBindings.ui32Crc != ui32Crc))
+    {
+        memset(&g_sBindings, 0, sizeof(tIOBindings));
+        g_sBindings.ui32Magic = CFG_IO_BINDINGS_MAGIC;
+        UARTprintf("No binding config in EEPROM; all bindings disabled.\n");
+    }
 }
 
 //*****************************************************************************
@@ -220,4 +254,128 @@ bool
 ConfigHasBroker(void)
 {
     return(g_sConfig.pcHost[0] != '\0');
+}
+
+//*****************************************************************************
+//
+// Per-input type accessors.  Bit i of g_sIOSettings.ui8InputType[] = 1 means
+// input i is configured as a pushbutton (click-event); 0 = level switch.
+//
+//*****************************************************************************
+bool
+ConfigInputIsPushbutton(int iInput)
+{
+    if((iInput < 0) || (iInput >= CFG_MAX_INPUTS))
+    {
+        return(false);
+    }
+    return((g_sIOSettings.ui8InputType[iInput / 8] & (1u << (iInput % 8))) != 0);
+}
+
+void
+ConfigSetInputPushbutton(int iInput, bool bPushbutton)
+{
+    if((iInput < 0) || (iInput >= CFG_MAX_INPUTS))
+    {
+        return;
+    }
+    if(bPushbutton)
+    {
+        g_sIOSettings.ui8InputType[iInput / 8] |= (uint8_t)(1u << (iInput % 8));
+    }
+    else
+    {
+        g_sIOSettings.ui8InputType[iInput / 8] &= (uint8_t)~(1u << (iInput % 8));
+    }
+}
+
+//*****************************************************************************
+//
+// Persist the I/O settings to EEPROM.
+//
+//*****************************************************************************
+bool
+ConfigIOSave(void)
+{
+    uint32_t ui32Rc;
+
+    g_sIOSettings.ui32Magic = CFG_IO_MAGIC;
+    g_sIOSettings.ui32Crc = ConfigCRC32((const uint8_t *)&g_sIOSettings,
+                                        sizeof(tIOSettings) - sizeof(uint32_t));
+
+    ui32Rc = EEPROMProgram((uint32_t *)&g_sIOSettings, CFG_IO_EEPROM_ADDR,
+                           sizeof(tIOSettings));
+    if(ui32Rc != 0)
+    {
+        UARTprintf("EEPROM write failed (IO settings, 0x%x).\n", ui32Rc);
+        return(false);
+    }
+
+    UARTprintf("I/O settings saved to EEPROM.\n");
+    return(true);
+}
+
+//*****************************************************************************
+//
+// Binding table accessors.  iInput in [0, CFG_MAX_INPUTS), iSlot in [0, CFG_BIND_SLOTS).
+//
+//*****************************************************************************
+uint8_t
+ConfigBindingGetTrigAct(int iInput, int iSlot)
+{
+    if((iInput < 0) || (iInput >= CFG_MAX_INPUTS) ||
+       (iSlot < 0)  || (iSlot >= CFG_BIND_SLOTS))
+    {
+        return(0);
+    }
+    return(g_sBindings.ui8TrigAct[iInput * CFG_BIND_SLOTS + iSlot]);
+}
+
+uint8_t
+ConfigBindingGetOutput(int iInput, int iSlot)
+{
+    if((iInput < 0) || (iInput >= CFG_MAX_INPUTS) ||
+       (iSlot < 0)  || (iSlot >= CFG_BIND_SLOTS))
+    {
+        return(BIND_OUTPUT_NONE);
+    }
+    return(g_sBindings.ui8Output[iInput * CFG_BIND_SLOTS + iSlot]);
+}
+
+void
+ConfigBindingSet(int iInput, int iSlot, uint8_t ui8TrigAct, uint8_t ui8Output)
+{
+    if((iInput < 0) || (iInput >= CFG_MAX_INPUTS) ||
+       (iSlot < 0)  || (iSlot >= CFG_BIND_SLOTS))
+    {
+        return;
+    }
+    g_sBindings.ui8TrigAct[iInput * CFG_BIND_SLOTS + iSlot] = ui8TrigAct;
+    g_sBindings.ui8Output [iInput * CFG_BIND_SLOTS + iSlot] = ui8Output;
+}
+
+//*****************************************************************************
+//
+// Persist the binding table to EEPROM.
+//
+//*****************************************************************************
+bool
+ConfigBindingSave(void)
+{
+    uint32_t ui32Rc;
+
+    g_sBindings.ui32Magic = CFG_IO_BINDINGS_MAGIC;
+    g_sBindings.ui32Crc = ConfigCRC32((const uint8_t *)&g_sBindings,
+                                      sizeof(tIOBindings) - sizeof(uint32_t));
+
+    ui32Rc = EEPROMProgram((uint32_t *)&g_sBindings, CFG_IO_BINDINGS_ADDR,
+                           sizeof(tIOBindings));
+    if(ui32Rc != 0)
+    {
+        UARTprintf("EEPROM write failed (bindings, 0x%x).\n", ui32Rc);
+        return(false);
+    }
+
+    UARTprintf("Binding table saved to EEPROM.\n");
+    return(true);
 }

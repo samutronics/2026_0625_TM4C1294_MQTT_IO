@@ -1,0 +1,257 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>SaKaHub &mdash; I/O Config</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:"Segoe UI","Helvetica Neue",Arial,sans-serif;background:#f2f2f2;color:#333;font-size:14px;line-height:1.5}
+.ti-header{background:#1a1a1a;height:50px;display:flex;align-items:center;justify-content:space-between;padding:0 24px}
+.ti-brand{display:flex;align-items:baseline;gap:6px}
+.ti-brand-name{font-size:20px;font-weight:700;color:#fff;letter-spacing:.5px}
+.ti-brand-name em{color:#cc0000;font-style:normal}
+.ti-brand-sub{font-size:10px;color:#888;letter-spacing:1.5px;text-transform:uppercase}
+.ti-tagline{font-size:10px;color:#777;letter-spacing:1.5px;text-transform:uppercase}
+.ti-nav{background:#fff;border-bottom:2px solid #e0e0e0;display:flex;padding:0 24px}
+.ti-nav a{display:inline-block;padding:13px 18px;font-size:13px;font-weight:600;color:#555;text-decoration:none;border-bottom:3px solid transparent;margin-bottom:-2px;letter-spacing:.2px;transition:color .15s,border-color .15s}
+.ti-nav a:hover{color:#cc0000}
+.ti-nav a.active{color:#cc0000;border-bottom-color:#cc0000}
+.ti-status{background:#f7f7f7;border-bottom:1px solid #ddd;padding:9px 24px;display:flex;gap:28px;font-size:12px;color:#444;align-items:center}
+.ti-status-item{display:flex;align-items:center;gap:6px}
+.ti-status-item b{font-weight:600;color:#222}
+.ti-dot{width:7px;height:7px;border-radius:50%;background:#22a832;display:inline-block;flex-shrink:0}
+main{padding:28px 24px;max-width:900px}
+.ti-card{background:#fff;border:1px solid #d8d8d8;margin-bottom:20px}
+.ti-card-head{padding:14px 20px;border-bottom:1px solid #e8e8e8;background:#fafafa}
+.ti-card-head h2{font-size:15px;font-weight:600;color:#1a1a1a}
+.ti-card-body{padding:20px}
+.ti-field{margin-bottom:14px}
+.ti-field label{display:block;font-size:10px;font-weight:700;color:#767676;text-transform:uppercase;letter-spacing:1px;margin-bottom:5px}
+.ti-field input[type=number]{width:90px;padding:7px 9px;border:1px solid #bbb;font-size:13px;font-family:inherit;color:#222;outline:none;transition:border-color .15s}
+.ti-field input:focus{border-color:#cc0000;box-shadow:0 0 0 2px rgba(204,0,0,.08)}
+.ti-2col{display:grid;grid-template-columns:1fr 1fr;gap:20px}
+/* ── I/O Table ── */
+#tbl{margin-top:4px}
+table{width:100%;border-collapse:collapse;font-size:12px}
+thead tr{background:#1a1a1a;color:#fff}
+thead th{padding:8px 10px;text-align:left;font-size:10px;font-weight:700;letter-spacing:1px;text-transform:uppercase}
+tbody tr.input-row td{background:#f9f9f9;padding:9px 10px;border-bottom:1px solid #e8e8e8;font-weight:600;font-size:12px;vertical-align:top;width:56px;white-space:nowrap}
+tbody tr.slot-row td{padding:5px 10px;border-bottom:1px solid #f0f0f0;vertical-align:middle;background:#fff}
+tbody tr.slot-row:last-of-type td{border-bottom:2px solid #e0e0e0}
+tbody tr.input-row{border-top:2px solid #e0e0e0}
+.slot-num{font-size:10px;font-weight:700;color:#aaa;letter-spacing:.5px;text-transform:uppercase;text-align:center;width:36px}
+select{padding:4px 6px;border:1px solid #bbb;font-size:12px;font-family:inherit;color:#333;background:#fff;outline:none;cursor:pointer;transition:border-color .15s}
+select:focus{border-color:#cc0000}
+select.sel-type{min-width:100px}
+select.sel-out{min-width:76px}
+select.sel-trig{min-width:92px}
+select.sel-act{min-width:76px}
+.arrow-lbl{font-size:10px;color:#bbb;padding:0 3px}
+/* ── Button ── */
+.ti-btn{display:inline-block;padding:9px 26px;background:#cc0000;color:#fff;border:none;font-size:12px;font-weight:700;letter-spacing:.8px;text-transform:uppercase;cursor:pointer;font-family:inherit;transition:background .15s}
+.ti-btn:hover{background:#aa0000}
+.ti-btn-row{margin-top:18px}
+/* ── Note ── */
+.ti-note{margin-top:18px;padding:11px 14px;background:#f7f7f7;border-left:3px solid #cc0000;font-size:12px;color:#555;line-height:1.7}
+.ti-footer{margin-top:36px;padding:16px 24px;border-top:1px solid #d8d8d8;font-size:11px;color:#999;display:flex;justify-content:space-between}
+</style>
+</head>
+<body>
+
+<div class="ti-header">
+  <div class="ti-brand">
+    <span class="ti-brand-name"><em>Sa</em>Ka<em>Hub</em></span>
+    <span class="ti-brand-sub">EK-TM4C1294XL</span>
+  </div>
+  <span class="ti-tagline">MQTT I/O Gateway</span>
+</div>
+
+<div class="ti-nav">
+  <a href="/index.shtml">Settings</a>
+  <a href="/iocfg.shtml" class="active">I/O Config</a>
+</div>
+
+<div class="ti-status">
+  <div class="ti-status-item"><span class="ti-dot"></span><b>IP&nbsp;</b><!--#ipaddr--></div>
+  <div class="ti-status-item"><b>MQTT&nbsp;</b><!--#mqstatus--></div>
+</div>
+
+<main>
+
+  <!-- Device counts -->
+  <div class="ti-card">
+    <div class="ti-card-head"><h2>Device Counts</h2></div>
+    <div class="ti-card-body">
+      <form id="iof" method="get" action="/iocfg.cgi" onsubmit="return serialize()">
+        <div class="ti-2col">
+          <div class="ti-field">
+            <label>Input devices &mdash; SN65HVS882 (8 ch each)</label>
+            <input type="number" id="din" name="din" value="<!--#mqdin-->"
+                   min="1" max="15" onchange="buildTable()">
+          </div>
+          <div class="ti-field">
+            <label>Relay devices &mdash; DRV8860 (8 ch each)</label>
+            <input type="number" id="relay" name="relay" value="<!--#mqrelay-->"
+                   min="1" max="15" onchange="buildRelayOpts()">
+          </div>
+        </div>
+
+        <!-- Per-input type + bindings table -->
+        <div id="tbl"></div>
+
+        <input type="hidden" id="types" name="types" value="">
+        <input type="hidden" id="binds" name="binds" value="">
+
+        <div class="ti-btn-row">
+          <button type="submit" class="ti-btn">Save Configuration</button>
+        </div>
+      </form>
+
+      <div class="ti-note">
+        <b>Switch</b>: binary_sensor in HA; binds trigger on Level ON / Level OFF.<br>
+        <b>Pushbutton</b>: event entity in HA; binds trigger on Single / Double click.<br>
+        Each input supports up to 4 relay bindings. Bindings execute on-device
+        independent of network connectivity.
+      </div>
+    </div>
+  </div>
+
+</main>
+
+<div class="ti-footer">
+  <span>SaKaHub &copy; TomArts</span>
+  <span>EK-TM4C1294XL &mdash; TivaWare 2.2.0</span>
+</div>
+
+<script>
+var D=<!--#mqdin-->, R=<!--#mqrelay-->;
+var T="<!--#iotypes-->";
+var B="<!--#iobinds-->";
+
+function hexByte(s,b){var v=parseInt((s||"").substr(b*2,2)||"00",16);return isNaN(v)?0:v;}
+function isPB(i){return (hexByte(T,Math.floor(i/8))>>(i%8))&1;}
+function slotV(i,s){var v=parseInt((B||"").substr((i*4+s)*3,3)||"000",16);return isNaN(v)?0:v;}
+function slotTrig(v){return v&7;}
+function slotAct(v){return (v>>3)&3;}
+function slotOut(v){return (v&7)===0?127:(v>>5)&0x7F;}
+function pad2(n){return n<10?"0"+n:""+n;}
+
+var g_relayOpts="";
+function buildRelayOpts(){
+  var nr=parseInt(document.getElementById("relay").value)||R;
+  if(nr>=1&&nr<=15)R=nr;
+  var s="<option value='127'>None</option>";
+  for(var k=0;k<R*8;k++)s+="<option value='"+k+"'>Out"+pad2(k+1)+"</option>";
+  g_relayOpts=s;
+}
+
+function isPBnow(i){
+  var el=document.getElementById("t"+i);
+  return el?parseInt(el.value):isPB(i);
+}
+
+function updateTrig(i){
+  var pb=isPBnow(i);
+  for(var s=0;s<4;s++){
+    var ts=document.getElementById("btrig_"+i+"_"+s);
+    if(!ts)continue;
+    var cur=parseInt(ts.value)||0;
+    var h=pb
+      ?"<option value='3'"+(cur===3?" selected":"")+">Single</option>"
+       +"<option value='4'"+(cur===4?" selected":"")+">Double</option>"
+      :"<option value='1'"+(cur===1?" selected":"")+">Level ON</option>"
+       +"<option value='2'"+(cur===2?" selected":"")+">Level OFF</option>";
+    ts.innerHTML=h;
+  }
+}
+
+function buildTable(){
+  var nd=parseInt(document.getElementById("din").value);
+  if(nd>=1&&nd<=15)D=nd;
+  buildRelayOpts();
+  var n=D*8;
+  var h="<table><thead><tr>"
+    +"<th>Input</th><th>Type</th>"
+    +"<th>Slot</th><th>Output</th><th>Trigger</th><th>Action</th>"
+    +"</tr></thead><tbody>";
+
+  for(var i=0;i<n;i++){
+    var pb=isPB(i);
+    /* first slot row: also contains Input name + Type select (rowspan=4) */
+    h+="<tr class='input-row'>"
+      +"<td rowspan='4'>In"+pad2(i+1)+"</td>"
+      +"<td rowspan='4' style='vertical-align:top;padding-top:7px'>"
+      +"<select class='sel-type' id='t"+i+"' onchange='updateTrig("+i+")'>"
+      +"<option value='0'"+(pb?"":" selected")+">Switch</option>"
+      +"<option value='1'"+(pb?" selected":"")+">Pushbutton</option>"
+      +"</select></td>";
+
+    for(var s=0;s<4;s++){
+      var v=slotV(i,s);
+      var trig=slotTrig(v),act=slotAct(v),out=slotOut(v);
+      if(s>0)h+="<tr class='slot-row'>";
+      /* Slot# */
+      h+="<td class='slot-num'>"+pad2(s+1)+"</td>";
+      /* Output */
+      h+="<td><select class='sel-out' id='bout_"+i+"_"+s+"'>"
+        +g_relayOpts.replace("value='"+out+"'","value='"+out+"' selected")
+        +"</select></td>";
+      /* Trigger */
+      h+="<td><select class='sel-trig' id='btrig_"+i+"_"+s+"'>";
+      if(pb){
+        h+="<option value='3'"+(trig===3?" selected":"")+">Single</option>"
+          +"<option value='4'"+(trig===4?" selected":"")+">Double</option>";
+      } else {
+        h+="<option value='1'"+(trig===1?" selected":"")+">Level ON</option>"
+          +"<option value='2'"+(trig===2?" selected":"")+">Level OFF</option>";
+      }
+      h+="</select></td>";
+      /* Action */
+      h+="<td><select class='sel-act' id='bact_"+i+"_"+s+"'>"
+        +"<option value='0'"+(act===0?" selected":"")+">Turn ON</option>"
+        +"<option value='1'"+(act===1?" selected":"")+">Turn OFF</option>"
+        +"<option value='2'"+(act===2?" selected":"")+">Toggle</option>"
+        +"</select></td></tr>";
+    }
+  }
+  h+="</tbody></table>";
+  document.getElementById("tbl").innerHTML=h;
+}
+
+function serialize(){
+  var nd=parseInt(document.getElementById("din").value);
+  if(nd>=1&&nd<=15)D=nd;
+  /* types */
+  var types="";
+  for(var b=0;b<D;b++){
+    var v=0;
+    for(var bit=0;bit<8;bit++){
+      var el=document.getElementById("t"+(b*8+bit));
+      if(el&&parseInt(el.value)===1)v|=(1<<bit);
+    }
+    types+=("0"+v.toString(16)).slice(-2);
+  }
+  document.getElementById("types").value=types;
+  /* binds */
+  var maxIn=Math.min(D*8,16),binds="";
+  for(var i=0;i<maxIn;i++){
+    for(var s=0;s<4;s++){
+      var os=document.getElementById("bout_"+i+"_"+s);
+      var ts=document.getElementById("btrig_"+i+"_"+s);
+      var as=document.getElementById("bact_"+i+"_"+s);
+      if(!os||!ts||!as){binds+="000";continue;}
+      var out=parseInt(os.value),trig=parseInt(ts.value),act=parseInt(as.value);
+      if(out===127||trig===0){binds+="000";continue;}
+      var vv=((out&0x7F)<<5)|((act&3)<<3)|(trig&7);
+      binds+=("000"+vv.toString(16)).slice(-3);
+    }
+  }
+  document.getElementById("binds").value=binds;
+  return true;
+}
+
+buildTable();
+</script>
+</body>
+</html>

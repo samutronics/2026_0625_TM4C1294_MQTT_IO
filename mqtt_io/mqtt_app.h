@@ -41,9 +41,27 @@ void MQTTAppTick(uint32_t ui32ElapsedMs);
 
 //
 // Publish one SN65HVS882 input channel's state (retained "ON"/"OFF").  Called
-// from the input-chain scan when a channel transitions.
+// from the input-chain scan when a channel transitions (switch-type inputs).
 //
 void MQTTAppPublishInput(int iInput, bool bOn);
+
+//
+// Publish a pushbutton click event (not retained) to the HA event topic.
+// pcEvt is "single" or "double".  Called from the input-events callback.
+//
+void MQTTAppPublishInputEvent(int iInput, const char *pcEvt);
+
+//
+// Re-run the post-connect publish sequence without reconnecting.  Call after
+// I/O configuration changes to push updated HA discovery and state.
+//
+void MQTTAppRepublish(void);
+
+//
+// Set one relay output and publish its new retained state to MQTT.  Used by
+// the local input→output binding logic in enet_io.c.
+//
+void MQTTAppSetRelay(int iRelay, bool bOn);
 
 //
 // True once connected to the broker (CONNACK received).

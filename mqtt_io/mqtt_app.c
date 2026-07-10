@@ -1,17 +1,15 @@
 //*****************************************************************************
 //
 // mqtt_app.c - Application glue between configuration, board I/O and the MQTT
-// client, including Home Assistant MQTT auto-discovery for the relay outputs.
+// client, including Home Assistant MQTT auto-discovery for the relay outputs
+// and digital inputs (binary_sensor for switches, event for pushbuttons).
 //
 // Topic scheme (base topic is configurable on the web page):
-//   <base>/status            -> "online" (retained) / LWT "offline"
-//   <base>/relay/<n>/set      <- "ON" / "OFF"   (subscribed, wildcard)
-//   <base>/relay/<n>/state    -> "ON" / "OFF"   (retained)
-//
-// On each connection the device publishes retained Home Assistant discovery
-// configs under "homeassistant/switch/..." so every relay appears automatically
-// as a switch under one device, then publishes each relay's current state and
-// subscribes to the command wildcard.
+//   <base>/status              -> "online" (retained) / LWT "offline"
+//   <base>/relay/<n>/set        <- "ON" / "OFF"   (subscribed, wildcard)
+//   <base>/relay/<n>/state      -> "ON" / "OFF"   (retained)
+//   <base>/input/<i>/state      -> "ON" / "OFF"   (retained, switch inputs)
+//   <base>/input/<i>/event      -> {"event_type":"single"|"double"} (pushbuttons)
 //
 //*****************************************************************************
 
@@ -25,6 +23,7 @@
 #include "din_chain.h"
 #include "mqtt_client.h"
 #include "mqtt_app.h"
+#include "input_events.h"
 
 //
 // Home Assistant default discovery prefix.
@@ -107,22 +106,53 @@ MQTTAppPublishRelayDiscovery(int iRelay)
 
 //*****************************************************************************
 //
-// Publish one input channel's Home Assistant discovery config (binary_sensor).
+// Publish one input channel's Home Assistant discovery config.  The entity
+// type depends on whether the input is configured as a switch (binary_sensor)
+// or a pushbutton (event).  The stale config for the other type is cleared by
+// publishing an empty retained payload to its topic.
 //
 //*****************************************************************************
 static void
 MQTTAppPublishInputDiscovery(int iInput)
 {
-    usnprintf(g_pcDiscTopic, sizeof(g_pcDiscTopic),
-              HA_PREFIX "/binary_sensor/%s/input%d/config", g_pcDevId, iInput);
+    bool bPB = ConfigInputIsPushbutton(iInput);
+    const char *pcActiveComp  = bPB ? "event"         : "binary_sensor";
+    const char *pcStaleComp   = bPB ? "binary_sensor" : "event";
 
-    usnprintf(g_pcDiscPayload, sizeof(g_pcDiscPayload),
-              "{\"~\":\"%s\",\"name\":\"In%02d\",\"uniq_id\":\"%s_input%d\","
-              "\"stat_t\":\"~/input/%d/state\",\"pl_on\":\"ON\",\"pl_off\":"
-              "\"OFF\",\"avty_t\":\"~/status\",\"dev\":{\"ids\":[\"%s\"],"
-              "\"name\":\"SaKaHub\",\"mdl\":\"EK-TM4C1294XL\","
-              "\"mf\":\"TomArts\"}}",
-              g_pcBase, iInput + 1, g_pcDevId, iInput, iInput, g_pcDevId);
+    //
+    // Clear the stale component's retained config first.
+    //
+    usnprintf(g_pcDiscTopic, sizeof(g_pcDiscTopic),
+              HA_PREFIX "/%s/%s/input%d/config", pcStaleComp, g_pcDevId, iInput);
+    MQTTClientPublish(g_pcDiscTopic, (const uint8_t *)"", 0, 1);
+
+    //
+    // Publish the active component's config.
+    //
+    usnprintf(g_pcDiscTopic, sizeof(g_pcDiscTopic),
+              HA_PREFIX "/%s/%s/input%d/config", pcActiveComp, g_pcDevId, iInput);
+
+    if(bPB)
+    {
+        usnprintf(g_pcDiscPayload, sizeof(g_pcDiscPayload),
+                  "{\"~\":\"%s\",\"name\":\"In%02d\",\"uniq_id\":\"%s_input%d\","
+                  "\"stat_t\":\"~/input/%d/event\","
+                  "\"event_types\":[\"single\",\"double\"],"
+                  "\"avty_t\":\"~/status\",\"dev\":{\"ids\":[\"%s\"],"
+                  "\"name\":\"SaKaHub\",\"mdl\":\"EK-TM4C1294XL\","
+                  "\"mf\":\"TomArts\"}}",
+                  g_pcBase, iInput + 1, g_pcDevId, iInput, iInput, g_pcDevId);
+    }
+    else
+    {
+        usnprintf(g_pcDiscPayload, sizeof(g_pcDiscPayload),
+                  "{\"~\":\"%s\",\"name\":\"In%02d\",\"uniq_id\":\"%s_input%d\","
+                  "\"stat_t\":\"~/input/%d/state\",\"pl_on\":\"ON\",\"pl_off\":"
+                  "\"OFF\",\"avty_t\":\"~/status\",\"dev\":{\"ids\":[\"%s\"],"
+                  "\"name\":\"SaKaHub\",\"mdl\":\"EK-TM4C1294XL\","
+                  "\"mf\":\"TomArts\"}}",
+                  g_pcBase, iInput + 1, g_pcDevId, iInput, iInput, g_pcDevId);
+    }
 
     MQTTClientPublish(g_pcDiscTopic, (const uint8_t *)g_pcDiscPayload,
                       (uint16_t)strlen(g_pcDiscPayload), 1);
@@ -144,6 +174,27 @@ MQTTAppPublishInput(int iInput, bool bOn)
               g_pcBase, iInput);
     MQTTClientPublish(g_pcScratchTopic, (const uint8_t *)(bOn ? "ON" : "OFF"),
                       (uint16_t)(bOn ? 2 : 3), 1);
+}
+
+//*****************************************************************************
+//
+// Publish a pushbutton click event (NOT retained) to the HA event topic.
+//
+//*****************************************************************************
+void
+MQTTAppPublishInputEvent(int iInput, const char *pcEvt)
+{
+    char pcPayload[48];
+
+    if(!MQTTClientIsReady())
+    {
+        return;
+    }
+    usnprintf(g_pcScratchTopic, sizeof(g_pcScratchTopic), "%s/input/%d/event",
+              g_pcBase, iInput);
+    usnprintf(pcPayload, sizeof(pcPayload), "{\"event_type\":\"%s\"}", pcEvt);
+    MQTTClientPublish(g_pcScratchTopic, (const uint8_t *)pcPayload,
+                      (uint16_t)strlen(pcPayload), 0);
 }
 
 //*****************************************************************************
@@ -361,12 +412,16 @@ MQTTAppPostConnect(int iStep)
     else if(iStep <= (iSub + (2 * iInputs)))
     {
         //
-        // Initial retained state of each input, taken from the connect-time
-        // snapshot (channel c of device d = bit 7-c of snapshot byte d).
+        // Initial retained state for switch-type inputs only.  Pushbuttons have
+        // no retained level state — they publish events on click.
         //
         int iInput = iStep - iSub - iInputs - 1;
-        int iMask = 0x80 >> (iInput & 7);
-        MQTTAppPublishInput(iInput, (g_pui8InSnap[iInput / 8] & iMask) != 0);
+        if(!ConfigInputIsPushbutton(iInput))
+        {
+            int iMask = 0x80 >> (iInput & 7);
+            MQTTAppPublishInput(iInput,
+                                (g_pui8InSnap[iInput / 8] & iMask) != 0);
+        }
         if(iInput == (iInputs - 1))
         {
             UARTprintf("MQTT: %d inputs published (HA discovery).\n", iInputs);
@@ -413,6 +468,41 @@ MQTTAppTick(uint32_t ui32ElapsedMs)
         MQTTAppPostConnect(g_iPubStep);
         g_iPubStep++;
     }
+}
+
+//*****************************************************************************
+//
+// Set one relay and publish its new state (retained).  Called from the local
+// input→output binding logic; mirrors what the relay MQTT command handler does.
+//
+//*****************************************************************************
+void
+MQTTAppSetRelay(int iRelay, bool bOn)
+{
+    if((iRelay < 0) || ((uint16_t)iRelay >= RelayChainCount()))
+    {
+        return;
+    }
+    RelayChainSet((uint16_t)iRelay, bOn);
+    MQTTAppPublishRelayState(iRelay);
+}
+
+//*****************************************************************************
+//
+// Re-run the full post-connect publish sequence (discovery + state) without
+// reconnecting.  Call this after the I/O configuration changes so Home
+// Assistant sees updated entity types immediately.
+//
+//*****************************************************************************
+void
+MQTTAppRepublish(void)
+{
+    if(!MQTTClientIsReady())
+    {
+        return;
+    }
+    DINChainRead(g_pui8InSnap, sizeof(g_pui8InSnap));
+    g_iPubStep = 1;
 }
 
 //*****************************************************************************

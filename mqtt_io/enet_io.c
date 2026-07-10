@@ -49,6 +49,7 @@
 #include "mqtt_app.h"
 #include "din_chain.h"
 #include "relay_chain.h"
+#include "input_events.h"
 
 //*****************************************************************************
 //
@@ -163,6 +164,8 @@ extern void httpd_init(void);
 #define SSI_INDEX_IP        7
 #define SSI_INDEX_DIN       8
 #define SSI_INDEX_RELAY     9
+#define SSI_INDEX_IOTYPES   10
+#define SSI_INDEX_IOBINDS   11
 
 //*****************************************************************************
 //
@@ -184,7 +187,9 @@ static const char *g_pcConfigSSITags[] =
     "mqstatus",      // SSI_INDEX_STATUS
     "ipaddr",        // SSI_INDEX_IP
     "mqdin",         // SSI_INDEX_DIN
-    "mqrelay"        // SSI_INDEX_RELAY
+    "mqrelay",       // SSI_INDEX_RELAY
+    "iotypes",       // SSI_INDEX_IOTYPES
+    "iobinds"        // SSI_INDEX_IOBINDS
 };
 
 //*****************************************************************************
@@ -202,6 +207,8 @@ static const char *g_pcConfigSSITags[] =
 //*****************************************************************************
 static char *MQTTConfigCGIHandler(int32_t iIndex, int32_t i32NumParams,
                                   char *pcParam[], char *pcValue[]);
+static char *IOConfigCGIHandler(int32_t iIndex, int32_t i32NumParams,
+                                char *pcParam[], char *pcValue[]);
 
 //*****************************************************************************
 //
@@ -217,6 +224,7 @@ static int32_t SSIHandler(int32_t iIndex, char *pcInsert, int32_t iInsertLen);
 //
 //*****************************************************************************
 #define CGI_INDEX_MQTTCFG       0
+#define CGI_INDEX_IOCFG         1
 
 //*****************************************************************************
 //
@@ -228,7 +236,8 @@ static int32_t SSIHandler(int32_t iIndex, char *pcInsert, int32_t iInsertLen);
 //*****************************************************************************
 static const tCGI g_psConfigCGIURIs[] =
 {
-    { "/mqttcfg.cgi", (tCGIHandler)MQTTConfigCGIHandler } // CGI_INDEX_MQTTCFG
+    { "/mqttcfg.cgi", (tCGIHandler)MQTTConfigCGIHandler }, // CGI_INDEX_MQTTCFG
+    { "/iocfg.cgi",   (tCGIHandler)IOConfigCGIHandler   }  // CGI_INDEX_IOCFG
 };
 
 //*****************************************************************************
@@ -246,6 +255,7 @@ static const tCGI g_psConfigCGIURIs[] =
 //
 //*****************************************************************************
 #define DEFAULT_CGI_RESPONSE    "/index.shtml"
+#define IOCFG_CGI_RESPONSE      "/iocfg.shtml"
 
 //*****************************************************************************
 //
@@ -287,6 +297,7 @@ uint32_t g_ui32IPAddress;
 //*****************************************************************************
 static volatile bool g_bSysTickFlag;
 static volatile bool g_bStartMQTT;
+static volatile bool g_bRepublishMQTT;
 
 //*****************************************************************************
 //
@@ -373,8 +384,60 @@ MQTTConfigCGIHandler(int32_t iIndex, int32_t i32NumParams, char *pcParam[],
     }
 
     //
-    // Cascaded device counts (8 channels each).  The setters clamp out-of-range
-    // values to the compiled-in default.
+    // Authentication checkbox (present in the form only when ticked).
+    //
+    psCfg->ui8UseAuth =
+        (FindCGIParameter("auth", pcParam, i32NumParams) != -1) ? 1 : 0;
+
+    //
+    // Persist and ask the main loop to apply the new settings.
+    //
+    ConfigSave();
+    g_bStartMQTT = true;
+
+    return(DEFAULT_CGI_RESPONSE);
+}
+
+//*****************************************************************************
+//
+// Convert one ASCII hex character to its 4-bit value.
+//
+//*****************************************************************************
+static uint8_t
+HexNibble(char c)
+{
+    if((c >= '0') && (c <= '9'))
+    {
+        return((uint8_t)(c - '0'));
+    }
+    if((c >= 'a') && (c <= 'f'))
+    {
+        return((uint8_t)(c - 'a' + 10));
+    }
+    if((c >= 'A') && (c <= 'F'))
+    {
+        return((uint8_t)(c - 'A' + 10));
+    }
+    return(0);
+}
+
+//*****************************************************************************
+//
+// CGI handler for /iocfg.cgi.  Parses device counts and per-input type
+// bitmask from the I/O configuration form, persists them to EEPROM and
+// triggers a re-publish of HA discovery topics.
+//
+//*****************************************************************************
+static char *
+IOConfigCGIHandler(int32_t iIndex, int32_t i32NumParams, char *pcParam[],
+                   char *pcValue[])
+{
+    int32_t i32Idx;
+
+    (void)iIndex;
+
+    //
+    // Device counts.
     //
     i32Idx = FindCGIParameter("din", pcParam, i32NumParams);
     if(i32Idx != -1)
@@ -388,18 +451,72 @@ MQTTConfigCGIHandler(int32_t iIndex, int32_t i32NumParams, char *pcParam[],
     }
 
     //
-    // Authentication checkbox (present in the form only when ticked).
+    // Per-input type bitmask ("types" = hex string, 2 chars per byte of 8
+    // inputs; bit n of byte b = input b*8+n is pushbutton when set).
     //
-    psCfg->ui8UseAuth =
-        (FindCGIParameter("auth", pcParam, i32NumParams) != -1) ? 1 : 0;
+    i32Idx = FindCGIParameter("types", pcParam, i32NumParams);
+    if(i32Idx != -1)
+    {
+        const char *pcT = pcValue[i32Idx];
+        int iByte = 0;
+        while((pcT[0] != '\0') && (pcT[1] != '\0') && (iByte < 15))
+        {
+            uint8_t ui8Val = (uint8_t)((HexNibble(pcT[0]) << 4) |
+                                       HexNibble(pcT[1]));
+            int iBit;
+            for(iBit = 0; iBit < 8; iBit++)
+            {
+                ConfigSetInputPushbutton(iByte * 8 + iBit,
+                                        (ui8Val & (1u << iBit)) != 0);
+            }
+            pcT += 2;
+            iByte++;
+        }
+    }
 
     //
-    // Persist and ask the main loop to apply the new settings.
+    // Per-input binding table: "binds" = 3 hex chars per slot, 4 slots per
+    // input, for min(D*8, 16) inputs.  12-bit encoding: output[6:0]|act[4:3]|trig[2:0].
+    // "000" = unused slot.
+    //
+    i32Idx = FindCGIParameter("binds", pcParam, i32NumParams);
+    if(i32Idx != -1)
+    {
+        const char *pcB = pcValue[i32Idx];
+        int iLen = (int)strlen(pcB);
+        int iMaxIn = (int)ConfigGetDinDevices() * 8;
+        int iInput, iSlot, iPos = 0;
+        if(iMaxIn > 16) { iMaxIn = 16; }
+        for(iInput = 0; (iInput < iMaxIn) && ((iPos + 2) < iLen); iInput++)
+        {
+            for(iSlot = 0; (iSlot < CFG_BIND_SLOTS) &&
+                           ((iPos + 2) < iLen); iSlot++, iPos += 3)
+            {
+                uint16_t ui16V = (uint16_t)(((uint16_t)HexNibble(pcB[iPos]) << 8) |
+                                            ((uint16_t)HexNibble(pcB[iPos+1]) << 4) |
+                                             (uint16_t)HexNibble(pcB[iPos+2]));
+                uint8_t ui8TrigAct = (uint8_t)(ui16V & 0x1Fu);
+                uint8_t ui8Out     = (uint8_t)((ui16V >> 5) & 0x7Fu);
+                if((ui8TrigAct & 0x07u) == 0)
+                {
+                    ui8TrigAct = 0;
+                    ui8Out = BIND_OUTPUT_NONE;
+                }
+                ConfigBindingSet(iInput, iSlot, ui8TrigAct, ui8Out);
+            }
+        }
+    }
+
+    //
+    // Persist all three records and request chain + discovery update.
     //
     ConfigSave();
+    ConfigIOSave();
+    ConfigBindingSave();
     g_bStartMQTT = true;
+    g_bRepublishMQTT = true;
 
-    return(DEFAULT_CGI_RESPONSE);
+    return(IOCFG_CGI_RESPONSE);
 }
 
 //*****************************************************************************
@@ -464,6 +581,68 @@ SSIHandler(int32_t iIndex, char *pcInsert, int32_t iInsertLen)
                       (g_ui32IPAddress >> 16) & 0xff,
                       (g_ui32IPAddress >> 24) & 0xff);
             break;
+
+        case SSI_INDEX_IOTYPES:
+        {
+            //
+            // Emit one byte (2 hex chars) per DIN device, LSB = input 0 of
+            // that device.  The I/O config page uses this to seed each select.
+            //
+            static const char pcHex[] = "0123456789abcdef";
+            int iDin = (int)ConfigGetDinDevices();
+            int iByte, iBit;
+            int iPos = 0;
+            for(iByte = 0; (iByte < iDin) && ((iPos + 2) < iInsertLen);
+                iByte++)
+            {
+                uint8_t ui8Val = 0;
+                for(iBit = 0; iBit < 8; iBit++)
+                {
+                    if(ConfigInputIsPushbutton(iByte * 8 + iBit))
+                    {
+                        ui8Val |= (uint8_t)(1u << iBit);
+                    }
+                }
+                pcInsert[iPos++] = pcHex[(ui8Val >> 4) & 0xF];
+                pcInsert[iPos++] = pcHex[ui8Val & 0xF];
+            }
+            pcInsert[iPos] = '\0';
+            break;
+        }
+
+        case SSI_INDEX_IOBINDS:
+        {
+            //
+            // Emit min(D*8, 16) inputs x 4 slots x 3 hex chars = up to 192 chars.
+            // Per slot: 12-bit value = (output<<5)|(action<<3)|trigger as "XYZ".
+            // "000" = unused slot.
+            //
+            static const char pcHexB[] = "0123456789abcdef";
+            int iDin = (int)ConfigGetDinDevices();
+            int iMaxIn = iDin * 8;
+            int iInput, iSlot, iPos = 0;
+            if(iMaxIn > 16) { iMaxIn = 16; }
+            for(iInput = 0; (iInput < iMaxIn) && ((iPos + 3) < iInsertLen);
+                iInput++)
+            {
+                for(iSlot = 0; (iSlot < CFG_BIND_SLOTS) &&
+                               ((iPos + 3) < iInsertLen); iSlot++)
+                {
+                    uint8_t ta  = ConfigBindingGetTrigAct(iInput, iSlot);
+                    uint8_t out = ConfigBindingGetOutput(iInput, iSlot);
+                    uint16_t v  = 0;
+                    if(((ta & 0x07u) != 0) && (out != BIND_OUTPUT_NONE))
+                    {
+                        v = (uint16_t)(((uint16_t)out << 5) | (ta & 0x1Fu));
+                    }
+                    pcInsert[iPos++] = pcHexB[(v >> 8) & 0xFu];
+                    pcInsert[iPos++] = pcHexB[(v >> 4) & 0xFu];
+                    pcInsert[iPos++] = pcHexB[v & 0xFu];
+                }
+            }
+            pcInsert[iPos] = '\0';
+            break;
+        }
 
         default:
             usnprintf(pcInsert, iInsertLen, "??");
@@ -611,6 +790,66 @@ lwIPHostTimerHandler(void)
 
 //*****************************************************************************
 //
+// Apply all binding slots for one input that match the given trigger event.
+// Each matching slot sets a relay and publishes its new retained state.
+//
+//*****************************************************************************
+static void
+ApplyBindings(int iInput, uint8_t ui8Trig)
+{
+    int iSlot;
+
+    for(iSlot = 0; iSlot < CFG_BIND_SLOTS; iSlot++)
+    {
+        uint8_t ta  = ConfigBindingGetTrigAct(iInput, iSlot);
+        uint8_t out = ConfigBindingGetOutput(iInput, iSlot);
+        uint8_t trig = ta & 0x07u;
+        uint8_t act  = (ta >> 3) & 0x03u;
+        bool bOn;
+
+        if((trig != ui8Trig) || (out == BIND_OUTPUT_NONE) ||
+           (out >= (uint8_t)RelayChainCount()))
+        {
+            continue;
+        }
+
+        if(act == BIND_ACT_ON)
+        {
+            bOn = true;
+        }
+        else if(act == BIND_ACT_OFF)
+        {
+            bOn = false;
+        }
+        else
+        {
+            bOn = !RelayChainGet(out);
+        }
+
+        UARTprintf("Bind: in%d trig%d -> relay%d %s\n",
+                   iInput, ui8Trig, out, bOn ? "ON" : "OFF");
+        MQTTAppSetRelay(out, bOn);
+    }
+}
+
+//*****************************************************************************
+//
+// Click-event callback: publish the HA event and apply any binding.
+//
+//*****************************************************************************
+static void
+IEClickCallback(int iInput, const char *pcEvt)
+{
+    uint8_t ui8Trig;
+
+    MQTTAppPublishInputEvent(iInput, pcEvt);
+
+    ui8Trig = (pcEvt[0] == 's') ? BIND_TRIG_SINGLE : BIND_TRIG_DOUBLE;
+    ApplyBindings(iInput, ui8Trig);
+}
+
+//*****************************************************************************
+//
 // Poll the SN65HVS882 input chain and log any change over UART.  Called from
 // the periodic application tick.  This is bring-up instrumentation - MQTT
 // publishing of the inputs will hook in here next.
@@ -631,28 +870,37 @@ DINChainScan(void)
     }
 
     //
-    // Publish each channel that changed since the previous scan.  Channel c of
-    // device d maps to bit (7 - c) of byte d and to input index d*8 + c.  The
-    // first scan only primes the baseline; the initial retained state of every
-    // input is published by the MQTT post-connect sequence.
+    // Process each input.  Channel c of device d maps to bit (7-c) of byte d
+    // and to input index d*8+c.
+    //
+    // Pushbutton inputs: feed the current level to the click-detector every
+    // scan (the FSM needs a continuous level signal for debounce).
+    //
+    // Switch inputs: detect edges vs the previous scan and publish ON/OFF.
+    // The first scan only primes the baseline; initial retained states are
+    // published by the MQTT post-connect sequence.
     //
     for(i = 0; i < ui8Bytes; i++)
     {
         uint8_t ui8Diff = (uint8_t)(pui8Cur[i] ^ pui8Prev[i]);
+        int iBit;
 
-        if(bPrimed && ui8Diff)
+        for(iBit = 0; iBit < 8; iBit++)
         {
-            int iBit;
-            for(iBit = 0; iBit < 8; iBit++)
+            uint8_t ui8Mask = (uint8_t)(0x80 >> iBit);
+            int iInput = (i * 8) + iBit;
+            bool bActive = (pui8Cur[i] & ui8Mask) != 0;
+
+            if(ConfigInputIsPushbutton(iInput))
             {
-                uint8_t ui8Mask = (uint8_t)(0x80 >> iBit);
-                if(ui8Diff & ui8Mask)
-                {
-                    int iInput = (i * 8) + iBit;
-                    bool bOn = (pui8Cur[i] & ui8Mask) != 0;
-                    UARTprintf("DIN in%d: %s\n", iInput, bOn ? "ON" : "OFF");
-                    MQTTAppPublishInput(iInput, bOn);
-                }
+                InputEventsUpdate(iInput, bActive);
+            }
+            else if(bPrimed && (ui8Diff & ui8Mask))
+            {
+                UARTprintf("DIN in%d: %s\n", iInput, bActive ? "ON" : "OFF");
+                MQTTAppPublishInput(iInput, bActive);
+                ApplyBindings(iInput,
+                              bActive ? BIND_TRIG_LEVEL_ON : BIND_TRIG_LEVEL_OFF);
             }
         }
         pui8Prev[i] = pui8Cur[i];
@@ -831,6 +1079,11 @@ main(void)
     MQTTAppInit(pui8MACArray);
 
     //
+    // Wire the pushbutton click callback to the MQTT event publisher.
+    //
+    InputEventsSetCallback(IEClickCallback);
+
+    //
     // Main loop.  Networking (lwIP, httpd, MQTT receive) runs in interrupt
     // context; here we service the periodic application tick: apply pending
     // (re)connect requests and drive the MQTT keep-alive/reconnect timers.
@@ -866,10 +1119,25 @@ main(void)
         }
 
         //
+        // Re-publish HA discovery after an I/O configuration change (without
+        // a full reconnect — the broker session stays live).
+        //
+        if(g_bRepublishMQTT)
+        {
+            g_bRepublishMQTT = false;
+            MQTTAppRepublish();
+        }
+
+        //
         // Poll the input chain and the relay fault line; log any transitions.
         //
         DINChainScan();
         RelayFaultScan();
+
+        //
+        // Advance pushbutton click-detection timers.
+        //
+        InputEventsTick(SYSTICKMS);
 
         //
         // Service MQTT keep-alive, reconnect timers and the post-connect
