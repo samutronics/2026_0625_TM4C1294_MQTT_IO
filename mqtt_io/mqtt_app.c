@@ -97,7 +97,7 @@ MQTTAppPublishRelayDiscovery(int iRelay)
               "{\"~\":\"%s\",\"name\":\"Out%02d\",\"uniq_id\":\"%s_relay%d\","
               "\"cmd_t\":\"~/relay/%d/set\",\"stat_t\":\"~/relay/%d/state\","
               "\"pl_on\":\"ON\",\"pl_off\":\"OFF\",\"avty_t\":\"~/status\","
-              "\"dev\":{\"ids\":[\"%s\"],\"name\":\"TM4C1294 MQTT IO\","
+              "\"dev\":{\"ids\":[\"%s\"],\"name\":\"SaKaHub\","
               "\"mdl\":\"EK-TM4C1294XL\",\"mf\":\"TomArts\"}}",
               g_pcBase, iRelay + 1, g_pcDevId, iRelay, iRelay, iRelay, g_pcDevId);
 
@@ -120,7 +120,7 @@ MQTTAppPublishInputDiscovery(int iInput)
               "{\"~\":\"%s\",\"name\":\"In%02d\",\"uniq_id\":\"%s_input%d\","
               "\"stat_t\":\"~/input/%d/state\",\"pl_on\":\"ON\",\"pl_off\":"
               "\"OFF\",\"avty_t\":\"~/status\",\"dev\":{\"ids\":[\"%s\"],"
-              "\"name\":\"TM4C1294 MQTT IO\",\"mdl\":\"EK-TM4C1294XL\","
+              "\"name\":\"SaKaHub\",\"mdl\":\"EK-TM4C1294XL\","
               "\"mf\":\"TomArts\"}}",
               g_pcBase, iInput + 1, g_pcDevId, iInput, iInput, g_pcDevId);
 
