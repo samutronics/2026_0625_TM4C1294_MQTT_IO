@@ -862,6 +862,9 @@ static uint32_t g_ui32CfgRestoreLen = 0;
 //
 // Minimal JSON value extractor using strstr.
 //
+// Skip JSON whitespace (space, tab, CR, LF).
+#define SKIP_WS(p) while(*(p)==' '||*(p)=='\t'||*(p)=='\r'||*(p)=='\n'){(p)++;}
+
 static bool
 CfgJsonGetStr(const char *pcJson, const char *pcKey,
               char *pcVal, int iMax)
@@ -869,10 +872,14 @@ CfgJsonGetStr(const char *pcJson, const char *pcKey,
     char acSearch[48];
     const char *p;
     int i = 0;
-    usnprintf(acSearch, sizeof(acSearch), "\"%s\":\"", pcKey);
+    // Search for "key": — no trailing quote so it matches both "k":"v" and "k": "v"
+    usnprintf(acSearch, sizeof(acSearch), "\"%s\":", pcKey);
     p = strstr(pcJson, acSearch);
     if(!p) { return(false); }
     p += ustrlen(acSearch);
+    SKIP_WS(p);
+    if(*p != '"') { return(false); }
+    p++;  // skip opening quote
     while(*p && *p != '"' && i < iMax - 1) { pcVal[i++] = *p++; }
     pcVal[i] = '\0';
     return(true);
@@ -887,6 +894,7 @@ CfgJsonGetInt(const char *pcJson, const char *pcKey)
     p = strstr(pcJson, acSearch);
     if(!p) { return(-1); }
     p += ustrlen(acSearch);
+    SKIP_WS(p);
     if(*p == '-') { return(-(int32_t)ustrtoul(p + 1, NULL, 10)); }
     return((int32_t)ustrtoul(p, NULL, 10));
 }
