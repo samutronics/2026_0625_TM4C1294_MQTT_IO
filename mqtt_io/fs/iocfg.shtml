@@ -120,6 +120,19 @@ select.sel-act{min-width:76px}
     </div>
   </div>
 
+  <!-- Relay Pulse -->
+  <div class="ti-card">
+    <div class="ti-card-head"><h2>Relay Pulse</h2></div>
+    <div class="ti-card-body">
+      <div id="pulse-tbl"></div>
+      <div id="pulse-status" style="margin-top:10px;font-size:12px;color:#555"></div>
+      <div class="ti-note" style="margin-top:12px">
+        Close a relay for the specified time, then open it automatically.
+        Useful for testing door strikes, gate openers, and momentary contacts.
+      </div>
+    </div>
+  </div>
+
 </main>
 
 <div class="ti-footer">
@@ -255,6 +268,46 @@ function serialize(){
 }
 
 buildTable();
+
+function buildPulseTable() {
+  var nr = R * 8;
+  var h = '<table style="width:100%;border-collapse:collapse;font-size:12px">'
+        + '<thead><tr style="background:#1a1a1a;color:#fff">'
+        + '<th style="padding:8px 10px;text-align:left;font-size:10px;font-weight:700;letter-spacing:1px;text-transform:uppercase">Output</th>'
+        + '<th style="padding:8px 10px;text-align:left;font-size:10px;font-weight:700;letter-spacing:1px;text-transform:uppercase">Duration (ms)</th>'
+        + '<th style="padding:8px 10px"></th>'
+        + '</tr></thead><tbody>';
+  for(var i = 0; i < nr; i++) {
+    var name = 'Out' + (i < 9 ? '0' : '') + (i + 1);
+    h += '<tr style="border-bottom:1px solid #e8e8e8;background:' + (i%2?'#fff':'#f9f9f9') + '">'
+       + '<td style="padding:7px 10px;font-weight:600">' + name + '</td>'
+       + '<td style="padding:5px 10px"><input type="number" id="pms_' + i + '" value="500" min="1" max="3600000"'
+       + ' style="width:100px;padding:5px 7px;border:1px solid #bbb;font-size:12px;font-family:inherit"></td>'
+       + '<td style="padding:5px 10px"><button class="ti-btn" style="padding:6px 16px"'
+       + ' onclick="doPulse(' + i + ')">Pulse</button></td>'
+       + '</tr>';
+  }
+  h += '</tbody></table>';
+  document.getElementById('pulse-tbl').innerHTML = h;
+}
+
+async function doPulse(n) {
+  var ms = parseInt(document.getElementById('pms_' + n).value) || 500;
+  if(ms < 1) ms = 1;
+  if(ms > 3600000) ms = 3600000;
+  var status = document.getElementById('pulse-status');
+  status.textContent = 'Pulsing Out' + (n < 9 ? '0' : '') + (n + 1) + ' for ' + ms + ' ms…';
+  try {
+    var r = await fetch('/relaypulse.cgi?relay=' + n + '&ms=' + ms, {cache:'no-store'});
+    status.textContent = r.ok
+      ? 'Out' + (n < 9 ? '0' : '') + (n + 1) + ' pulsed for ' + ms + ' ms.'
+      : 'Error: server returned ' + r.status;
+  } catch(e) {
+    status.textContent = 'Network error: ' + e.message;
+  }
+}
+
+buildPulseTable();
 </script>
 </body>
 </html>

@@ -228,6 +228,8 @@ static char *NtpCfgCGIHandler(int32_t iIndex, int32_t i32NumParams,
                                char *pcParam[], char *pcValue[]);
 static char *CfgRestoreCGIHandler(int32_t iIndex, int32_t i32NumParams,
                                   char *pcParam[], char *pcValue[]);
+static char *RelayPulseCGIHandler(int32_t iIndex, int32_t i32NumParams,
+                                  char *pcParam[], char *pcValue[]);
 
 //*****************************************************************************
 //
@@ -248,6 +250,7 @@ static int32_t SSIHandler(int32_t iIndex, char *pcInsert, int32_t iInsertLen);
 #define CGI_INDEX_FACTORYRESET  3
 #define CGI_INDEX_NTPCFG        4
 #define CGI_INDEX_CFGRESTORE    5
+#define CGI_INDEX_RELAYPULSE    6
 
 //*****************************************************************************
 //
@@ -264,7 +267,8 @@ static const tCGI g_psConfigCGIURIs[] =
     { "/fwchunk.cgi",      (tCGIHandler)FwChunkCGIHandler      }, // CGI_INDEX_FWCHUNK
     { "/factoryreset.cgi",  (tCGIHandler)FactoryResetCGIHandler  }, // CGI_INDEX_FACTORYRESET
     { "/ntpcfg.cgi",       (tCGIHandler)NtpCfgCGIHandler        }, // CGI_INDEX_NTPCFG
-    { "/cfgrestore.cgi",   (tCGIHandler)CfgRestoreCGIHandler     }  // CGI_INDEX_CFGRESTORE
+    { "/cfgrestore.cgi",   (tCGIHandler)CfgRestoreCGIHandler     }, // CGI_INDEX_CFGRESTORE
+    { "/relaypulse.cgi",  (tCGIHandler)RelayPulseCGIHandler     }  // CGI_INDEX_RELAYPULSE
 };
 
 //*****************************************************************************
@@ -965,6 +969,44 @@ CfgRestoreCGIHandler(int32_t iIndex, int32_t i32NumParams,
     UARTprintf("CfgRestore: settings applied. Rebooting...\n");
     g_bOTAReset = true;
     return("/cfgrestore_ok.shtml");
+}
+
+//*****************************************************************************
+//
+// RelayPulseCGIHandler - Trigger a timed relay pulse from the web UI.
+//
+// URL: /relaypulse.cgi?relay=N&ms=D
+//   relay = 0-based relay index
+//   ms    = pulse duration in milliseconds (1..3 600 000)
+//
+//*****************************************************************************
+static char *
+RelayPulseCGIHandler(int32_t iIndex, int32_t i32NumParams,
+                     char *pcParam[], char *pcValue[])
+{
+    int32_t  iRelayIdx, iMsIdx;
+    uint32_t ui32Relay, ui32Ms;
+
+    iRelayIdx = FindCGIParameter("relay", pcParam, i32NumParams);
+    iMsIdx    = FindCGIParameter("ms",    pcParam, i32NumParams);
+
+    if(iRelayIdx < 0 || iMsIdx < 0)
+    {
+        return(IOCFG_CGI_RESPONSE);
+    }
+
+    ui32Relay = ustrtoul(pcValue[iRelayIdx], NULL, 10);
+    ui32Ms    = ustrtoul(pcValue[iMsIdx],    NULL, 10);
+
+    if(ui32Ms == 0 || ui32Ms > 3600000u ||
+       ui32Relay >= (uint32_t)RelayChainCount())
+    {
+        return(IOCFG_CGI_RESPONSE);
+    }
+
+    UARTprintf("Pulse: relay %u for %u ms (web UI)\n", ui32Relay, ui32Ms);
+    RelayPulseStart((int)ui32Relay, ui32Ms);
+    return(IOCFG_CGI_RESPONSE);
 }
 
 //*****************************************************************************
