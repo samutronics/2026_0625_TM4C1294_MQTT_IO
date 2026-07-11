@@ -53,6 +53,9 @@ textarea:focus{border-color:#cc0000}
 <input type="hidden" id="h_relay"  value="<!--#mqrelay-->">
 <input type="hidden" id="h_ntp"    value="<!--#ntpsvr-->">
 <input type="hidden" id="h_tz"     value="<!--#ntptz-->">
+<input type="hidden" id="h_pass"   value="<!--#mqpass-->">
+<input type="hidden" id="h_types"  value="<!--#iotypes-->">
+<input type="hidden" id="h_binds"  value="<!--#iobinds-->"  >
 </head>
 <body>
 
@@ -88,8 +91,8 @@ textarea:focus{border-color:#cc0000}
         <button class="ti-btn" onclick="doDownload()">Download JSON</button>
       </div>
       <div class="ti-note">
-        Includes: MQTT broker, device counts, NTP settings.<br>
-        Password is <b>not</b> included — re-enter it after restore if auth is enabled.
+        Includes: MQTT broker (incl. password), device counts, NTP settings,
+        input types (Switch/Pushbutton), and bindings for the first 16 inputs.
       </div>
     </div>
   </div>
@@ -127,12 +130,15 @@ function buildJson() {
     port:   parseInt(document.getElementById('h_port').value) || 1883,
     client: document.getElementById('h_client').value,
     user:   document.getElementById('h_user').value,
+    pass:   document.getElementById('h_pass').value,
     topic:  document.getElementById('h_topic').value,
     auth:   authVal,
     din:    parseInt(document.getElementById('h_din').value)   || 1,
     relay:  parseInt(document.getElementById('h_relay').value) || 1,
     ntp:    document.getElementById('h_ntp').value,
-    tz:     parseInt(document.getElementById('h_tz').value)    || 0
+    tz:     parseInt(document.getElementById('h_tz').value)    || 0,
+    types:  document.getElementById('h_types').value,
+    binds:  document.getElementById('h_binds').value
   }, null, 2);
 }
 

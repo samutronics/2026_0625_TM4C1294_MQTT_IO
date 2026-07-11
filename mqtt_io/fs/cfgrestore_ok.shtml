@@ -32,8 +32,7 @@ p{font-size:14px;color:#555;margin-bottom:8px}
   <div id="cnt">10</div>
   <p>Reconnecting in <span id="sec">10</span> seconds&hellip;</p>
   <div class="ti-note">
-    If auth was enabled, remember to re-enter the MQTT password after reconnecting
-    (passwords are not included in backups). Navigate to
+    All settings including password, input types, and bindings have been restored. Navigate to
     <b>http://<!--#ipaddr-->/</b> after the device comes back online.
   </div>
 </main>

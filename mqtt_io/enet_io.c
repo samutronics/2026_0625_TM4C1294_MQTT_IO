@@ -173,6 +173,7 @@ extern void httpd_init(void);
 #define SSI_INDEX_NTPTIME   13
 #define SSI_INDEX_NTPSVR    14
 #define SSI_INDEX_NTPTZ     15
+#define SSI_INDEX_MQPASS    16
 
 //*****************************************************************************
 //
@@ -200,7 +201,8 @@ static const char *g_pcConfigSSITags[] =
     "fwver",         // SSI_INDEX_FWVER  — build timestamp YYYYMMDDHHMM
     "ntptime",       // SSI_INDEX_NTPTIME — current time HH:MM:SS
     "ntpsvr",        // SSI_INDEX_NTPSVR  — NTP server hostname
-    "ntptz"          // SSI_INDEX_NTPTZ   — UTC offset (signed integer)
+    "ntptz",         // SSI_INDEX_NTPTZ   — UTC offset (signed integer)
+    "mqpass"         // SSI_INDEX_MQPASS  — MQTT password (for backup page)
 };
 
 //*****************************************************************************
@@ -967,6 +969,8 @@ CfgRestoreCGIHandler(int32_t iIndex, int32_t i32NumParams,
         { ustrncpy(psCfg->pcClientID, acTmp, CFG_CLIENTID_LEN - 1); }
         if(CfgJsonGetStr(g_acCfgRestoreBuf, "user", acTmp, CFG_USER_LEN))
         { ustrncpy(psCfg->pcUser, acTmp, CFG_USER_LEN - 1); }
+        if(CfgJsonGetStr(g_acCfgRestoreBuf, "pass", acTmp, CFG_PASS_LEN))
+        { ustrncpy(psCfg->pcPass, acTmp, CFG_PASS_LEN - 1); }
         if(CfgJsonGetStr(g_acCfgRestoreBuf, "topic", acTmp, CFG_TOPIC_LEN))
         { ustrncpy(psCfg->pcTopicBase, acTmp, CFG_TOPIC_LEN - 1); }
         i32Val = CfgJsonGetInt(g_acCfgRestoreBuf, "port");
@@ -991,6 +995,72 @@ CfgRestoreCGIHandler(int32_t iIndex, int32_t i32NumParams,
         i32Val = CfgJsonGetInt(g_acCfgRestoreBuf, "tz");
         if(i32Val >= -12 && i32Val <= 14) { ConfigNtpSetTz((int8_t)i32Val); }
         ConfigNtpSave();
+    }
+
+    //
+    // Restore per-input types (Switch / Pushbutton) from hex string.
+    // Format: 2 hex chars per SN65HVS882 device (1 bit per input channel).
+    //
+    {
+        char acTypes[64];
+        if(CfgJsonGetStr(g_acCfgRestoreBuf, "types", acTypes, sizeof(acTypes)))
+        {
+            const char *p = acTypes;
+            int b, bit;
+            for(b = 0; b < CFG_DIN_MAX_DEVICES && p[0] && p[1]; b++, p += 2)
+            {
+                uint8_t ui8Val = (uint8_t)((HexNibble(p[0]) << 4) |
+                                            HexNibble(p[1]));
+                for(bit = 0; bit < 8; bit++)
+                {
+                    ConfigSetInputPushbutton(b * 8 + bit,
+                                             (ui8Val >> bit) & 1 ? true : false);
+                }
+            }
+            ConfigIOSave();
+            UARTprintf("CfgRestore: input types restored.\n");
+        }
+    }
+
+    //
+    // Restore input-to-relay bindings from hex string.
+    // Format: 3 hex chars per slot, 4 slots per input, up to 16 inputs.
+    // Encoding: bits 11:5 = output, bits 4:3 = action, bits 2:0 = trigger.
+    //
+    {
+        char acBinds[256];
+        if(CfgJsonGetStr(g_acCfgRestoreBuf, "binds", acBinds, sizeof(acBinds)))
+        {
+            const char *p    = acBinds;
+            int         iLen = (int)ustrlen(acBinds);
+            int         iIn, iSlot;
+            int         iMaxIn = (int)ConfigGetDinDevices() * 8;
+            if(iMaxIn > 16) { iMaxIn = 16; }
+            for(iIn = 0; iIn < iMaxIn; iIn++)
+            {
+                for(iSlot = 0; iSlot < CFG_BIND_SLOTS; iSlot++)
+                {
+                    uint16_t v;
+                    uint8_t  ui8TrigAct, ui8Out;
+                    if((p - acBinds) + 3 > iLen) { goto done_binds; }
+                    v = (uint16_t)(((uint16_t)HexNibble(p[0]) << 8) |
+                                   ((uint16_t)HexNibble(p[1]) << 4) |
+                                    (uint16_t)HexNibble(p[2]));
+                    p += 3;
+                    //
+                    // Low 5 bits of v encode trig (2:0) and act (4:3),
+                    // matching the ui8TrigAct field layout in tIOBindings.
+                    //
+                    ui8TrigAct = (uint8_t)(v & 0x1Fu);
+                    ui8Out = ((v & 7u) == 0) ? BIND_OUTPUT_NONE
+                                              : (uint8_t)((v >> 5) & 0x7Fu);
+                    ConfigBindingSet(iIn, iSlot, ui8TrigAct, ui8Out);
+                }
+            }
+            done_binds:
+            ConfigBindingSave();
+            UARTprintf("CfgRestore: bindings restored.\n");
+        }
     }
 
     UARTprintf("CfgRestore: settings applied. Rebooting...\n");
@@ -1202,6 +1272,10 @@ SSIHandler(int32_t iIndex, char *pcInsert, int32_t iInsertLen)
         case SSI_INDEX_NTPTZ:
             usnprintf(pcInsert, iInsertLen, "%d",
                       (int)ConfigNtpGet()->i8TzOffset);
+            break;
+
+        case SSI_INDEX_MQPASS:
+            usnprintf(pcInsert, iInsertLen, "%s", ConfigGet()->pcPass);
             break;
 
         default:
