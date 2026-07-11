@@ -176,7 +176,8 @@ function updateTrig(i){
     var h=pb
       ?"<option value='3'"+(cur===3?" selected":"")+">Single</option>"
        +"<option value='4'"+(cur===4?" selected":"")+">Double</option>"
-      :"<option value='1'"+(cur===1?" selected":"")+">Level ON</option>"
+      :"<option value='5'"+(cur===5||cur===0?" selected":"")+">On Change</option>"
+       +"<option value='1'"+(cur===1?" selected":"")+">Level ON</option>"
        +"<option value='2'"+(cur===2?" selected":"")+">Level OFF</option>";
     ts.innerHTML=h;
   }
@@ -219,7 +220,8 @@ function buildTable(){
         h+="<option value='3'"+(trig===3?" selected":"")+">Single</option>"
           +"<option value='4'"+(trig===4?" selected":"")+">Double</option>";
       } else {
-        h+="<option value='1'"+(trig===1?" selected":"")+">Level ON</option>"
+        h+="<option value='5'"+(trig===5||trig===0?" selected":"")+">On Change</option>"
+          +"<option value='1'"+(trig===1?" selected":"")+">Level ON</option>"
           +"<option value='2'"+(trig===2?" selected":"")+">Level OFF</option>";
       }
       h+="</select></td>";

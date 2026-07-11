@@ -143,6 +143,7 @@ bool ConfigIOSave(void);
 #define BIND_TRIG_LEVEL_OFF 2
 #define BIND_TRIG_SINGLE    3
 #define BIND_TRIG_DOUBLE    4
+#define BIND_TRIG_CHANGE    5   // fire on any level transition (switch inputs)
 
 #define BIND_ACT_ON         0
 #define BIND_ACT_OFF        1

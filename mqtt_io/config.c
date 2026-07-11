@@ -162,9 +162,25 @@ ConfigInit(void)
     if((g_sBindings.ui32Magic != CFG_IO_BINDINGS_MAGIC) ||
        (g_sBindings.ui32Crc != ui32Crc))
     {
+        int iIn, iSlot;
         memset(&g_sBindings, 0, sizeof(tIOBindings));
         g_sBindings.ui32Magic = CFG_IO_BINDINGS_MAGIC;
-        UARTprintf("No binding config in EEPROM; all bindings disabled.\n");
+        //
+        // Default all slots to "On Change" trigger with no output.
+        // The output stays BIND_OUTPUT_NONE so nothing fires until the user
+        // picks a relay; the trigger is already set so they only need one
+        // selection in the web UI.
+        //
+        for(iIn = 0; iIn < CFG_MAX_INPUTS; iIn++)
+        {
+            for(iSlot = 0; iSlot < CFG_BIND_SLOTS; iSlot++)
+            {
+                int iIdx = iIn * CFG_BIND_SLOTS + iSlot;
+                g_sBindings.ui8TrigAct[iIdx] = BIND_TRIG_CHANGE; // act=0 (ON), trig=5
+                g_sBindings.ui8Output[iIdx]  = BIND_OUTPUT_NONE;
+            }
+        }
+        UARTprintf("No binding config in EEPROM; defaults: On Change, output=None.\n");
     }
 
     //

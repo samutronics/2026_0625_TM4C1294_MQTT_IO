@@ -1442,8 +1442,19 @@ ApplyBindings(int iInput, uint8_t ui8Trig)
         uint8_t act  = (ta >> 3) & 0x03u;
         bool bOn;
 
-        if((trig != ui8Trig) || (out == BIND_OUTPUT_NONE) ||
-           (out >= (uint8_t)RelayChainCount()))
+        //
+        // Skip slot if: trigger doesn't match, output is not configured, or
+        // output index is out of range.  BIND_TRIG_CHANGE matches both
+        // BIND_TRIG_LEVEL_ON and BIND_TRIG_LEVEL_OFF so it fires on any
+        // state transition of a switch-type input.
+        //
+        if(out == BIND_OUTPUT_NONE || out >= (uint8_t)RelayChainCount())
+        {
+            continue;
+        }
+        if(trig != ui8Trig &&
+           !(trig == BIND_TRIG_CHANGE &&
+             (ui8Trig == BIND_TRIG_LEVEL_ON || ui8Trig == BIND_TRIG_LEVEL_OFF)))
         {
             continue;
         }
