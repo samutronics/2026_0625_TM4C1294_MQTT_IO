@@ -50,6 +50,7 @@
 #include "din_chain.h"
 #include "relay_chain.h"
 #include "input_events.h"
+#include "ota.h"
 
 //*****************************************************************************
 //
@@ -209,6 +210,8 @@ static char *MQTTConfigCGIHandler(int32_t iIndex, int32_t i32NumParams,
                                   char *pcParam[], char *pcValue[]);
 static char *IOConfigCGIHandler(int32_t iIndex, int32_t i32NumParams,
                                 char *pcParam[], char *pcValue[]);
+static char *FwChunkCGIHandler(int32_t iIndex, int32_t i32NumParams,
+                               char *pcParam[], char *pcValue[]);
 
 //*****************************************************************************
 //
@@ -225,6 +228,7 @@ static int32_t SSIHandler(int32_t iIndex, char *pcInsert, int32_t iInsertLen);
 //*****************************************************************************
 #define CGI_INDEX_MQTTCFG       0
 #define CGI_INDEX_IOCFG         1
+#define CGI_INDEX_FWCHUNK       2
 
 //*****************************************************************************
 //
@@ -236,8 +240,9 @@ static int32_t SSIHandler(int32_t iIndex, char *pcInsert, int32_t iInsertLen);
 //*****************************************************************************
 static const tCGI g_psConfigCGIURIs[] =
 {
-    { "/mqttcfg.cgi", (tCGIHandler)MQTTConfigCGIHandler }, // CGI_INDEX_MQTTCFG
-    { "/iocfg.cgi",   (tCGIHandler)IOConfigCGIHandler   }  // CGI_INDEX_IOCFG
+    { "/mqttcfg.cgi",   (tCGIHandler)MQTTConfigCGIHandler }, // CGI_INDEX_MQTTCFG
+    { "/iocfg.cgi",    (tCGIHandler)IOConfigCGIHandler   }, // CGI_INDEX_IOCFG
+    { "/fwchunk.cgi",  (tCGIHandler)FwChunkCGIHandler    }  // CGI_INDEX_FWCHUNK
 };
 
 //*****************************************************************************
@@ -298,6 +303,16 @@ uint32_t g_ui32IPAddress;
 static volatile bool g_bSysTickFlag;
 static volatile bool g_bStartMQTT;
 static volatile bool g_bRepublishMQTT;
+static volatile bool g_bOTAReset;       // set by FwChunkCGIHandler on last chunk
+
+//
+// OTA upload state — written from the CGI handler (Ethernet ISR context).
+//
+static uint32_t g_ui32OTAWriteAddr;
+static uint32_t g_ui32OTASize;
+static uint8_t  g_ui8OTAAlignBuf[4];
+static uint32_t g_ui32OTAAlignLen;
+static uint32_t g_ui32OTALastErasedPage;
 
 //*****************************************************************************
 //
@@ -526,6 +541,141 @@ IOConfigCGIHandler(int32_t iIndex, int32_t i32NumParams, char *pcParam[],
 // the g_pcConfigSSITags array. This function writes the substitution text
 // into the pcInsert array, writing no more than iInsertLen characters.
 //
+//*****************************************************************************
+//*****************************************************************************
+//
+// FwChunkCGIHandler - Receives one hex-encoded binary chunk of an OTA image.
+//
+// URL format (GET):
+//   /fwchunk.cgi?seq=N&last=0&data=HEXHEX...
+//
+// seq=0 initialises the upload and erases the header page + first image page.
+// Each subsequent request appends to the staging flash.
+// last=1 flushes the alignment buffer, computes CRC32, writes the OTA header
+// and EEPROM flag, then schedules a system reset.
+//
+// The hex-encoded payload carries up to ~494 binary bytes per request
+// (limited by LWIP_HTTPD_MAX_URI_LEN = 1024).
+//
+//*****************************************************************************
+static char *
+FwChunkCGIHandler(int32_t iIndex, int32_t i32NumParams,
+                  char *pcParam[], char *pcValue[])
+{
+    int32_t  iSeqIdx, iLastIdx, iDataIdx;
+    int32_t  iSeqNum;
+    bool     bLast;
+    const char *pcData;
+    uint32_t ui32DataHexLen, i;
+    uint32_t ui32PageAddr;
+    tOTAHeader sHdr;
+    uint32_t ui32Crc;
+
+    iSeqIdx  = FindCGIParameter("seq",  pcParam, i32NumParams);
+    iLastIdx = FindCGIParameter("last", pcParam, i32NumParams);
+    iDataIdx = FindCGIParameter("data", pcParam, i32NumParams);
+
+    if(iSeqIdx < 0 || iDataIdx < 0)
+    {
+        return(DEFAULT_CGI_RESPONSE);
+    }
+
+    iSeqNum = (int32_t)ustrtoul(pcValue[iSeqIdx], NULL, 10);
+    bLast   = (iLastIdx >= 0) && (pcValue[iLastIdx][0] == '1');
+    pcData  = pcValue[iDataIdx];
+    ui32DataHexLen = ustrlen(pcData) & ~1u; // must be even (pairs of hex chars)
+
+    //
+    // First chunk: reset state and pre-erase the header and first image page.
+    //
+    if(iSeqNum == 0)
+    {
+        g_ui32OTAWriteAddr    = OTA_IMAGE_ADDR;
+        g_ui32OTASize         = 0;
+        g_ui32OTAAlignLen     = 0;
+        g_ui32OTALastErasedPage = OTA_IMAGE_ADDR;
+
+        MAP_FlashErase(OTA_HEADER_ADDR);
+        MAP_FlashErase(OTA_IMAGE_ADDR);
+
+        UARTprintf("OTA: upload started.\n");
+    }
+
+    //
+    // Decode hex bytes and write to staging flash in 4-byte aligned words.
+    //
+    for(i = 0; i < ui32DataHexLen; i += 2)
+    {
+        g_ui8OTAAlignBuf[g_ui32OTAAlignLen++] =
+            (uint8_t)((HexNibble(pcData[i]) << 4) | HexNibble(pcData[i + 1]));
+        g_ui32OTASize++;
+
+        if(g_ui32OTAAlignLen == 4)
+        {
+            //
+            // Erase the next 16 KB page when the write pointer first enters it.
+            //
+            ui32PageAddr = g_ui32OTAWriteAddr & ~(0x4000u - 1u);
+            if(ui32PageAddr > g_ui32OTALastErasedPage)
+            {
+                MAP_FlashErase(ui32PageAddr);
+                g_ui32OTALastErasedPage = ui32PageAddr;
+            }
+
+            MAP_FlashProgram((uint32_t *)(uintptr_t)g_ui8OTAAlignBuf,
+                             g_ui32OTAWriteAddr, 4);
+            g_ui32OTAWriteAddr += 4;
+            g_ui32OTAAlignLen   = 0;
+        }
+    }
+
+    //
+    // Last chunk: flush any partial word (pad with 0xFF), then finalise.
+    //
+    if(bLast)
+    {
+        if(g_ui32OTAAlignLen > 0)
+        {
+            while(g_ui32OTAAlignLen < 4)
+            {
+                g_ui8OTAAlignBuf[g_ui32OTAAlignLen++] = 0xFF;
+            }
+            MAP_FlashProgram((uint32_t *)(uintptr_t)g_ui8OTAAlignBuf,
+                             g_ui32OTAWriteAddr, 4);
+            g_ui32OTAWriteAddr += 4;
+            g_ui32OTAAlignLen   = 0;
+        }
+
+        //
+        // CRC32 the staged image and write the header to 0x80000.
+        //
+        ui32Crc = ConfigCRC32((const uint8_t *)OTA_IMAGE_ADDR, g_ui32OTASize);
+
+        sHdr.ui32Magic = OTA_HDR_MAGIC;
+        sHdr.ui32Size  = g_ui32OTASize;
+        sHdr.ui32CRC32 = ui32Crc;
+        sHdr.ui32Rsvd  = 0;
+        MAP_FlashProgram((uint32_t *)(uintptr_t)&sHdr,
+                         OTA_HEADER_ADDR, sizeof(tOTAHeader));
+
+        //
+        // Set EEPROM pending flag so the next boot applies the update.
+        //
+        OtaSetPending(g_ui32OTASize);
+
+        UARTprintf("OTA: %u bytes, CRC=0x%08x. Rebooting...\n",
+                   g_ui32OTASize, ui32Crc);
+
+        //
+        // Signal the main loop to reset after the HTTP response is sent.
+        //
+        g_bOTAReset = true;
+        return("/fwupdate_ok.shtml");
+    }
+
+    return("/fwupdate.shtml");
+}
+
 //*****************************************************************************
 static int32_t
 SSIHandler(int32_t iIndex, char *pcInsert, int32_t iInsertLen)
@@ -980,6 +1130,12 @@ main(void)
     ConfigInit();
 
     //
+    // If a firmware update was staged before the last reset, validate it and
+    // apply it now (OtaCheckAndApply calls OtaApply which never returns).
+    //
+    OtaCheckAndApply();
+
+    //
     // Configure SysTick for a periodic interrupt.
     //
     MAP_SysTickPeriodSet(g_ui32SysClock / SYSTICKHZ);
@@ -1090,6 +1246,17 @@ main(void)
     //
     while(1)
     {
+        //
+        // If the OTA last-chunk handler requested a reset, wait one tick so
+        // the HTTP response is delivered, then reset into the new firmware.
+        //
+        if(g_bOTAReset)
+        {
+            g_bOTAReset = false;
+            MAP_SysCtlDelay(g_ui32SysClock / 3);  // ~333 ms — let TCP flush
+            MAP_SysCtlReset();
+        }
+
         //
         // Wait for the next SysTick (~10 ms) application tick.
         //

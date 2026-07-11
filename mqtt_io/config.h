@@ -85,6 +85,7 @@ tMQTTConfig;
 // written back until ConfigSave() is called).
 //
 void ConfigInit(void);
+uint32_t ConfigCRC32(const uint8_t *pui8Data, uint32_t ui32Len);
 
 //
 // Return a pointer to the live in-RAM configuration.
@@ -161,6 +162,14 @@ uint8_t ConfigBindingGetOutput (int iInput, int iSlot);
 void    ConfigBindingSet(int iInput, int iSlot,
                          uint8_t ui8TrigAct, uint8_t ui8Output);
 bool    ConfigBindingSave(void);
+
+//
+// OTA pending flag in EEPROM.  Thin wrappers called by ota.c.
+// The actual addresses / magic are defined in ota.h (included by ota.c).
+//
+bool    ConfigOtaIsPending(void);
+void    ConfigOtaSetPending(uint32_t ui32Size);
+void    ConfigOtaClearPending(void);
 
 #ifdef __cplusplus
 }

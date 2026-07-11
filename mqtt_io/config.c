@@ -13,6 +13,7 @@
 #include "driverlib/sysctl.h"
 #include "utils/uartstdio.h"
 #include "config.h"
+#include "ota.h"
 
 //
 // Marker identifying a valid configuration record ("MQT1").
@@ -37,7 +38,7 @@ static tIOBindings g_sBindings;
 // stored record.  A small table-less implementation is sufficient here.
 //
 //*****************************************************************************
-static uint32_t
+uint32_t
 ConfigCRC32(const uint8_t *pui8Data, uint32_t ui32Len)
 {
     uint32_t ui32Crc, ui32Bit, ui32I;
@@ -378,4 +379,33 @@ ConfigBindingSave(void)
 
     UARTprintf("Binding table saved to EEPROM.\n");
     return(true);
+}
+
+//*****************************************************************************
+//
+// OTA pending flag — a 2-word record at CFG_OTA_EEPROM_ADDR:
+//   word 0: magic (OTA_EEPROM_MAGIC) when pending, else 0
+//   word 1: firmware size in bytes
+//
+//*****************************************************************************
+bool
+ConfigOtaIsPending(void)
+{
+    uint32_t ui32Magic;
+    EEPROMRead(&ui32Magic, CFG_OTA_EEPROM_ADDR, sizeof(uint32_t));
+    return(ui32Magic == OTA_EEPROM_MAGIC);
+}
+
+void
+ConfigOtaSetPending(uint32_t ui32Size)
+{
+    uint32_t aui32Rec[2] = { OTA_EEPROM_MAGIC, ui32Size };
+    EEPROMProgram(aui32Rec, CFG_OTA_EEPROM_ADDR, sizeof(aui32Rec));
+}
+
+void
+ConfigOtaClearPending(void)
+{
+    uint32_t aui32Rec[2] = { 0u, 0u };
+    EEPROMProgram(aui32Rec, CFG_OTA_EEPROM_ADDR, sizeof(aui32Rec));
 }

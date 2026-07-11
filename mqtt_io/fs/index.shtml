@@ -72,6 +72,7 @@ main{padding:28px 24px;max-width:620px}
 <div class="ti-nav">
   <a href="/index.shtml" class="active">Settings</a>
   <a href="/iocfg.shtml">I/O Config</a>
+  <a href="/fwupdate.shtml">Firmware</a>
 </div>
 
 <div class="ti-status">

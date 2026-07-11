@@ -39,14 +39,21 @@
 #define APP_BASE 0x00000000
 #define RAM_BASE 0x20000000
 
-/* System memory map */
+/* System memory map
+ *
+ * Flash is split into two halves:
+ *   FLASH  (0x00000 - 0x7FFFF)  512 KB  application code
+ *   OTA    (0x80000 - 0xFFFFF)  512 KB  OTA staging (header at 0x80000, image at 0x84000)
+ *
+ * Limiting FLASH to 512 KB keeps the linker from placing sections into the OTA
+ * region and provides a compile-time guard against firmware size creep.
+ */
 
 MEMORY
 {
-    /* Application stored in and executes from internal flash */
-    FLASH (RX) : origin = APP_BASE, length = 0x00100000
-    /* Application uses internal RAM for data */
-    SRAM (RWX) : origin = 0x20000000, length = 0x00040000
+    FLASH   (RX)  : origin = APP_BASE,    length = 0x00080000  /* 512 KB app slot  */
+    OTA     (R)   : origin = 0x00080000,  length = 0x00080000  /* 512 KB OTA area  */
+    SRAM    (RWX) : origin = 0x20000000,  length = 0x00040000  /* 256 KB SRAM      */
 }
 
 /* Section allocation in memory */
@@ -60,17 +67,14 @@ SECTIONS
     .cinit  :   > FLASH
     .pinit  :   > FLASH
     .init_array : > FLASH
+    .TI.ramfunc : {} load=FLASH, run=SRAM, table(BINIT)
+    .binit      :    > FLASH
 
     .vtable :   > RAM_BASE
     .data   :   > SRAM
     .bss    :   > SRAM
     .sysmem :   > SRAM
     .stack  :   > SRAM
-#ifdef  __TI_COMPILER_VERSION__
-#if     __TI_COMPILER_VERSION__ >= 15009000
-    .TI.ramfunc : {} load=FLASH, run=SRAM, table(BINIT)
-#endif
-#endif
 }
 
 __STACK_TOP = __stack + 1024;
