@@ -377,16 +377,42 @@ async function doPulse(n) {
 
 buildPulseTable();
 
-// Collect all visible name fields, save them via /nameset.cgi, then
-// submit the form.  Prevents the race where async saveName() fetches
-// get cancelled by page navigation triggered by form submission.
-function saveAllNamesAndSubmit(e) {
-  e.preventDefault();
+// Save all changed name fields sequentially, then submit the form.
+//
+// Why sequential (not Promise.all):
+//   MEMP_NUM_TCP_PCB=16 — firing all 32 saves at once overflows the
+//   device TCP pool; excess connections are silently dropped, errors
+//   are swallowed, and Promise.all resolves with nothing saved.
+//
+// Why e.preventDefault() works inside an async function:
+//   It runs synchronously before the first await, so the browser never
+//   sees the default form submission.
+//
+async function saveAllNamesAndSubmit(e) {
+  e.preventDefault();                // must be synchronous — runs before first await
   if(!serialize()) { return; }
-  var saves = [];
-  for(var i=0;i<D*8;i++){var el=document.getElementById('iname_'+i);if(el)saves.push(saveName('in',i,el.value));}
-  for(var k=0;k<R*8;k++){var el=document.getElementById('oname_'+k);if(el)saves.push(saveName('out',k,el.value));}
-  Promise.all(saves).then(function(){document.getElementById('iof').submit();});
+
+  var i, k, el, v, orig;
+
+  for(i=0; i<D*8; i++) {
+    el = document.getElementById('iname_'+i);
+    if(!el) continue;
+    v    = el.value.trim();
+    orig = getInName(i) || ('In'+pad2(i+1));
+    if(v === orig) continue;                          // unchanged — skip
+    await saveName('in', i, v===('In'+pad2(i+1)) ? '' : v);
+  }
+
+  for(k=0; k<R*8; k++) {
+    el = document.getElementById('oname_'+k);
+    if(!el) continue;
+    v    = el.value.trim();
+    orig = getOutName(k) || ('Out'+pad2(k+1));
+    if(v === orig) continue;                          // unchanged — skip
+    await saveName('out', k, v===('Out'+pad2(k+1)) ? '' : v);
+  }
+
+  document.getElementById('iof').submit();           // programmatic submit skips onsubmit
 }
 </script>
 <script>
