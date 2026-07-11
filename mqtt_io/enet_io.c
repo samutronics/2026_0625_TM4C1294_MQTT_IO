@@ -230,6 +230,8 @@ static char *CfgRestoreCGIHandler(int32_t iIndex, int32_t i32NumParams,
                                   char *pcParam[], char *pcValue[]);
 static char *RelayPulseCGIHandler(int32_t iIndex, int32_t i32NumParams,
                                   char *pcParam[], char *pcValue[]);
+static char *RebootCGIHandler(int32_t iIndex, int32_t i32NumParams,
+                               char *pcParam[], char *pcValue[]);
 
 //*****************************************************************************
 //
@@ -251,6 +253,7 @@ static int32_t SSIHandler(int32_t iIndex, char *pcInsert, int32_t iInsertLen);
 #define CGI_INDEX_NTPCFG        4
 #define CGI_INDEX_CFGRESTORE    5
 #define CGI_INDEX_RELAYPULSE    6
+#define CGI_INDEX_REBOOT        7
 
 //*****************************************************************************
 //
@@ -268,7 +271,8 @@ static const tCGI g_psConfigCGIURIs[] =
     { "/factoryreset.cgi",  (tCGIHandler)FactoryResetCGIHandler  }, // CGI_INDEX_FACTORYRESET
     { "/ntpcfg.cgi",       (tCGIHandler)NtpCfgCGIHandler        }, // CGI_INDEX_NTPCFG
     { "/cfgrestore.cgi",   (tCGIHandler)CfgRestoreCGIHandler     }, // CGI_INDEX_CFGRESTORE
-    { "/relaypulse.cgi",  (tCGIHandler)RelayPulseCGIHandler     }  // CGI_INDEX_RELAYPULSE
+    { "/relaypulse.cgi",  (tCGIHandler)RelayPulseCGIHandler     }, // CGI_INDEX_RELAYPULSE
+    { "/reboot.cgi",      (tCGIHandler)RebootCGIHandler         }  // CGI_INDEX_REBOOT
 };
 
 //*****************************************************************************
@@ -719,6 +723,21 @@ FactoryResetCGIHandler(int32_t iIndex, int32_t i32NumParams,
     ConfigFactoryReset();
     g_bOTAReset = true;
     return("/factoryreset_ok.shtml");
+}
+
+//*****************************************************************************
+//
+// RebootCGIHandler - Graceful reboot from the web UI.
+//
+//*****************************************************************************
+static char *
+RebootCGIHandler(int32_t iIndex, int32_t i32NumParams,
+                 char *pcParam[], char *pcValue[])
+{
+    UARTprintf("Reboot triggered via web UI.\n");
+    MQTTAppStop();
+    g_bOTAReset = true;   // reuse the "reset after HTTP response" flag
+    return("/fwupdate_ok.shtml");   // reuse the "rebooting..." countdown page
 }
 
 //*****************************************************************************

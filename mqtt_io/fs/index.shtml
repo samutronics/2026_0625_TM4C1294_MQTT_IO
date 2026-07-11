@@ -179,12 +179,18 @@ main{padding:28px 24px;max-width:620px}
         Erase all EEPROM settings (MQTT broker, I/O configuration, input bindings).
         The device reboots with factory defaults.
       </p>
-      <button class="ti-btn" style="background:#cc0000"
-        onclick="if(confirm('Erase ALL settings and reboot with factory defaults?\n\nThis cannot be undone.')){window.location.href='/factoryreset.cgi'}">
-        Factory Reset
-      </button>
+      <div style="display:flex;gap:12px;flex-wrap:wrap;align-items:center">
+        <button class="ti-btn" style="background:#cc0000"
+          onclick="if(confirm('Erase ALL settings and reboot with factory defaults?\n\nThis cannot be undone.')){window.location.href='/factoryreset.cgi'}">
+          Factory Reset
+        </button>
+        <button class="ti-btn" style="background:#555"
+          onclick="if(confirm('Reboot the device now?')){window.location.href='/reboot.cgi'}">
+          Reboot
+        </button>
+      </div>
       <p style="font-size:11px;color:#aaa;margin-top:12px">
-        Hardware: hold <b>SW1</b> for 5 s at power-up for the same effect.
+        Hardware: hold <b>SW1</b> for 5 s at power-up for a factory reset.
         LED&nbsp;D1 blinks as a countdown indicator.
       </p>
     </div>
