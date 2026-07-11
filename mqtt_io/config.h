@@ -188,6 +188,45 @@ void ConfigNtpSetTz(int8_t i8Offset);
 bool ConfigNtpSave(void);
 
 //
+// Per-channel names — stored at CFG_IO_NAMES_ADDR.
+// Each name is CFG_NAME_LEN bytes (11 printable chars + NUL).
+// 64 input + 64 output names = 1536 B of payload; record total = 1544 B.
+//
+#define CFG_NAMES_MAX_INPUTS    64
+#define CFG_NAMES_MAX_OUTPUTS   64
+#define CFG_NAME_LEN            12      // 11 printable + NUL
+#define CFG_IO_NAMES_ADDR       1304
+#define CFG_IO_NAMES_MAGIC      0x4E4D4553u  // "NMES"
+
+typedef struct
+{
+    uint32_t ui32Magic;
+    char     pcInputNames [CFG_NAMES_MAX_INPUTS ][CFG_NAME_LEN];  // 768 B
+    char     pcOutputNames[CFG_NAMES_MAX_OUTPUTS][CFG_NAME_LEN];  // 768 B
+    uint32_t ui32Crc;
+}
+tIONames;   // 4 + 768 + 768 + 4 = 1544 B, ends at addr 2848
+
+//
+// Read a channel name.  Returns a pointer to the live in-RAM string (never
+// NULL; empty string means the channel has no custom name).
+//
+const char *ConfigGetInputName(int iInput);
+const char *ConfigGetOutputName(int iOutput);
+
+//
+// Update one channel name in RAM and write it directly to EEPROM (targeted
+// 12-byte write + CRC update — avoids a full 1544-byte rewrite).
+//
+void ConfigNameSet(bool bInput, int iIdx, const char *pcName);
+
+//
+// Persist the complete tIONames record to EEPROM.  Normally ConfigNameSet()
+// is sufficient; this is provided for bulk restore.
+//
+bool ConfigNamesSave(void);
+
+//
 // OTA pending flag in EEPROM.  Thin wrappers called by ota.c.
 // The actual addresses / magic are defined in ota.h (included by ota.c).
 //

@@ -174,6 +174,8 @@ extern void httpd_init(void);
 #define SSI_INDEX_NTPSVR    14
 #define SSI_INDEX_NTPTZ     15
 #define SSI_INDEX_MQPASS    16
+#define SSI_INDEX_INNAMES   17
+#define SSI_INDEX_OUTNAMES  18
 
 //*****************************************************************************
 //
@@ -202,7 +204,9 @@ static const char *g_pcConfigSSITags[] =
     "ntptime",       // SSI_INDEX_NTPTIME — current time HH:MM:SS
     "ntpsvr",        // SSI_INDEX_NTPSVR  — NTP server hostname
     "ntptz",         // SSI_INDEX_NTPTZ   — UTC offset (signed integer)
-    "mqpass"         // SSI_INDEX_MQPASS  — MQTT password (for backup page)
+    "mqpass",        // SSI_INDEX_MQPASS  — MQTT password (for backup page)
+    "innames",       // SSI_INDEX_INNAMES  — packed input names (12 B each, up to 16)
+    "outnames"       // SSI_INDEX_OUTNAMES — packed output names (12 B each, up to 16)
 };
 
 //*****************************************************************************
@@ -234,6 +238,8 @@ static char *RelayPulseCGIHandler(int32_t iIndex, int32_t i32NumParams,
                                   char *pcParam[], char *pcValue[]);
 static char *RebootCGIHandler(int32_t iIndex, int32_t i32NumParams,
                                char *pcParam[], char *pcValue[]);
+static char *NameSetCGIHandler(int32_t iIndex, int32_t i32NumParams,
+                                char *pcParam[], char *pcValue[]);
 
 //*****************************************************************************
 //
@@ -256,6 +262,7 @@ static int32_t SSIHandler(int32_t iIndex, char *pcInsert, int32_t iInsertLen);
 #define CGI_INDEX_CFGRESTORE    5
 #define CGI_INDEX_RELAYPULSE    6
 #define CGI_INDEX_REBOOT        7
+#define CGI_INDEX_NAMESET       8
 
 //*****************************************************************************
 //
@@ -274,7 +281,8 @@ static const tCGI g_psConfigCGIURIs[] =
     { "/ntpcfg.cgi",       (tCGIHandler)NtpCfgCGIHandler        }, // CGI_INDEX_NTPCFG
     { "/cfgrestore.cgi",   (tCGIHandler)CfgRestoreCGIHandler     }, // CGI_INDEX_CFGRESTORE
     { "/relaypulse.cgi",  (tCGIHandler)RelayPulseCGIHandler     }, // CGI_INDEX_RELAYPULSE
-    { "/reboot.cgi",      (tCGIHandler)RebootCGIHandler         }  // CGI_INDEX_REBOOT
+    { "/reboot.cgi",      (tCGIHandler)RebootCGIHandler         }, // CGI_INDEX_REBOOT
+    { "/nameset.cgi",     (tCGIHandler)NameSetCGIHandler        }  // CGI_INDEX_NAMESET
 };
 
 //*****************************************************************************
@@ -738,8 +746,72 @@ RebootCGIHandler(int32_t iIndex, int32_t i32NumParams,
 {
     UARTprintf("Reboot triggered via web UI.\n");
     MQTTAppStop();
-    g_bOTAReset = true;   // reuse the "reset after HTTP response" flag
-    return("/fwupdate_ok.shtml");   // reuse the "rebooting..." countdown page
+    g_bOTAReset = true;
+    return("/fwupdate_ok.shtml");
+}
+
+//*****************************************************************************
+//
+// UrlDecodeParam - decode a CGI parameter value that may contain + (space)
+// or %XX sequences produced by JS encodeURIComponent / form encoding.
+//
+//*****************************************************************************
+static void
+UrlDecodeParam(const char *pcIn, char *pcOut, int iMax)
+{
+    int iIn = 0, iOut = 0;
+    while(pcIn[iIn] && iOut < iMax - 1)
+    {
+        if(pcIn[iIn] == '+')
+        {
+            pcOut[iOut++] = ' ';
+            iIn++;
+        }
+        else if(pcIn[iIn] == '%' && pcIn[iIn + 1] && pcIn[iIn + 2])
+        {
+            pcOut[iOut++] = (char)((HexNibble(pcIn[iIn + 1]) << 4) |
+                                    HexNibble(pcIn[iIn + 2]));
+            iIn += 3;
+        }
+        else
+        {
+            pcOut[iOut++] = pcIn[iIn++];
+        }
+    }
+    pcOut[iOut] = '\0';
+}
+
+//*****************************************************************************
+//
+// NameSetCGIHandler - save a custom name for one input or output channel.
+//
+// URL: /nameset.cgi?type=in|out&idx=N&name=<URL-encoded string, max 11 chars>
+//
+//*****************************************************************************
+static char *
+NameSetCGIHandler(int32_t iIndex, int32_t i32NumParams,
+                  char *pcParam[], char *pcValue[])
+{
+    int32_t iTypeIdx, iIdxIdx, iNameIdx;
+    bool    bInput;
+    int     iIdx;
+    char    acName[CFG_NAME_LEN];
+
+    iTypeIdx = FindCGIParameter("type", pcParam, i32NumParams);
+    iIdxIdx  = FindCGIParameter("idx",  pcParam, i32NumParams);
+    iNameIdx = FindCGIParameter("name", pcParam, i32NumParams);
+
+    if(iTypeIdx < 0 || iIdxIdx < 0 || iNameIdx < 0)
+    {
+        return(IOCFG_CGI_RESPONSE);
+    }
+
+    bInput = (pcValue[iTypeIdx][0] == 'i');
+    iIdx   = (int)ustrtoul(pcValue[iIdxIdx], NULL, 10);
+    UrlDecodeParam(pcValue[iNameIdx], acName, CFG_NAME_LEN);
+    ConfigNameSet(bInput, iIdx, acName);
+    UARTprintf("Name: %s[%d] = \"%s\"\n", bInput ? "in" : "out", iIdx, acName);
+    return(IOCFG_CGI_RESPONSE);
 }
 
 //*****************************************************************************
@@ -1277,6 +1349,32 @@ SSIHandler(int32_t iIndex, char *pcInsert, int32_t iInsertLen)
         case SSI_INDEX_MQPASS:
             usnprintf(pcInsert, iInsertLen, "%s", ConfigGet()->pcPass);
             break;
+
+        case SSI_INDEX_INNAMES:
+        case SSI_INDEX_OUTNAMES:
+        {
+            //
+            // Emit up to 16 names, each exactly CFG_NAME_LEN (12) chars,
+            // space-padded — no NUL separators so JS can index by i*12.
+            //
+            bool bIn = (iIndex == SSI_INDEX_INNAMES);
+            int iCount = bIn ? (int)ConfigGetDinDevices() * 8
+                             : (int)ConfigGetRelayDevices() * 8;
+            int i, j, iPos = 0;
+            if(iCount > 16) { iCount = 16; }
+            for(i = 0; i < iCount && (iPos + CFG_NAME_LEN) <= iInsertLen; i++)
+            {
+                const char *pcN = bIn ? ConfigGetInputName(i)
+                                      : ConfigGetOutputName(i);
+                for(j = 0; j < CFG_NAME_LEN; j++)
+                {
+                    pcInsert[iPos++] = (j < CFG_NAME_LEN - 1 && pcN[j])
+                                       ? pcN[j] : ' ';
+                }
+            }
+            pcInsert[iPos] = '\0';
+            break;
+        }
 
         default:
             usnprintf(pcInsert, iInsertLen, "??");

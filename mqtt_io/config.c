@@ -32,6 +32,7 @@ static tMQTTConfig g_sConfig;
 static tIOSettings g_sIOSettings;
 static tIOBindings g_sBindings;
 static tNTPConfig  g_sNTPConfig;
+static tIONames    g_sIONames;
 
 //*****************************************************************************
 //
@@ -199,6 +200,22 @@ ConfigInit(void)
                 CFG_NTP_SERVER_LEN - 1);
         g_sNTPConfig.i8TzOffset = 0;
         UARTprintf("No NTP config in EEPROM; using pool.ntp.org UTC+0.\n");
+    }
+
+    //
+    // Load channel names record.  On invalid or missing record all names
+    // default to empty strings (channels use generated labels In01/Out01).
+    //
+    EEPROMRead((uint32_t *)&g_sIONames, CFG_IO_NAMES_ADDR,
+               sizeof(tIONames));
+    ui32Crc = ConfigCRC32((const uint8_t *)&g_sIONames,
+                          sizeof(tIONames) - sizeof(uint32_t));
+    if((g_sIONames.ui32Magic != CFG_IO_NAMES_MAGIC) ||
+       (g_sIONames.ui32Crc != ui32Crc))
+    {
+        memset(&g_sIONames, 0, sizeof(tIONames));
+        g_sIONames.ui32Magic = CFG_IO_NAMES_MAGIC;
+        UARTprintf("No names config in EEPROM; using generated labels.\n");
     }
 }
 
@@ -462,6 +479,7 @@ ConfigFactoryReset(void)
     EEPROMProgram(&ui32Zero, CFG_IO_BINDINGS_ADDR, 4);   // tIOBindings
     EEPROMProgram(&ui32Zero, CFG_OTA_EEPROM_ADDR,  4);   // OTA flag
     EEPROMProgram(&ui32Zero, CFG_NTP_EEPROM_ADDR,  4);   // tNTPConfig
+    EEPROMProgram(&ui32Zero, CFG_IO_NAMES_ADDR,    4);   // tIONames
     UARTprintf("Config: EEPROM factory reset complete.\n");
 }
 
@@ -487,6 +505,80 @@ void
 ConfigNtpSetTz(int8_t i8Offset)
 {
     g_sNTPConfig.i8TzOffset = i8Offset;
+}
+
+//*****************************************************************************
+//
+// Channel name accessors and EEPROM update.
+//
+//*****************************************************************************
+const char *
+ConfigGetInputName(int iInput)
+{
+    if(iInput < 0 || iInput >= CFG_NAMES_MAX_INPUTS)
+    {
+        return("");
+    }
+    return(g_sIONames.pcInputNames[iInput]);
+}
+
+const char *
+ConfigGetOutputName(int iOutput)
+{
+    if(iOutput < 0 || iOutput >= CFG_NAMES_MAX_OUTPUTS)
+    {
+        return("");
+    }
+    return(g_sIONames.pcOutputNames[iOutput]);
+}
+
+//
+// Write one name entry to RAM, then do a targeted 12-byte EEPROM write plus
+// a 4-byte CRC update — no full 1544-byte rewrite needed.
+//
+void
+ConfigNameSet(bool bInput, int iIdx, const char *pcName)
+{
+    char     *pcDst;
+    uint32_t ui32Addr;
+
+    if(bInput)
+    {
+        if(iIdx < 0 || iIdx >= CFG_NAMES_MAX_INPUTS) { return; }
+        pcDst    = g_sIONames.pcInputNames[iIdx];
+        ui32Addr = CFG_IO_NAMES_ADDR + 4u +
+                   (uint32_t)iIdx * CFG_NAME_LEN;
+    }
+    else
+    {
+        if(iIdx < 0 || iIdx >= CFG_NAMES_MAX_OUTPUTS) { return; }
+        pcDst    = g_sIONames.pcOutputNames[iIdx];
+        ui32Addr = CFG_IO_NAMES_ADDR + 4u +
+                   CFG_NAMES_MAX_INPUTS * CFG_NAME_LEN +
+                   (uint32_t)iIdx * CFG_NAME_LEN;
+    }
+
+    memset(pcDst, 0, CFG_NAME_LEN);
+    strncpy(pcDst, pcName, CFG_NAME_LEN - 1);
+
+    EEPROMProgram((uint32_t *)(uintptr_t)pcDst, ui32Addr, CFG_NAME_LEN);
+
+    g_sIONames.ui32Crc = ConfigCRC32((const uint8_t *)&g_sIONames,
+                                      sizeof(tIONames) - sizeof(uint32_t));
+    EEPROMProgram(&g_sIONames.ui32Crc,
+                  CFG_IO_NAMES_ADDR + sizeof(tIONames) - sizeof(uint32_t), 4u);
+}
+
+bool
+ConfigNamesSave(void)
+{
+    uint32_t ui32Rc;
+    g_sIONames.ui32Magic = CFG_IO_NAMES_MAGIC;
+    g_sIONames.ui32Crc   = ConfigCRC32((const uint8_t *)&g_sIONames,
+                                        sizeof(tIONames) - sizeof(uint32_t));
+    ui32Rc = EEPROMProgram((uint32_t *)&g_sIONames, CFG_IO_NAMES_ADDR,
+                           sizeof(tIONames));
+    return(ui32Rc == 0);
 }
 
 bool
