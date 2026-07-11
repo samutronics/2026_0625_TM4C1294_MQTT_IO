@@ -54,8 +54,10 @@ textarea:focus{border-color:#cc0000}
 <input type="hidden" id="h_ntp"    value="<!--#ntpsvr-->">
 <input type="hidden" id="h_tz"     value="<!--#ntptz-->">
 <input type="hidden" id="h_pass"   value="<!--#mqpass-->">
-<input type="hidden" id="h_types"  value="<!--#iotypes-->">
-<input type="hidden" id="h_binds"  value="<!--#iobinds-->"  >
+<input type="hidden" id="h_types"   value="<!--#iotypes-->">
+<input type="hidden" id="h_binds"   value="<!--#iobinds-->">
+<input type="hidden" id="h_innames" value="<!--#innames-->">
+<input type="hidden" id="h_outnames" value="<!--#outnames-->">
 </head>
 <body>
 
@@ -92,7 +94,7 @@ textarea:focus{border-color:#cc0000}
       </div>
       <div class="ti-note">
         Includes: MQTT broker (incl. password), device counts, NTP settings,
-        input types (Switch/Pushbutton), and bindings for the first 16 inputs.
+        input types, bindings, and custom channel names (first 16 inputs/outputs).
       </div>
     </div>
   </div>
@@ -137,8 +139,10 @@ function buildJson() {
     relay:  parseInt(document.getElementById('h_relay').value) || 1,
     ntp:    document.getElementById('h_ntp').value,
     tz:     parseInt(document.getElementById('h_tz').value)    || 0,
-    types:  document.getElementById('h_types').value,
-    binds:  document.getElementById('h_binds').value
+    types:   document.getElementById('h_types').value,
+    binds:   document.getElementById('h_binds').value,
+    innames: document.getElementById('h_innames').value,
+    outnames:document.getElementById('h_outnames').value
   }, null, 2);
 }
 

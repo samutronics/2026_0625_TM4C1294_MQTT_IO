@@ -947,7 +947,7 @@ NtpCfgCGIHandler(int32_t iIndex, int32_t i32NumParams,
 // is parsed as JSON and the broker + NTP EEPROM records are updated.
 //
 //*****************************************************************************
-#define CFG_RESTORE_BUF_SIZE 1024
+#define CFG_RESTORE_BUF_SIZE 2048
 
 static char    g_acCfgRestoreBuf[CFG_RESTORE_BUF_SIZE];
 static uint32_t g_ui32CfgRestoreLen = 0;
@@ -1132,6 +1132,47 @@ CfgRestoreCGIHandler(int32_t iIndex, int32_t i32NumParams,
             done_binds:
             ConfigBindingSave();
             UARTprintf("CfgRestore: bindings restored.\n");
+        }
+    }
+
+    //
+    // Restore channel names from packed 12-char-per-slot strings.
+    // Trailing spaces are stripped; empty names are skipped (keep existing).
+    //
+    {
+        char acPacked[256];
+        int  iMax, i;
+
+        if(CfgJsonGetStr(g_acCfgRestoreBuf, "innames", acPacked, sizeof(acPacked)))
+        {
+            iMax = (int)ConfigGetDinDevices() * 8;
+            if(iMax > CFG_NAMES_MAX_INPUTS) { iMax = CFG_NAMES_MAX_INPUTS; }
+            for(i = 0; i < iMax && (i + 1) * CFG_NAME_LEN <= (int)ustrlen(acPacked); i++)
+            {
+                char acName[CFG_NAME_LEN];
+                int  k = CFG_NAME_LEN - 2;
+                memcpy(acName, acPacked + i * CFG_NAME_LEN, CFG_NAME_LEN - 1);
+                acName[CFG_NAME_LEN - 1] = '\0';
+                while(k >= 0 && acName[k] == ' ') { acName[k--] = '\0'; }
+                if(acName[0]) { ConfigNameSet(true, i, acName); }
+            }
+            UARTprintf("CfgRestore: input names restored.\n");
+        }
+
+        if(CfgJsonGetStr(g_acCfgRestoreBuf, "outnames", acPacked, sizeof(acPacked)))
+        {
+            iMax = (int)ConfigGetRelayDevices() * 8;
+            if(iMax > CFG_NAMES_MAX_OUTPUTS) { iMax = CFG_NAMES_MAX_OUTPUTS; }
+            for(i = 0; i < iMax && (i + 1) * CFG_NAME_LEN <= (int)ustrlen(acPacked); i++)
+            {
+                char acName[CFG_NAME_LEN];
+                int  k = CFG_NAME_LEN - 2;
+                memcpy(acName, acPacked + i * CFG_NAME_LEN, CFG_NAME_LEN - 1);
+                acName[CFG_NAME_LEN - 1] = '\0';
+                while(k >= 0 && acName[k] == ' ') { acName[k--] = '\0'; }
+                if(acName[0]) { ConfigNameSet(false, i, acName); }
+            }
+            UARTprintf("CfgRestore: output names restored.\n");
         }
     }
 
