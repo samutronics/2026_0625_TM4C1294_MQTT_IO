@@ -31,6 +31,7 @@
 static tMQTTConfig g_sConfig;
 static tIOSettings g_sIOSettings;
 static tIOBindings g_sBindings;
+static tNTPConfig  g_sNTPConfig;
 
 //*****************************************************************************
 //
@@ -164,6 +165,24 @@ ConfigInit(void)
         memset(&g_sBindings, 0, sizeof(tIOBindings));
         g_sBindings.ui32Magic = CFG_IO_BINDINGS_MAGIC;
         UARTprintf("No binding config in EEPROM; all bindings disabled.\n");
+    }
+
+    //
+    // Load NTP configuration.  Default: pool.ntp.org, TZ offset 0.
+    //
+    EEPROMRead((uint32_t *)&g_sNTPConfig, CFG_NTP_EEPROM_ADDR,
+               sizeof(tNTPConfig));
+    ui32Crc = ConfigCRC32((const uint8_t *)&g_sNTPConfig,
+                          sizeof(tNTPConfig) - sizeof(uint32_t));
+    if((g_sNTPConfig.ui32Magic != CFG_NTP_MAGIC) ||
+       (g_sNTPConfig.ui32Crc != ui32Crc))
+    {
+        memset(&g_sNTPConfig, 0, sizeof(tNTPConfig));
+        g_sNTPConfig.ui32Magic = CFG_NTP_MAGIC;
+        strncpy(g_sNTPConfig.pcServer, "pool.ntp.org",
+                CFG_NTP_SERVER_LEN - 1);
+        g_sNTPConfig.i8TzOffset = 0;
+        UARTprintf("No NTP config in EEPROM; using pool.ntp.org UTC+0.\n");
     }
 }
 
@@ -426,5 +445,48 @@ ConfigFactoryReset(void)
     EEPROMProgram(&ui32Zero, CFG_IO_EEPROM_ADDR,   4);   // tIOSettings
     EEPROMProgram(&ui32Zero, CFG_IO_BINDINGS_ADDR, 4);   // tIOBindings
     EEPROMProgram(&ui32Zero, CFG_OTA_EEPROM_ADDR,  4);   // OTA flag
+    EEPROMProgram(&ui32Zero, CFG_NTP_EEPROM_ADDR,  4);   // tNTPConfig
     UARTprintf("Config: EEPROM factory reset complete.\n");
+}
+
+//*****************************************************************************
+//
+// NTP configuration accessors.
+//
+//*****************************************************************************
+const tNTPConfig *
+ConfigNtpGet(void)
+{
+    return(&g_sNTPConfig);
+}
+
+void
+ConfigNtpSetServer(const char *pcServer)
+{
+    memset(g_sNTPConfig.pcServer, 0, CFG_NTP_SERVER_LEN);
+    strncpy(g_sNTPConfig.pcServer, pcServer, CFG_NTP_SERVER_LEN - 1);
+}
+
+void
+ConfigNtpSetTz(int8_t i8Offset)
+{
+    g_sNTPConfig.i8TzOffset = i8Offset;
+}
+
+bool
+ConfigNtpSave(void)
+{
+    uint32_t ui32Rc;
+    g_sNTPConfig.ui32Magic = CFG_NTP_MAGIC;
+    g_sNTPConfig.ui32Crc   = ConfigCRC32((const uint8_t *)&g_sNTPConfig,
+                                          sizeof(tNTPConfig) - sizeof(uint32_t));
+    ui32Rc = EEPROMProgram((uint32_t *)&g_sNTPConfig, CFG_NTP_EEPROM_ADDR,
+                           sizeof(tNTPConfig));
+    if(ui32Rc != 0)
+    {
+        UARTprintf("EEPROM write failed (NTP config, 0x%x).\n", ui32Rc);
+        return(false);
+    }
+    UARTprintf("NTP config saved to EEPROM.\n");
+    return(true);
 }

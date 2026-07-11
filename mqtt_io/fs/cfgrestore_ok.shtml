@@ -1,0 +1,50 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>SaKaHub &mdash; Config Restored</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:"Segoe UI","Helvetica Neue",Arial,sans-serif;background:#f2f2f2;color:#333;font-size:14px;line-height:1.5}
+.ti-header{background:#1a1a1a;height:50px;display:flex;align-items:center;justify-content:space-between;padding:0 24px}
+.ti-brand-name{font-size:20px;font-weight:700;color:#fff;letter-spacing:.5px}
+.ti-brand-name em{color:#cc0000;font-style:normal}
+.ti-tagline{font-size:10px;color:#777;letter-spacing:1.5px;text-transform:uppercase}
+main{padding:48px 24px;max-width:520px;margin:0 auto;text-align:center}
+.ok-icon{font-size:48px;color:#22a832;margin-bottom:20px}
+h1{font-size:22px;font-weight:700;color:#1a1a1a;margin-bottom:12px}
+p{font-size:14px;color:#555;margin-bottom:8px}
+#cnt{font-size:28px;font-weight:700;color:#cc0000;margin:20px 0}
+.ti-note{margin-top:24px;padding:11px 14px;background:#f7f7f7;border-left:3px solid #cc0000;font-size:12px;color:#555;line-height:1.7;text-align:left}
+</style>
+</head>
+<body>
+<div class="ti-header">
+  <span class="ti-brand-name"><em>Sa</em>Ka<em>Hub</em></span>
+  <span class="ti-tagline">MQTT I/O Gateway</span>
+</div>
+<main>
+  <div class="ok-icon">&#10003;</div>
+  <h1>Configuration Restored</h1>
+  <p>Settings have been applied and saved to EEPROM.</p>
+  <p>The device is rebooting with the restored configuration.</p>
+  <div id="cnt">10</div>
+  <p>Reconnecting in <span id="sec">10</span> seconds&hellip;</p>
+  <div class="ti-note">
+    If auth was enabled, remember to re-enter the MQTT password after reconnecting
+    (passwords are not included in backups). Navigate to
+    <b>http://<!--#ipaddr-->/</b> after the device comes back online.
+  </div>
+</main>
+<script>
+var s = 10;
+var t = setInterval(function(){
+  s--;
+  document.getElementById('cnt').textContent = s;
+  document.getElementById('sec').textContent = s;
+  if(s <= 0){ clearInterval(t); window.location.href = 'http://<!--#ipaddr-->/'; }
+}, 1000);
+</script>
+</body>
+</html>

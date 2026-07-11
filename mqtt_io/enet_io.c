@@ -50,6 +50,8 @@
 #include "din_chain.h"
 #include "relay_chain.h"
 #include "input_events.h"
+#include "relay_pulse.h"
+#include "sntp_client.h"
 #include "ota.h"
 
 //*****************************************************************************
@@ -168,6 +170,9 @@ extern void httpd_init(void);
 #define SSI_INDEX_IOTYPES   10
 #define SSI_INDEX_IOBINDS   11
 #define SSI_INDEX_FWVER     12
+#define SSI_INDEX_NTPTIME   13
+#define SSI_INDEX_NTPSVR    14
+#define SSI_INDEX_NTPTZ     15
 
 //*****************************************************************************
 //
@@ -192,7 +197,10 @@ static const char *g_pcConfigSSITags[] =
     "mqrelay",       // SSI_INDEX_RELAY
     "iotypes",       // SSI_INDEX_IOTYPES
     "iobinds",       // SSI_INDEX_IOBINDS
-    "fwver"          // SSI_INDEX_FWVER  — build timestamp YYYYMMDDHHMM
+    "fwver",         // SSI_INDEX_FWVER  — build timestamp YYYYMMDDHHMM
+    "ntptime",       // SSI_INDEX_NTPTIME — current time HH:MM:SS
+    "ntpsvr",        // SSI_INDEX_NTPSVR  — NTP server hostname
+    "ntptz"          // SSI_INDEX_NTPTZ   — UTC offset (signed integer)
 };
 
 //*****************************************************************************
@@ -216,6 +224,10 @@ static char *FwChunkCGIHandler(int32_t iIndex, int32_t i32NumParams,
                                char *pcParam[], char *pcValue[]);
 static char *FactoryResetCGIHandler(int32_t iIndex, int32_t i32NumParams,
                                     char *pcParam[], char *pcValue[]);
+static char *NtpCfgCGIHandler(int32_t iIndex, int32_t i32NumParams,
+                               char *pcParam[], char *pcValue[]);
+static char *CfgRestoreCGIHandler(int32_t iIndex, int32_t i32NumParams,
+                                  char *pcParam[], char *pcValue[]);
 
 //*****************************************************************************
 //
@@ -234,6 +246,8 @@ static int32_t SSIHandler(int32_t iIndex, char *pcInsert, int32_t iInsertLen);
 #define CGI_INDEX_IOCFG         1
 #define CGI_INDEX_FWCHUNK       2
 #define CGI_INDEX_FACTORYRESET  3
+#define CGI_INDEX_NTPCFG        4
+#define CGI_INDEX_CFGRESTORE    5
 
 //*****************************************************************************
 //
@@ -248,7 +262,9 @@ static const tCGI g_psConfigCGIURIs[] =
     { "/mqttcfg.cgi",   (tCGIHandler)MQTTConfigCGIHandler }, // CGI_INDEX_MQTTCFG
     { "/iocfg.cgi",    (tCGIHandler)IOConfigCGIHandler   }, // CGI_INDEX_IOCFG
     { "/fwchunk.cgi",      (tCGIHandler)FwChunkCGIHandler      }, // CGI_INDEX_FWCHUNK
-    { "/factoryreset.cgi", (tCGIHandler)FactoryResetCGIHandler }  // CGI_INDEX_FACTORYRESET
+    { "/factoryreset.cgi",  (tCGIHandler)FactoryResetCGIHandler  }, // CGI_INDEX_FACTORYRESET
+    { "/ntpcfg.cgi",       (tCGIHandler)NtpCfgCGIHandler        }, // CGI_INDEX_NTPCFG
+    { "/cfgrestore.cgi",   (tCGIHandler)CfgRestoreCGIHandler     }  // CGI_INDEX_CFGRESTORE
 };
 
 //*****************************************************************************
@@ -788,6 +804,170 @@ CheckHWFactoryReset(void)
 }
 
 //*****************************************************************************
+//
+// NtpCfgCGIHandler - Save NTP server + TZ offset then restart SNTP.
+//
+//*****************************************************************************
+static char *
+NtpCfgCGIHandler(int32_t iIndex, int32_t i32NumParams,
+                 char *pcParam[], char *pcValue[])
+{
+    int32_t iIdx;
+    char    acServer[CFG_NTP_SERVER_LEN];
+    int32_t i32Tz = 0;
+
+    iIdx = FindCGIParameter("ntp", pcParam, i32NumParams);
+    if(iIdx >= 0)
+    {
+        GetStringParam("ntp", pcParam, pcValue, i32NumParams,
+                       acServer, CFG_NTP_SERVER_LEN);
+        ConfigNtpSetServer(acServer);
+    }
+
+    iIdx = FindCGIParameter("tz", pcParam, i32NumParams);
+    if(iIdx >= 0)
+    {
+        i32Tz = (int32_t)ustrtoul(pcValue[iIdx], NULL, 10);
+        if(pcValue[iIdx][0] == '-') { i32Tz = -i32Tz; }
+        if(i32Tz < -12) { i32Tz = -12; }
+        if(i32Tz >  14) { i32Tz =  14; }
+        ConfigNtpSetTz((int8_t)i32Tz);
+    }
+
+    ConfigNtpSave();
+    SntpInit();
+    UARTprintf("NTP: config updated, re-syncing.\n");
+    return(DEFAULT_CGI_RESPONSE);
+}
+
+//*****************************************************************************
+//
+// CfgRestoreCGIHandler - Restore broker + NTP config from a JSON chunk stream.
+//
+// URL: /cfgrestore.cgi?seq=N&last=0|1&data=HEXHEX...
+//
+// Hex-decoded bytes accumulate in g_acCfgRestoreBuf.  On last=1 the buffer
+// is parsed as JSON and the broker + NTP EEPROM records are updated.
+//
+//*****************************************************************************
+#define CFG_RESTORE_BUF_SIZE 1024
+
+static char    g_acCfgRestoreBuf[CFG_RESTORE_BUF_SIZE];
+static uint32_t g_ui32CfgRestoreLen = 0;
+
+//
+// Minimal JSON value extractor using strstr.
+//
+static bool
+CfgJsonGetStr(const char *pcJson, const char *pcKey,
+              char *pcVal, int iMax)
+{
+    char acSearch[48];
+    const char *p;
+    int i = 0;
+    usnprintf(acSearch, sizeof(acSearch), "\"%s\":\"", pcKey);
+    p = strstr(pcJson, acSearch);
+    if(!p) { return(false); }
+    p += ustrlen(acSearch);
+    while(*p && *p != '"' && i < iMax - 1) { pcVal[i++] = *p++; }
+    pcVal[i] = '\0';
+    return(true);
+}
+
+static int32_t
+CfgJsonGetInt(const char *pcJson, const char *pcKey)
+{
+    char acSearch[48];
+    const char *p;
+    usnprintf(acSearch, sizeof(acSearch), "\"%s\":", pcKey);
+    p = strstr(pcJson, acSearch);
+    if(!p) { return(-1); }
+    p += ustrlen(acSearch);
+    if(*p == '-') { return(-(int32_t)ustrtoul(p + 1, NULL, 10)); }
+    return((int32_t)ustrtoul(p, NULL, 10));
+}
+
+static char *
+CfgRestoreCGIHandler(int32_t iIndex, int32_t i32NumParams,
+                     char *pcParam[], char *pcValue[])
+{
+    int32_t iSeqIdx, iLastIdx, iDataIdx;
+    bool    bLast;
+    const char *pcData;
+    uint32_t ui32DataHexLen, i;
+
+    iSeqIdx  = FindCGIParameter("seq",  pcParam, i32NumParams);
+    iLastIdx = FindCGIParameter("last", pcParam, i32NumParams);
+    iDataIdx = FindCGIParameter("data", pcParam, i32NumParams);
+
+    if(iSeqIdx < 0 || iDataIdx < 0) { return(DEFAULT_CGI_RESPONSE); }
+
+    bLast  = (iLastIdx >= 0) && (pcValue[iLastIdx][0] == '1');
+    pcData = pcValue[iDataIdx];
+    ui32DataHexLen = ustrlen(pcData) & ~1u;
+
+    if(ustrtoul(pcValue[iSeqIdx], NULL, 10) == 0)
+    {
+        g_ui32CfgRestoreLen = 0;
+    }
+
+    for(i = 0; i < ui32DataHexLen && g_ui32CfgRestoreLen < CFG_RESTORE_BUF_SIZE - 1u; i += 2)
+    {
+        g_acCfgRestoreBuf[g_ui32CfgRestoreLen++] =
+            (char)((HexNibble(pcData[i]) << 4) | HexNibble(pcData[i + 1]));
+    }
+
+    if(!bLast) { return(DEFAULT_CGI_RESPONSE); }
+
+    g_acCfgRestoreBuf[g_ui32CfgRestoreLen] = '\0';
+    UARTprintf("CfgRestore: %u bytes JSON received.\n", g_ui32CfgRestoreLen);
+
+    //
+    // Parse and apply broker config.
+    //
+    {
+        tMQTTConfig *psCfg = ConfigGet();
+        char        acTmp[64];
+        int32_t     i32Val;
+
+        if(CfgJsonGetStr(g_acCfgRestoreBuf, "host", acTmp, CFG_HOST_LEN))
+        { ustrncpy(psCfg->pcHost, acTmp, CFG_HOST_LEN - 1); }
+        if(CfgJsonGetStr(g_acCfgRestoreBuf, "client", acTmp, CFG_CLIENTID_LEN))
+        { ustrncpy(psCfg->pcClientID, acTmp, CFG_CLIENTID_LEN - 1); }
+        if(CfgJsonGetStr(g_acCfgRestoreBuf, "user", acTmp, CFG_USER_LEN))
+        { ustrncpy(psCfg->pcUser, acTmp, CFG_USER_LEN - 1); }
+        if(CfgJsonGetStr(g_acCfgRestoreBuf, "topic", acTmp, CFG_TOPIC_LEN))
+        { ustrncpy(psCfg->pcTopicBase, acTmp, CFG_TOPIC_LEN - 1); }
+        i32Val = CfgJsonGetInt(g_acCfgRestoreBuf, "port");
+        if(i32Val > 0 && i32Val <= 65535) { psCfg->ui16Port = (uint16_t)i32Val; }
+        i32Val = CfgJsonGetInt(g_acCfgRestoreBuf, "auth");
+        if(i32Val >= 0) { psCfg->ui8UseAuth = (uint8_t)(i32Val != 0); }
+        i32Val = CfgJsonGetInt(g_acCfgRestoreBuf, "din");
+        if(i32Val > 0) { ConfigSetDinDevices((uint8_t)i32Val); }
+        i32Val = CfgJsonGetInt(g_acCfgRestoreBuf, "relay");
+        if(i32Val > 0) { ConfigSetRelayDevices((uint8_t)i32Val); }
+        ConfigSave();
+    }
+
+    //
+    // Parse and apply NTP config.
+    //
+    {
+        char    acTmp[CFG_NTP_SERVER_LEN];
+        int32_t i32Val;
+        if(CfgJsonGetStr(g_acCfgRestoreBuf, "ntp", acTmp, CFG_NTP_SERVER_LEN))
+        { ConfigNtpSetServer(acTmp); }
+        i32Val = CfgJsonGetInt(g_acCfgRestoreBuf, "tz");
+        if(i32Val >= -12 && i32Val <= 14) { ConfigNtpSetTz((int8_t)i32Val); }
+        ConfigNtpSave();
+    }
+
+    UARTprintf("CfgRestore: settings applied. Rebooting...\n");
+    g_bOTAReset = true;
+    return("/cfgrestore_ok.shtml");
+}
+
+//*****************************************************************************
 static int32_t
 SSIHandler(int32_t iIndex, char *pcInsert, int32_t iInsertLen)
 {
@@ -941,6 +1121,20 @@ SSIHandler(int32_t iIndex, char *pcInsert, int32_t iInsertLen)
             break;
         }
 
+        case SSI_INDEX_NTPTIME:
+            SntpGetTimeStr(pcInsert, iInsertLen);
+            break;
+
+        case SSI_INDEX_NTPSVR:
+            usnprintf(pcInsert, iInsertLen, "%s",
+                      ConfigNtpGet()->pcServer);
+            break;
+
+        case SSI_INDEX_NTPTZ:
+            usnprintf(pcInsert, iInsertLen, "%d",
+                      (int)ConfigNtpGet()->i8TzOffset);
+            break;
+
         default:
             usnprintf(pcInsert, iInsertLen, "??");
             break;
@@ -1066,6 +1260,7 @@ lwIPHostTimerHandler(void)
             // the MQTT connection (if a broker has been configured).
             //
             g_bStartMQTT = true;
+            SntpInit();
         }
 
         //
@@ -1458,6 +1653,8 @@ main(void)
         // Advance pushbutton click-detection timers.
         //
         InputEventsTick(SYSTICKMS);
+        RelayPulseTick(SYSTICKMS);
+        SntpTick(SYSTICKMS);
 
         //
         // Service MQTT keep-alive, reconnect timers and the post-connect

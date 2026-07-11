@@ -73,11 +73,13 @@ main{padding:28px 24px;max-width:620px}
   <a href="/index.shtml" class="active">Settings</a>
   <a href="/iocfg.shtml">I/O Config</a>
   <a href="/fwupdate.shtml">Firmware</a>
+  <a href="/cfgbackup.shtml">Backup</a>
 </div>
 
 <div class="ti-status">
   <div class="ti-status-item"><span class="ti-dot"></span><b>IP&nbsp;</b><!--#ipaddr--></div>
   <div class="ti-status-item"><b>MQTT&nbsp;</b><!--#mqstatus--></div>
+  <div class="ti-status-item"><b>Time&nbsp;</b><!--#ntptime--></div>
 </div>
 
 <main>
@@ -145,6 +147,29 @@ main{padding:28px 24px;max-width:620px}
       </div>
     </div>
   </div>
+  <div class="ti-card" style="margin-top:20px">
+    <div class="ti-card-head"><h2>NTP Settings</h2></div>
+    <div class="ti-card-body">
+      <form method="get" action="/ntpcfg.cgi">
+        <div class="ti-2col">
+          <div class="ti-field">
+            <label>NTP server</label>
+            <input type="text" name="ntp" value="<!--#ntpsvr-->"
+                   maxlength="31" placeholder="pool.ntp.org">
+          </div>
+          <div class="ti-field">
+            <label>UTC offset (hours)</label>
+            <input type="number" name="tz" value="<!--#ntptz-->"
+                   min="-12" max="14" style="width:80px">
+          </div>
+        </div>
+        <div class="ti-btn-row">
+          <button type="submit" class="ti-btn">Save NTP</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
   <div class="ti-card" style="border-color:#cc0000;margin-top:20px">
     <div class="ti-card-head" style="border-bottom-color:#cc0000;background:#fff8f8">
       <h2 style="color:#cc0000">&#9888;&nbsp; Danger Zone</h2>

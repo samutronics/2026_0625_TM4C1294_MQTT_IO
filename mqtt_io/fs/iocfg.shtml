@@ -71,11 +71,13 @@ select.sel-act{min-width:76px}
   <a href="/index.shtml">Settings</a>
   <a href="/iocfg.shtml" class="active">I/O Config</a>
   <a href="/fwupdate.shtml">Firmware</a>
+  <a href="/cfgbackup.shtml">Backup</a>
 </div>
 
 <div class="ti-status">
   <div class="ti-status-item"><span class="ti-dot"></span><b>IP&nbsp;</b><!--#ipaddr--></div>
   <div class="ti-status-item"><b>MQTT&nbsp;</b><!--#mqstatus--></div>
+  <div class="ti-status-item"><b>Time&nbsp;</b><!--#ntptime--></div>
 </div>
 
 <main>

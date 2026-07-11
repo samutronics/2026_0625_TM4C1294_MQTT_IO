@@ -24,6 +24,7 @@
 #include "mqtt_client.h"
 #include "mqtt_app.h"
 #include "input_events.h"
+#include "relay_pulse.h"
 
 //
 // Home Assistant default discovery prefix.
@@ -203,6 +204,43 @@ MQTTAppPublishInputEvent(int iInput, const char *pcEvt)
 // true and sets *piRelay on a match.
 //
 //*****************************************************************************
+//*****************************************************************************
+//
+// Parse a "<base>/relay/<n>/pulse" topic.  Same logic as MQTTAppParseRelaySet
+// but matches the "/pulse" suffix.
+//
+//*****************************************************************************
+static bool
+MQTTAppParseRelayPulse(const char *pcTopic, uint16_t ui16Len, int *piRelay)
+{
+    static const char pcMid[] = "/relay/";
+    static const char pcSuf[] = "/pulse";
+    int iBaseLen = (int)strlen(g_pcBase);
+    int iMidLen  = (int)(sizeof(pcMid) - 1);
+    int iSufLen  = (int)(sizeof(pcSuf) - 1);
+    int iPos = 0, iNum = 0, iDigits = 0;
+
+    if((int)ui16Len < iBaseLen + iMidLen + 1 + iSufLen) { return(false); }
+    if(memcmp(pcTopic, g_pcBase, iBaseLen) != 0)         { return(false); }
+    iPos = iBaseLen;
+    if(memcmp(pcTopic + iPos, pcMid, iMidLen) != 0)      { return(false); }
+    iPos += iMidLen;
+
+    while((iPos < (int)ui16Len) && (pcTopic[iPos] >= '0') &&
+          (pcTopic[iPos] <= '9'))
+    {
+        iNum = (iNum * 10) + (pcTopic[iPos] - '0');
+        iPos++;
+        iDigits++;
+    }
+    if(iDigits == 0)                               { return(false); }
+    if(((int)ui16Len - iPos) != iSufLen)           { return(false); }
+    if(memcmp(pcTopic + iPos, pcSuf, iSufLen) != 0) { return(false); }
+
+    *piRelay = iNum;
+    return(true);
+}
+
 static bool
 MQTTAppParseRelaySet(const char *pcTopic, uint16_t ui16Len, int *piRelay)
 {
@@ -276,21 +314,52 @@ MQTTAppMsgCB(const char *pcTopic, uint16_t ui16TopicLen,
     int iRelay;
     bool bOn;
 
-    if(!MQTTAppParseRelaySet(pcTopic, ui16TopicLen, &iRelay))
+    //
+    // Relay ON/OFF command.
+    //
+    if(MQTTAppParseRelaySet(pcTopic, ui16TopicLen, &iRelay))
     {
-        return;
-    }
-    if((uint16_t)iRelay >= RelayChainCount())
-    {
+        if((uint16_t)iRelay >= RelayChainCount())
+        {
+            return;
+        }
+        bOn = (ui16PayloadLen >= 2) && (pui8Payload[0] == 'O') &&
+              (pui8Payload[1] == 'N');
+        RelayChainSet((uint16_t)iRelay, bOn);
+        MQTTAppPublishRelayState(iRelay);
+        UARTprintf("MQTT: relay %d -> %s\n", iRelay, bOn ? "ON" : "OFF");
         return;
     }
 
-    bOn = (ui16PayloadLen >= 2) && (pui8Payload[0] == 'O') &&
-          (pui8Payload[1] == 'N');
-
-    RelayChainSet((uint16_t)iRelay, bOn);
-    MQTTAppPublishRelayState(iRelay);
-    UARTprintf("MQTT: relay %d -> %s\n", iRelay, bOn ? "ON" : "OFF");
+    //
+    // Relay pulse command — payload is duration in milliseconds.
+    //
+    if(MQTTAppParseRelayPulse(pcTopic, ui16TopicLen, &iRelay))
+    {
+        uint32_t ui32Ms;
+        char acNum[12];
+        if((uint16_t)iRelay >= RelayChainCount() || ui16PayloadLen == 0)
+        {
+            return;
+        }
+        //
+        // Copy payload to null-terminated buffer for ustrtoul.
+        //
+        if(ui16PayloadLen >= sizeof(acNum))
+        {
+            ui16PayloadLen = (uint16_t)(sizeof(acNum) - 1);
+        }
+        memcpy(acNum, pui8Payload, ui16PayloadLen);
+        acNum[ui16PayloadLen] = '\0';
+        ui32Ms = ustrtoul(acNum, NULL, 10);
+        if(ui32Ms == 0 || ui32Ms > 3600000u)
+        {
+            return;   // reject 0 and durations > 1 hour
+        }
+        UARTprintf("MQTT: relay %d pulse %u ms\n", iRelay, ui32Ms);
+        RelayPulseStart(iRelay, ui32Ms);
+        return;
+    }
 }
 
 //*****************************************************************************
@@ -402,6 +471,9 @@ MQTTAppPostConnect(int iStep)
         //
         usnprintf(g_pcScratchTopic, sizeof(g_pcScratchTopic),
                   "%s/relay/+/set", g_pcBase);
+        MQTTClientSubscribe(g_pcScratchTopic);
+        usnprintf(g_pcScratchTopic, sizeof(g_pcScratchTopic),
+                  "%s/relay/+/pulse", g_pcBase);
         MQTTClientSubscribe(g_pcScratchTopic);
         UARTprintf("MQTT: %d relays published (HA discovery).\n", iRelays);
     }

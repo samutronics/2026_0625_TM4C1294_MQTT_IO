@@ -164,6 +164,29 @@ void    ConfigBindingSet(int iInput, int iSlot,
 bool    ConfigBindingSave(void);
 
 //
+// NTP configuration — stored at a separate EEPROM address so it can be
+// written independently.  Defaults: pool.ntp.org, TZ offset 0.
+//
+#define CFG_NTP_EEPROM_ADDR  1260
+#define CFG_NTP_MAGIC        0x4E545043u    // "NTPC"
+#define CFG_NTP_SERVER_LEN   32
+
+typedef struct
+{
+    uint32_t ui32Magic;
+    char     pcServer[CFG_NTP_SERVER_LEN];  // NTP server hostname
+    int8_t   i8TzOffset;                    // UTC hour offset, -12..14
+    uint8_t  ui8Rsvd[3];
+    uint32_t ui32Crc;
+}
+tNTPConfig;   // 44 B
+
+const tNTPConfig *ConfigNtpGet(void);
+void ConfigNtpSetServer(const char *pcServer);
+void ConfigNtpSetTz(int8_t i8Offset);
+bool ConfigNtpSave(void);
+
+//
 // OTA pending flag in EEPROM.  Thin wrappers called by ota.c.
 // The actual addresses / magic are defined in ota.h (included by ota.c).
 //
