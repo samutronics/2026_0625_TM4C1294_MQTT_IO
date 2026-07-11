@@ -86,7 +86,7 @@ select.sel-act{min-width:76px}
   <div class="ti-card">
     <div class="ti-card-head"><h2>Device Counts</h2></div>
     <div class="ti-card-body">
-      <form id="iof" method="get" action="/iocfg.cgi" onsubmit="saveAllNamesAndSubmit(event)">
+      <form id="iof" method="get" action="/iocfg.cgi" onsubmit="return onIOCfgSubmit(event)">
         <div class="ti-2col">
           <div class="ti-field">
             <label>Input devices &mdash; SN65HVS882 (8 ch each)</label>
@@ -377,21 +377,23 @@ async function doPulse(n) {
 
 buildPulseTable();
 
-// Save all changed name fields sequentially, then submit the form.
-//
-// Why sequential (not Promise.all):
-//   MEMP_NUM_TCP_PCB=16 — firing all 32 saves at once overflows the
-//   device TCP pool; excess connections are silently dropped, errors
-//   are swallowed, and Promise.all resolves with nothing saved.
-//
-// Why e.preventDefault() works inside an async function:
-//   It runs synchronously before the first await, so the browser never
-//   sees the default form submission.
-//
-async function saveAllNamesAndSubmit(e) {
-  e.preventDefault();                // must be synchronous — runs before first await
-  if(!serialize()) { return; }
+// onIOCfgSubmit — synchronous onsubmit wrapper.
+// Returns false AND calls e.preventDefault() to block default form submission
+// in all browsers (async functions return a Promise, not false, so they
+// cannot reliably block submission on their own).
+// The actual async work is done in doSaveNamesAndSubmit().
+function onIOCfgSubmit(e) {
+  e.preventDefault();
+  if(!serialize()) { return false; }
+  doSaveNamesAndSubmit();  // start async — form.submit() called when done
+  return false;
+}
 
+// Sequential name saves, then programmatic form submit.
+// Sequential (not Promise.all) because MEMP_NUM_TCP_PCB=16:
+// firing >16 fetches in parallel overflows the device TCP pool and
+// all saves silently fail.
+async function doSaveNamesAndSubmit() {
   var i, k, el, v, orig;
 
   for(i=0; i<D*8; i++) {
@@ -399,7 +401,7 @@ async function saveAllNamesAndSubmit(e) {
     if(!el) continue;
     v    = el.value.trim();
     orig = getInName(i) || ('In'+pad2(i+1));
-    if(v === orig) continue;                          // unchanged — skip
+    if(v === orig) continue;                            // unchanged — skip
     await saveName('in', i, v===('In'+pad2(i+1)) ? '' : v);
   }
 
@@ -408,11 +410,11 @@ async function saveAllNamesAndSubmit(e) {
     if(!el) continue;
     v    = el.value.trim();
     orig = getOutName(k) || ('Out'+pad2(k+1));
-    if(v === orig) continue;                          // unchanged — skip
+    if(v === orig) continue;                            // unchanged — skip
     await saveName('out', k, v===('Out'+pad2(k+1)) ? '' : v);
   }
 
-  document.getElementById('iof').submit();           // programmatic submit skips onsubmit
+  document.getElementById('iof').submit();             // does NOT fire onsubmit again
 }
 </script>
 <script>
