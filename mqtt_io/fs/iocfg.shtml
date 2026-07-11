@@ -77,7 +77,7 @@ select.sel-act{min-width:76px}
 <div class="ti-status">
   <div class="ti-status-item"><span class="ti-dot"></span><b>IP&nbsp;</b><!--#ipaddr--></div>
   <div class="ti-status-item"><b>MQTT&nbsp;</b><!--#mqstatus--></div>
-  <div class="ti-status-item"><b>Time&nbsp;</b><!--#ntptime--></div>
+  <div class="ti-status-item"><b>Time&nbsp;</b><span id="ntptm"><!--#ntptime--></span></div>
 </div>
 
 <main>
@@ -308,6 +308,9 @@ async function doPulse(n) {
 }
 
 buildPulseTable();
+</script>
+<script>
+(function(){var el=document.getElementById('ntptm');if(!el)return;var p=el.textContent.split(':');if(p.length!==3)return;var s=parseInt(p[0])*3600+parseInt(p[1])*60+parseInt(p[2]);if(isNaN(s))return;setInterval(function(){s=(s+1)%86400;var h=s/3600|0,m=s%3600/60|0,ss=s%60;el.textContent=(h<10?'0':'')+h+':'+(m<10?'0':'')+m+':'+(ss<10?'0':'')+ss;},1000);})();
 </script>
 </body>
 </html>
