@@ -146,6 +146,42 @@ var T="<!--#iotypes-->";
 var B="<!--#iobinds-->";
 var INAMES="<!--#innames-->";
 var ONAMES="<!--#outnames-->";
+var IS="<!--#instates-->";
+var OS="<!--#outstates-->";
+
+function getBit(hex,i){var b=parseInt(hex.substr((i>>3)*2,2)||'0',16);return((b>>(i&7))&1)===1;}
+function getInBit(i){return getBit(IS,i);}
+function getOutBit(k){return getBit(OS,k);}
+function dot(on){return '<span style="width:7px;height:7px;border-radius:50%;display:inline-block;flex-shrink:0;background:'+(on?'#22a832':'#ccc')+'"></span>';}
+
+async function liveUpdate(){
+  try{
+    var r=await fetch('/iostate.shtml',{cache:'no-store'});
+    var t=(await r.text()).trim();
+    var p=t.split('|');
+    if(p.length===2){IS=p[0].trim();OS=p[1].trim();}
+  }catch(e){return;}
+  // Update input status dots + text
+  var n=D*8;
+  for(var i=0;i<n;i++){
+    var dot=document.getElementById('ids_'+i);
+    if(!dot)continue;
+    var on=getInBit(i);
+    dot.style.background=on?'#22a832':'#ccc';dot.title=on?'ON':'OFF';
+    var txt=dot.nextSibling;if(txt)txt.textContent=on?'ON':'OFF';
+  }
+  // Update output status dots + text
+  var nr=R*8;
+  for(var k=0;k<nr;k++){
+    var dot=document.getElementById('ods_'+k);
+    if(!dot)continue;
+    var on=getOutBit(k);
+    dot.style.background=on?'#22a832':'#ccc';dot.title=on?'ON':'OFF';
+    var txt=dot.nextSibling;if(txt&&txt.nodeType===3)txt=txt.nextSibling;
+    if(txt)txt.textContent=' '+(on?'ON':'OFF');
+  }
+}
+setInterval(liveUpdate,1000);
 
 function getInName(i){var n=INAMES.substr(i*12,12).replace(/\s+$/,'');return n||null;}
 function getOutName(k){var n=ONAMES.substr(k*12,12).replace(/\s+$/,'');return n||null;}
@@ -213,6 +249,10 @@ function buildTable(){
       +"<input type='text' value='"+esc(iname)+"' maxlength='11' "
       +"style='width:68px;padding:3px 5px;border:1px solid #bbb;font-size:11px;font-weight:600;font-family:inherit;color:#1a1a1a;background:#fff' "
       +"onblur='saveName(\"in\","+i+",this.value)' title='Click to rename'>"
+      +"<div style='margin-top:4px;display:flex;align-items:center;gap:4px'>"
+      +"<span id='ids_"+i+"' style='width:7px;height:7px;border-radius:50%;display:inline-block;flex-shrink:0;background:"+(getInBit(i)?'#22a832':'#ccc')+"' title='"+(getInBit(i)?'ON':'OFF')+"'></span>"
+      +"<span style='font-size:10px;color:#888'>"+(getInBit(i)?'ON':'OFF')+"</span>"
+      +"</div>"
       +"</td>"
       +"<td rowspan='4' style='vertical-align:top;padding-top:7px'>"
       +"<select class='sel-type' id='t"+i+"' onchange='updateTrig("+i+")'>"
@@ -292,15 +332,25 @@ function buildPulseTable() {
   var h = '<table style="width:100%;border-collapse:collapse;font-size:12px">'
         + '<thead><tr style="background:#1a1a1a;color:#fff">'
         + '<th style="padding:8px 10px;text-align:left;font-size:10px;font-weight:700;letter-spacing:1px;text-transform:uppercase">Output</th>'
+        + '<th style="padding:8px 6px;text-align:center;font-size:10px;font-weight:700;letter-spacing:1px;text-transform:uppercase">State</th>'
         + '<th style="padding:8px 10px;text-align:left;font-size:10px;font-weight:700;letter-spacing:1px;text-transform:uppercase">Duration (ms)</th>'
         + '<th style="padding:8px 10px"></th>'
         + '</tr></thead><tbody>';
   for(var i = 0; i < nr; i++) {
     var name = getOutName(i) || ('Out' + pad2(i + 1));
+    var on   = getOutBit(i);
     h += '<tr style="border-bottom:1px solid #e8e8e8;background:' + (i%2?'#fff':'#f9f9f9') + '">'
-       + '<td style="padding:7px 10px;font-weight:600">' + name + '</td>'
+       + '<td style="padding:5px 6px">'
+       + '<input type="text" value="'+esc(name)+'" maxlength="11" '
+       + 'style="width:68px;padding:3px 5px;border:1px solid #bbb;font-size:11px;font-weight:600;font-family:inherit;color:#1a1a1a;background:#fff" '
+       + 'onblur=\'saveName("out",'+i+',this.value)\'>'
+       + '</td>'
+       + '<td style="padding:5px 6px;text-align:center;white-space:nowrap">'
+       + '<span id="ods_'+i+'" style="width:7px;height:7px;border-radius:50%;display:inline-block;background:'+(on?'#22a832':'#ccc')+'" title="'+(on?'ON':'OFF')+'"></span>'
+       + '&nbsp;<span style="font-size:10px;color:#888">'+(on?'ON':'OFF')+'</span>'
+       + '</td>'
        + '<td style="padding:5px 10px"><input type="number" id="pms_' + i + '" value="500" min="1" max="3600000"'
-       + ' style="width:100px;padding:5px 7px;border:1px solid #bbb;font-size:12px;font-family:inherit"></td>'
+       + ' style="width:90px;padding:5px 7px;border:1px solid #bbb;font-size:12px;font-family:inherit"></td>'
        + '<td style="padding:5px 10px"><button class="ti-btn" style="padding:6px 16px"'
        + ' onclick="doPulse(' + i + ')">Pulse</button></td>'
        + '</tr>';

@@ -176,6 +176,8 @@ extern void httpd_init(void);
 #define SSI_INDEX_MQPASS    16
 #define SSI_INDEX_INNAMES   17
 #define SSI_INDEX_OUTNAMES  18
+#define SSI_INDEX_INSTATES  19
+#define SSI_INDEX_OUTSTATES 20
 
 //*****************************************************************************
 //
@@ -206,7 +208,9 @@ static const char *g_pcConfigSSITags[] =
     "ntptz",         // SSI_INDEX_NTPTZ   — UTC offset (signed integer)
     "mqpass",        // SSI_INDEX_MQPASS  — MQTT password (for backup page)
     "innames",       // SSI_INDEX_INNAMES  — packed input names (12 B each, up to 16)
-    "outnames"       // SSI_INDEX_OUTNAMES — packed output names (12 B each, up to 16)
+    "outnames",      // SSI_INDEX_OUTNAMES — packed output names (12 B each, up to 16)
+    "instates",      // SSI_INDEX_INSTATES  — live input states as hex bytes
+    "outstates"      // SSI_INDEX_OUTSTATES — live relay states as hex bytes
 };
 
 //*****************************************************************************
@@ -343,7 +347,13 @@ uint32_t g_ui32IPAddress;
 static volatile bool g_bSysTickFlag;
 static volatile bool g_bStartMQTT;
 static volatile bool g_bRepublishMQTT;
-static volatile bool g_bOTAReset;       // set by FwChunkCGIHandler on last chunk
+static volatile bool g_bOTAReset;
+
+//
+// Live input state snapshot — updated every DINChainScan() tick so the
+// SSI handler (runs in Ethernet ISR) can read it without touching hardware.
+//
+static uint8_t g_pui8LiveInState[DIN_MAX_BYTES];       // set by FwChunkCGIHandler on last chunk
 
 //
 // OTA upload state — written from the CGI handler (Ethernet ISR context).
@@ -1417,6 +1427,40 @@ SSIHandler(int32_t iIndex, char *pcInsert, int32_t iInsertLen)
             break;
         }
 
+        case SSI_INDEX_INSTATES:
+        case SSI_INDEX_OUTSTATES:
+        {
+            //
+            // Emit one hex byte per configured device (8 inputs or relays
+            // per byte).  Bit b of byte d = channel d*8+b is active/ON.
+            //
+            static const char pcH[] = "0123456789abcdef";
+            bool bIn   = (iIndex == SSI_INDEX_INSTATES);
+            int  nDev  = bIn ? (int)ConfigGetDinDevices()
+                              : (int)ConfigGetRelayDevices();
+            int  iPos = 0, d, b;
+            if(nDev > 8) { nDev = 8; }  // cap: 8 devices = 64 channels
+            for(d = 0; d < nDev && iPos + 2 <= iInsertLen; d++)
+            {
+                uint8_t ui8B = 0;
+                for(b = 0; b < 8; b++)
+                {
+                    if(bIn)
+                    {
+                        if(g_pui8LiveInState[d] & (1u << b)) { ui8B |= (1u << b); }
+                    }
+                    else
+                    {
+                        if(RelayChainGet((uint16_t)(d * 8 + b))) { ui8B |= (1u << b); }
+                    }
+                }
+                pcInsert[iPos++] = pcH[ui8B >> 4];
+                pcInsert[iPos++] = pcH[ui8B & 0xFu];
+            }
+            pcInsert[iPos] = '\0';
+            break;
+        }
+
         default:
             usnprintf(pcInsert, iInsertLen, "??");
             break;
@@ -1653,6 +1697,7 @@ DINChainScan(void)
     {
         return;
     }
+    memcpy(g_pui8LiveInState, pui8Cur, ui8Bytes);
 
     //
     // Process each input.  Channel c of device d maps to bit (7-c) of byte d
