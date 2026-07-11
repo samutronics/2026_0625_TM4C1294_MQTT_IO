@@ -129,8 +129,16 @@ main{padding:28px 24px;max-width:620px}
           </div>
           <div class="ti-field">
             <label>Password</label>
-            <input type="password" name="pass" value=""
-                   maxlength="31" placeholder="unchanged if blank">
+            <div style="position:relative">
+              <input type="password" id="pass-inp" name="pass" value=""
+                     maxlength="31" placeholder="unchanged if blank"
+                     style="width:100%;padding-right:58px">
+              <button type="button" id="pass-btn"
+                      onclick="var i=document.getElementById('pass-inp');var b=document.getElementById('pass-btn');i.type=i.type==='password'?'text':'password';b.textContent=i.type==='password'?'SHOW':'HIDE';"
+                      style="position:absolute;right:0;top:0;bottom:0;border:none;border-left:1px solid #bbb;background:#f7f7f7;color:#cc0000;cursor:pointer;font-size:10px;font-weight:700;letter-spacing:.5px;padding:0 10px;font-family:inherit">
+                SHOW
+              </button>
+            </div>
           </div>
         </div>
 
