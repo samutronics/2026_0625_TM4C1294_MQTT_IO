@@ -409,3 +409,22 @@ ConfigOtaClearPending(void)
     uint32_t aui32Rec[2] = { 0u, 0u };
     EEPROMProgram(aui32Rec, CFG_OTA_EEPROM_ADDR, sizeof(aui32Rec));
 }
+
+//*****************************************************************************
+//
+// ConfigFactoryReset — zero the magic word of every EEPROM record so that
+// ConfigInit() on the next boot finds no valid data and falls back to the
+// compiled-in defaults.  All four records are invalidated atomically-ish;
+// power loss mid-way leaves at most some records at defaults, never corrupt.
+//
+//*****************************************************************************
+void
+ConfigFactoryReset(void)
+{
+    uint32_t ui32Zero = 0u;
+    EEPROMProgram(&ui32Zero, CFG_EEPROM_ADDR,      4);   // tMQTTConfig
+    EEPROMProgram(&ui32Zero, CFG_IO_EEPROM_ADDR,   4);   // tIOSettings
+    EEPROMProgram(&ui32Zero, CFG_IO_BINDINGS_ADDR, 4);   // tIOBindings
+    EEPROMProgram(&ui32Zero, CFG_OTA_EEPROM_ADDR,  4);   // OTA flag
+    UARTprintf("Config: EEPROM factory reset complete.\n");
+}

@@ -171,6 +171,13 @@ bool    ConfigOtaIsPending(void);
 void    ConfigOtaSetPending(uint32_t ui32Size);
 void    ConfigOtaClearPending(void);
 
+//
+// Invalidate all EEPROM records so ConfigInit() reloads compiled-in defaults
+// on the next boot.  Does not reset the in-RAM config; call after scheduling
+// a system reset.
+//
+void    ConfigFactoryReset(void);
+
 #ifdef __cplusplus
 }
 #endif

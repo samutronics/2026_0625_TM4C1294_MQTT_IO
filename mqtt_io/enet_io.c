@@ -214,6 +214,8 @@ static char *IOConfigCGIHandler(int32_t iIndex, int32_t i32NumParams,
                                 char *pcParam[], char *pcValue[]);
 static char *FwChunkCGIHandler(int32_t iIndex, int32_t i32NumParams,
                                char *pcParam[], char *pcValue[]);
+static char *FactoryResetCGIHandler(int32_t iIndex, int32_t i32NumParams,
+                                    char *pcParam[], char *pcValue[]);
 
 //*****************************************************************************
 //
@@ -231,6 +233,7 @@ static int32_t SSIHandler(int32_t iIndex, char *pcInsert, int32_t iInsertLen);
 #define CGI_INDEX_MQTTCFG       0
 #define CGI_INDEX_IOCFG         1
 #define CGI_INDEX_FWCHUNK       2
+#define CGI_INDEX_FACTORYRESET  3
 
 //*****************************************************************************
 //
@@ -244,7 +247,8 @@ static const tCGI g_psConfigCGIURIs[] =
 {
     { "/mqttcfg.cgi",   (tCGIHandler)MQTTConfigCGIHandler }, // CGI_INDEX_MQTTCFG
     { "/iocfg.cgi",    (tCGIHandler)IOConfigCGIHandler   }, // CGI_INDEX_IOCFG
-    { "/fwchunk.cgi",  (tCGIHandler)FwChunkCGIHandler    }  // CGI_INDEX_FWCHUNK
+    { "/fwchunk.cgi",      (tCGIHandler)FwChunkCGIHandler      }, // CGI_INDEX_FWCHUNK
+    { "/factoryreset.cgi", (tCGIHandler)FactoryResetCGIHandler }  // CGI_INDEX_FACTORYRESET
 };
 
 //*****************************************************************************
@@ -676,6 +680,111 @@ FwChunkCGIHandler(int32_t iIndex, int32_t i32NumParams,
     }
 
     return("/fwupdate.shtml");
+}
+
+//*****************************************************************************
+//
+// FactoryResetCGIHandler - Web-triggered factory reset.
+//
+// Invalidates all EEPROM records, then schedules a system reset via the same
+// g_bOTAReset flag used by the OTA handler so the HTTP response is sent first.
+//
+//*****************************************************************************
+static char *
+FactoryResetCGIHandler(int32_t iIndex, int32_t i32NumParams,
+                       char *pcParam[], char *pcValue[])
+{
+    UARTprintf("Factory reset triggered via web UI.\n");
+    MQTTAppStop();
+    ConfigFactoryReset();
+    g_bOTAReset = true;
+    return("/factoryreset_ok.shtml");
+}
+
+//*****************************************************************************
+//
+// CheckHWFactoryReset - Check SW1 (PJ0) at startup.
+//
+// If SW1 is held continuously for 5 seconds, all EEPROM records are
+// invalidated and the device resets.  LED D1 (PN1) blinks as a countdown
+// indicator.  Releasing SW1 at any point cancels the operation.
+//
+// Call after ConfigInit() (EEPROM must be initialised) but before the
+// network stack starts.
+//
+//*****************************************************************************
+static void
+CheckHWFactoryReset(void)
+{
+    uint32_t ui32Count;
+
+    //
+    // Enable the GPIO ports used by SW1 (Port J) and LED D1 (Port N).
+    // PinoutSet() may already have done this, but enabling twice is harmless.
+    //
+    MAP_SysCtlPeripheralEnable(SYSCTL_PERIPH_GPIOJ);
+    MAP_SysCtlPeripheralEnable(SYSCTL_PERIPH_GPION);
+    while(!MAP_SysCtlPeripheralReady(SYSCTL_PERIPH_GPIOJ) ||
+          !MAP_SysCtlPeripheralReady(SYSCTL_PERIPH_GPION))
+    {
+    }
+
+    //
+    // PJ0 input with weak pull-up (SW1 is active-low).
+    //
+    MAP_GPIODirModeSet(GPIO_PORTJ_BASE, GPIO_PIN_0, GPIO_DIR_MODE_IN);
+    MAP_GPIOPadConfigSet(GPIO_PORTJ_BASE, GPIO_PIN_0,
+                         GPIO_STRENGTH_2MA, GPIO_PIN_TYPE_STD_WPU);
+
+    //
+    // PN1 output for LED D1 (active-high, off initially).
+    //
+    MAP_GPIODirModeSet(GPIO_PORTN_BASE, GPIO_PIN_1, GPIO_DIR_MODE_OUT);
+    MAP_GPIOPadConfigSet(GPIO_PORTN_BASE, GPIO_PIN_1,
+                         GPIO_STRENGTH_2MA, GPIO_PIN_TYPE_STD);
+    MAP_GPIOPinWrite(GPIO_PORTN_BASE, GPIO_PIN_1, 0);
+
+    //
+    // Quick exit if SW1 is not held at boot.
+    //
+    if(MAP_GPIOPinRead(GPIO_PORTJ_BASE, GPIO_PIN_0) != 0)
+    {
+        return;
+    }
+
+    UARTprintf("HW factory reset: keep SW1 held for 5s to confirm...\n");
+
+    //
+    // 500 x 10ms = 5 000ms countdown.  LED blinks every 500ms.
+    //
+    for(ui32Count = 0; ui32Count < 500; ui32Count++)
+    {
+        //
+        // Toggle LED every 50 iterations (~500ms period).
+        //
+        MAP_GPIOPinWrite(GPIO_PORTN_BASE, GPIO_PIN_1,
+                         ((ui32Count / 50) & 1) ? GPIO_PIN_1 : 0);
+
+        MAP_SysCtlDelay(g_ui32SysClock / 300);   // ~10 ms at 120 MHz
+
+        if(MAP_GPIOPinRead(GPIO_PORTJ_BASE, GPIO_PIN_0) != 0)
+        {
+            MAP_GPIOPinWrite(GPIO_PORTN_BASE, GPIO_PIN_1, 0);
+            UARTprintf("HW factory reset: cancelled (SW1 released).\n");
+            return;
+        }
+    }
+
+    //
+    // SW1 held for 5 seconds — perform factory reset.
+    //
+    MAP_GPIOPinWrite(GPIO_PORTN_BASE, GPIO_PIN_1, GPIO_PIN_1); // LED on solid
+    UARTprintf("HW factory reset: erasing EEPROM...\n");
+    MQTTAppStop();
+    ConfigFactoryReset();
+    UARTprintf("HW factory reset: rebooting...\n");
+    MAP_SysCtlDelay(g_ui32SysClock / 3);
+    MAP_SysCtlReset();
 }
 
 //*****************************************************************************
@@ -1172,6 +1281,12 @@ main(void)
     // apply it now (OtaCheckAndApply calls OtaApply which never returns).
     //
     OtaCheckAndApply();
+
+    //
+    // Check if SW1 (PJ0) is held at boot for a hardware factory reset.
+    // If held for 5 s, EEPROM is erased and the device resets.
+    //
+    CheckHWFactoryReset();
 
     //
     // Configure SysTick for a periodic interrupt.

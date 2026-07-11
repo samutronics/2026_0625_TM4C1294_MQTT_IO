@@ -145,6 +145,25 @@ main{padding:28px 24px;max-width:620px}
       </div>
     </div>
   </div>
+  <div class="ti-card" style="border-color:#cc0000;margin-top:20px">
+    <div class="ti-card-head" style="border-bottom-color:#cc0000;background:#fff8f8">
+      <h2 style="color:#cc0000">&#9888;&nbsp; Danger Zone</h2>
+    </div>
+    <div class="ti-card-body">
+      <p style="font-size:13px;color:#555;margin-bottom:16px">
+        Erase all EEPROM settings (MQTT broker, I/O configuration, input bindings).
+        The device reboots with factory defaults.
+      </p>
+      <button class="ti-btn" style="background:#cc0000"
+        onclick="if(confirm('Erase ALL settings and reboot with factory defaults?\n\nThis cannot be undone.')){window.location.href='/factoryreset.cgi'}">
+        Factory Reset
+      </button>
+      <p style="font-size:11px;color:#aaa;margin-top:12px">
+        Hardware: hold <b>SW1</b> for 5 s at power-up for the same effect.
+        LED&nbsp;D1 blinks as a countdown indicator.
+      </p>
+    </div>
+  </div>
 </main>
 
 <div class="ti-footer">
