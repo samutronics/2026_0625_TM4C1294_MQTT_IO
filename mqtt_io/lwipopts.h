@@ -44,6 +44,12 @@
 #define LWIP_HTTPD_SSI_INCLUDE_TAG      0   // replace SSI tags rather than keep them
 #define LWIP_HTTPD_CGI                  1
 #define LWIP_HTTPD_DYNAMIC_HEADERS      1
+// Accumulate multi-pbuf HTTP requests into a linear buffer before parsing.
+// Without this, request lines > PBUF_POOL_BUFSIZE (512 B) are silently dropped
+// because the httpd only inspects p->len (first pbuf) for the CRLF terminator.
+// Our OTA upload CGI sends ~1040-byte GET lines (988 hex chars in the URI).
+#define LWIP_HTTPD_SUPPORT_REQUESTLIST  1
+#define LWIP_HTTPD_MAX_REQ_LENGTH       2048
 //#define HTTPD_DEBUG                     LWIP_DBG_ON
 #if !defined(EMAC_PHY_IS_EXT_MII) && !defined(EMAC_PHY_IS_EXT_RMII)
 #define EMAC_PHY_CONFIG (EMAC_PHY_TYPE_INTERNAL | EMAC_PHY_INT_MDIX_EN |      \

@@ -103,9 +103,10 @@ main{padding:28px 24px;max-width:620px}
 </div>
 
 <script>
-// Chunk size: 494 binary bytes → 988 hex chars.
-// With URL prefix "/fwchunk.cgi?seq=NNNN&last=0&data=" (36 chars) total = 1024.
-var CHUNK = 494;
+// Chunk size: 200 binary bytes → 400 hex chars.
+// Full GET line: "GET /fwchunk.cgi?seq=NNNN&last=0&data=" (42) + 400 + " HTTP/1.1\r\n" (11) = 453 B.
+// This fits comfortably in a single 512-byte lwIP pbuf even without request-list support.
+var CHUNK = 200;
 
 function toHex(buf, off, len) {
   var h = '', n = '0123456789abcdef';
