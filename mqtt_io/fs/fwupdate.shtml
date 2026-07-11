@@ -48,7 +48,7 @@ main{padding:28px 24px;max-width:620px}
 <div class="ti-header">
   <div class="ti-brand">
     <span class="ti-brand-name"><em>Sa</em>Ka<em>Hub</em></span>
-    <span class="ti-brand-sub">EK-TM4C1294XL</span>
+    <span class="ti-brand-sub"><!--#fwver--></span>
   </div>
   <span class="ti-tagline">MQTT I/O Gateway</span>
 </div>
@@ -99,7 +99,7 @@ main{padding:28px 24px;max-width:620px}
 
 <div class="ti-footer">
   <span>SaKaHub &copy; TomArts</span>
-  <span>EK-TM4C1294XL &mdash; TivaWare 2.2.0</span>
+  <span><!--#fwver--> &mdash; TivaWare 2.2.0</span>
 </div>
 
 <script>

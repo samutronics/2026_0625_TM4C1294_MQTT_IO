@@ -167,6 +167,7 @@ extern void httpd_init(void);
 #define SSI_INDEX_RELAY     9
 #define SSI_INDEX_IOTYPES   10
 #define SSI_INDEX_IOBINDS   11
+#define SSI_INDEX_FWVER     12
 
 //*****************************************************************************
 //
@@ -190,7 +191,8 @@ static const char *g_pcConfigSSITags[] =
     "mqdin",         // SSI_INDEX_DIN
     "mqrelay",       // SSI_INDEX_RELAY
     "iotypes",       // SSI_INDEX_IOTYPES
-    "iobinds"        // SSI_INDEX_IOBINDS
+    "iobinds",       // SSI_INDEX_IOBINDS
+    "fwver"          // SSI_INDEX_FWVER  — build timestamp YYYYMMDDHHMM
 };
 
 //*****************************************************************************
@@ -791,6 +793,42 @@ SSIHandler(int32_t iIndex, char *pcInsert, int32_t iInsertLen)
                 }
             }
             pcInsert[iPos] = '\0';
+            break;
+        }
+
+        case SSI_INDEX_FWVER:
+        {
+            //
+            // Build timestamp formatted as YYYYMMDDHHMM from __DATE__ and
+            // __TIME__ (both are compile-time string literals).
+            //
+            // __DATE__ = "Mon DD YYYY"  e.g. "Jul 11 2026"  (space-padded day)
+            // __TIME__ = "HH:MM:SS"     e.g. "09:23:45"
+            //
+            static const char pcMons[] =
+                "JanFebMarAprMayJunJulAugSepOctNovDec";
+            const char *pd = __DATE__;
+            const char *pt = __TIME__;
+            int iMon, iDay, iYear, iHour, iMin;
+
+            for(iMon = 0; iMon < 12; iMon++)
+            {
+                if((pd[0] == pcMons[iMon * 3]) &&
+                   (pd[1] == pcMons[iMon * 3 + 1]) &&
+                   (pd[2] == pcMons[iMon * 3 + 2]))
+                {
+                    break;
+                }
+            }
+            iMon++;
+            iDay  = ((pd[4] == ' ') ? 0 : (pd[4] - '0')) * 10 + (pd[5] - '0');
+            iYear = (pd[7]-'0')*1000 + (pd[8]-'0')*100 +
+                    (pd[9]-'0')*10   + (pd[10]-'0');
+            iHour = (pt[0]-'0')*10 + (pt[1]-'0');
+            iMin  = (pt[3]-'0')*10 + (pt[4]-'0');
+
+            usnprintf(pcInsert, iInsertLen, "%04d%02d%02d%02d%02d",
+                      iYear, iMon, iDay, iHour, iMin);
             break;
         }
 
