@@ -86,7 +86,7 @@ select.sel-act{min-width:76px}
   <div class="ti-card">
     <div class="ti-card-head"><h2>Device Counts</h2></div>
     <div class="ti-card-body">
-      <form id="iof" method="get" action="/iocfg.cgi" onsubmit="return serialize()">
+      <form id="iof" method="get" action="/iocfg.cgi" onsubmit="saveAllNamesAndSubmit(event)">
         <div class="ti-2col">
           <div class="ti-field">
             <label>Input devices &mdash; SN65HVS882 (8 ch each)</label>
@@ -246,7 +246,7 @@ function buildTable(){
     var iname=getInName(i)||('In'+pad2(i+1));
     h+="<tr class='input-row'>"
       +"<td rowspan='4' style='padding:4px 6px'>"
-      +"<input type='text' value='"+esc(iname)+"' maxlength='11' "
+      +"<input type='text' id='iname_"+i+"' value='"+esc(iname)+"' maxlength='11' "
       +"style='width:68px;padding:3px 5px;border:1px solid #bbb;font-size:11px;font-weight:600;font-family:inherit;color:#1a1a1a;background:#fff' "
       +"onblur='saveName(\"in\","+i+",this.value)' title='Click to rename'>"
       +"<div style='margin-top:4px;display:flex;align-items:center;gap:4px'>"
@@ -341,7 +341,7 @@ function buildPulseTable() {
     var on   = getOutBit(i);
     h += '<tr style="border-bottom:1px solid #e8e8e8;background:' + (i%2?'#fff':'#f9f9f9') + '">'
        + '<td style="padding:5px 6px">'
-       + '<input type="text" value="'+esc(name)+'" maxlength="11" '
+       + '<input type="text" id="oname_'+i+'" value="'+esc(name)+'" maxlength="11" '
        + 'style="width:68px;padding:3px 5px;border:1px solid #bbb;font-size:11px;font-weight:600;font-family:inherit;color:#1a1a1a;background:#fff" '
        + 'onblur=\'saveName("out",'+i+',this.value)\'>'
        + '</td>'
@@ -376,6 +376,18 @@ async function doPulse(n) {
 }
 
 buildPulseTable();
+
+// Collect all visible name fields, save them via /nameset.cgi, then
+// submit the form.  Prevents the race where async saveName() fetches
+// get cancelled by page navigation triggered by form submission.
+function saveAllNamesAndSubmit(e) {
+  e.preventDefault();
+  if(!serialize()) { return; }
+  var saves = [];
+  for(var i=0;i<D*8;i++){var el=document.getElementById('iname_'+i);if(el)saves.push(saveName('in',i,el.value));}
+  for(var k=0;k<R*8;k++){var el=document.getElementById('oname_'+k);if(el)saves.push(saveName('out',k,el.value));}
+  Promise.all(saves).then(function(){document.getElementById('iof').submit();});
+}
 </script>
 <script>
 (function(){var el=document.getElementById('ntptm');if(!el)return;var p=el.textContent.split(':');if(p.length!==3)return;var s=parseInt(p[0])*3600+parseInt(p[1])*60+parseInt(p[2]);if(isNaN(s))return;setInterval(function(){s=(s+1)%86400;var h=s/3600|0,m=s%3600/60|0,ss=s%60;el.textContent=(h<10?'0':'')+h+':'+(m<10?'0':'')+m+':'+(ss<10?'0':'')+ss;},1000);})();
