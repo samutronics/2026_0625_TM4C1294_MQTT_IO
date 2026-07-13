@@ -39,6 +39,7 @@
 #include "driverlib/timer.h"
 #include "utils/locator.h"
 #include "utils/lwiplib.h"
+#include "third_party/lwip-1.4.1/src/include/lwip/netif.h"
 #include "utils/uartstdio.h"
 #include "utils/ustdlib.h"
 #include "httpserver_raw/httpd.h"
@@ -53,6 +54,7 @@
 #include "relay_pulse.h"
 #include "sntp_client.h"
 #include "ota.h"
+#include "buildinfo.h"
 
 //*****************************************************************************
 //
@@ -210,7 +212,7 @@ static const char *g_pcConfigSSITags[] =
     "innames",       // SSI_INDEX_INNAMES  — packed input names (12 B each, up to 16)
     "outnames",      // SSI_INDEX_OUTNAMES — packed output names (12 B each, up to 16)
     "instates",      // SSI_INDEX_INSTATES  — live input states as hex bytes
-    "outstates"      // SSI_INDEX_OUTSTATES — live relay states as hex bytes
+    "outstats"       // SSI_INDEX_OUTSTATES — live relay states as hex bytes (8-char limit)
 };
 
 //*****************************************************************************
@@ -723,7 +725,7 @@ FwChunkCGIHandler(int32_t iIndex, int32_t i32NumParams,
         return("/fwupdate_ok.shtml");
     }
 
-    return("/fwupdate.shtml");
+    return("/tools.shtml");
 }
 
 //*****************************************************************************
@@ -1060,9 +1062,9 @@ CfgRestoreCGIHandler(int32_t iIndex, int32_t i32NumParams,
         i32Val = CfgJsonGetInt(g_acCfgRestoreBuf, "auth");
         if(i32Val >= 0) { psCfg->ui8UseAuth = (uint8_t)(i32Val != 0); }
         i32Val = CfgJsonGetInt(g_acCfgRestoreBuf, "din");
-        if(i32Val > 0) { ConfigSetDinDevices((uint8_t)i32Val); }
+        if(i32Val >= 0) { ConfigSetDinDevices((uint8_t)i32Val); }
         i32Val = CfgJsonGetInt(g_acCfgRestoreBuf, "relay");
-        if(i32Val > 0) { ConfigSetRelayDevices((uint8_t)i32Val); }
+        if(i32Val >= 0) { ConfigSetRelayDevices((uint8_t)i32Val); }
         ConfigSave();
     }
 
@@ -1210,16 +1212,20 @@ RelayPulseCGIHandler(int32_t iIndex, int32_t i32NumParams,
     iRelayIdx = FindCGIParameter("relay", pcParam, i32NumParams);
     iMsIdx    = FindCGIParameter("ms",    pcParam, i32NumParams);
 
-    if(iRelayIdx < 0 || iMsIdx < 0)
+    if(iRelayIdx < 0)
     {
         return(IOCFG_CGI_RESPONSE);
     }
 
     ui32Relay = ustrtoul(pcValue[iRelayIdx], NULL, 10);
-    ui32Ms    = ustrtoul(pcValue[iMsIdx],    NULL, 10);
+    ui32Ms    = (iMsIdx >= 0) ? ustrtoul(pcValue[iMsIdx], NULL, 10) : 0;
 
-    if(ui32Ms == 0 || ui32Ms > 3600000u ||
-       ui32Relay >= (uint32_t)RelayChainCount())
+    if(ui32Ms == 0)
+    {
+        ui32Ms = 1000;   // implicit default: missing/0 duration pulses for 1 s
+    }
+
+    if(ui32Ms > 3600000u || ui32Relay >= (uint32_t)RelayChainCount())
     {
         return(IOCFG_CGI_RESPONSE);
     }
@@ -1358,8 +1364,8 @@ SSIHandler(int32_t iIndex, char *pcInsert, int32_t iInsertLen)
             //
             static const char pcMons[] =
                 "JanFebMarAprMayJunJulAugSepOctNovDec";
-            const char *pd = __DATE__;
-            const char *pt = __TIME__;
+            const char *pd = g_pcBuildDate;
+            const char *pt = g_pcBuildTime;
             int iMon, iDay, iYear, iHour, iMin;
 
             for(iMon = 0; iMon < 12; iMon++)
@@ -1663,6 +1669,32 @@ ApplyBindings(int iInput, uint8_t ui8Trig)
 
 //*****************************************************************************
 //
+// Predicate for the click detector: does this input have a double-click action?
+// Only when it does must the detector wait out the double-click window before
+// committing to "single".  Inputs with a single action but no double action
+// fire immediately on release (see InputEventsSetDoubleQuery).
+//
+//*****************************************************************************
+static bool
+InputNeedsDouble(int iInput)
+{
+    int iSlot;
+
+    for(iSlot = 0; iSlot < CFG_BIND_SLOTS; iSlot++)
+    {
+        uint8_t ta  = ConfigBindingGetTrigAct(iInput, iSlot);
+        uint8_t out = ConfigBindingGetOutput(iInput, iSlot);
+
+        if(((ta & 0x07u) == BIND_TRIG_DOUBLE) && (out != BIND_OUTPUT_NONE))
+        {
+            return true;
+        }
+    }
+    return false;
+}
+
+//*****************************************************************************
+//
 // Click-event callback: publish the HA event and apply any binding.
 //
 //*****************************************************************************
@@ -1869,6 +1901,19 @@ main(void)
     lwIPInit(g_ui32SysClock, pui8MACArray, 0, 0, 0, IPADDR_USE_DHCP);
 
     //
+    // Set DHCP hostname so the router shows "TomArts_<ClientID>" instead of
+    // the default TI MAC OUI lookup ("Texas Instruments").
+    // The static buffer persists for the lifetime of the program; netif_list
+    // points to the single netif added by lwIPInit().
+    //
+    {
+        static char pcHostname[48];
+        usnprintf(pcHostname, sizeof(pcHostname), "TomArts_%s",
+                  ConfigGet()->pcClientID);
+        netif_set_hostname(netif_list, pcHostname);
+    }
+
+    //
     // Setup the device locator service.
     //
     LocatorInit();
@@ -1924,6 +1969,7 @@ main(void)
     // Wire the pushbutton click callback to the MQTT event publisher.
     //
     InputEventsSetCallback(IEClickCallback);
+    InputEventsSetDoubleQuery(InputNeedsDouble);
 
     //
     // Main loop.  Networking (lwIP, httpd, MQTT receive) runs in interrupt

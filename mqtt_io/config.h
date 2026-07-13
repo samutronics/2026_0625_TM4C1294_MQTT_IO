@@ -110,7 +110,7 @@ bool ConfigHasBroker(void);
 
 //
 // Accessors for the packed input/output device counts.  The setters clamp to
-// [1, CFG_*_MAX_DEVICES], falling back to the default for out-of-range values.
+// [0, CFG_*_MAX_DEVICES]; 0 means no devices of that type are present.
 //
 uint8_t ConfigGetDinDevices(void);
 void    ConfigSetDinDevices(uint8_t ui8Devices);

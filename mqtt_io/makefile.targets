@@ -8,7 +8,17 @@
 # mqtt_io.out to a timestamped mqtt_io_YYYYMMDDHHMM.bin and a fixed
 # mqtt_io.bin in the same Debug/ directory.
 
-.PHONY: post_binary
+# Pin the default goal.  The buildinfo.o:FORCE rule below otherwise steals the
+# default goal, so a bare "gmake" would only rebuild buildinfo.o and never link
+# or run post_build — producing a silently stale binary.  Always build 'all'.
+.DEFAULT_GOAL := all
+
+.PHONY: post_binary FORCE
+
+# FORCE makes buildinfo.o always recompile so the displayed fwver timestamp
+# reflects the actual build time, not the last time enet_io.c was touched.
+FORCE:
+buildinfo.o: FORCE
 
 # Extend the top-level 'all' target to run the binary export step.
 all: post_binary

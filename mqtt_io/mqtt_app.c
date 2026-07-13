@@ -98,8 +98,9 @@ MQTTAppPublishRelayDiscovery(int iRelay)
               "\"cmd_t\":\"~/relay/%d/set\",\"stat_t\":\"~/relay/%d/state\","
               "\"pl_on\":\"ON\",\"pl_off\":\"OFF\",\"avty_t\":\"~/status\","
               "\"dev\":{\"ids\":[\"%s\"],\"name\":\"SaKaHub\","
-              "\"mdl\":\"EK-TM4C1294XL\",\"mf\":\"TomArts\"}}",
-              g_pcBase, iRelay + 1, g_pcDevId, iRelay, iRelay, iRelay, g_pcDevId);
+              "\"mdl\":\"%s\",\"mf\":\"TomArts\"}}",
+              g_pcBase, iRelay + 1, g_pcDevId, iRelay, iRelay, iRelay,
+              g_pcDevId, ConfigGet()->pcClientID);
 
     MQTTClientPublish(g_pcDiscTopic, (const uint8_t *)g_pcDiscPayload,
                       (uint16_t)strlen(g_pcDiscPayload), 1);
@@ -140,9 +141,10 @@ MQTTAppPublishInputDiscovery(int iInput)
                   "\"stat_t\":\"~/input/%d/event\","
                   "\"event_types\":[\"single\",\"double\"],"
                   "\"avty_t\":\"~/status\",\"dev\":{\"ids\":[\"%s\"],"
-                  "\"name\":\"SaKaHub\",\"mdl\":\"EK-TM4C1294XL\","
+                  "\"name\":\"SaKaHub\",\"mdl\":\"%s\","
                   "\"mf\":\"TomArts\"}}",
-                  g_pcBase, iInput + 1, g_pcDevId, iInput, iInput, g_pcDevId);
+                  g_pcBase, iInput + 1, g_pcDevId, iInput, iInput,
+                  g_pcDevId, ConfigGet()->pcClientID);
     }
     else
     {
@@ -150,9 +152,10 @@ MQTTAppPublishInputDiscovery(int iInput)
                   "{\"~\":\"%s\",\"name\":\"In%02d\",\"uniq_id\":\"%s_input%d\","
                   "\"stat_t\":\"~/input/%d/state\",\"pl_on\":\"ON\",\"pl_off\":"
                   "\"OFF\",\"avty_t\":\"~/status\",\"dev\":{\"ids\":[\"%s\"],"
-                  "\"name\":\"SaKaHub\",\"mdl\":\"EK-TM4C1294XL\","
+                  "\"name\":\"SaKaHub\",\"mdl\":\"%s\","
                   "\"mf\":\"TomArts\"}}",
-                  g_pcBase, iInput + 1, g_pcDevId, iInput, iInput, g_pcDevId);
+                  g_pcBase, iInput + 1, g_pcDevId, iInput, iInput,
+                  g_pcDevId, ConfigGet()->pcClientID);
     }
 
     MQTTClientPublish(g_pcDiscTopic, (const uint8_t *)g_pcDiscPayload,
@@ -338,7 +341,7 @@ MQTTAppMsgCB(const char *pcTopic, uint16_t ui16TopicLen,
     {
         uint32_t ui32Ms;
         char acNum[12];
-        if((uint16_t)iRelay >= RelayChainCount() || ui16PayloadLen == 0)
+        if((uint16_t)iRelay >= RelayChainCount())
         {
             return;
         }
@@ -352,9 +355,13 @@ MQTTAppMsgCB(const char *pcTopic, uint16_t ui16TopicLen,
         memcpy(acNum, pui8Payload, ui16PayloadLen);
         acNum[ui16PayloadLen] = '\0';
         ui32Ms = ustrtoul(acNum, NULL, 10);
-        if(ui32Ms == 0 || ui32Ms > 3600000u)
+        if(ui32Ms == 0)
         {
-            return;   // reject 0 and durations > 1 hour
+            ui32Ms = 1000;   // implicit default: empty/0 payload pulses for 1 s
+        }
+        if(ui32Ms > 3600000u)
+        {
+            return;   // reject durations > 1 hour
         }
         UARTprintf("MQTT: relay %d pulse %u ms\n", iRelay, ui32Ms);
         RelayPulseStart(iRelay, ui32Ms);
@@ -466,15 +473,15 @@ MQTTAppPostConnect(int iStep)
     }
     else if(iStep == iSub)
     {
-        //
-        // One wildcard subscription covers every relay command topic.
-        //
-        usnprintf(g_pcScratchTopic, sizeof(g_pcScratchTopic),
-                  "%s/relay/+/set", g_pcBase);
-        MQTTClientSubscribe(g_pcScratchTopic);
-        usnprintf(g_pcScratchTopic, sizeof(g_pcScratchTopic),
-                  "%s/relay/+/pulse", g_pcBase);
-        MQTTClientSubscribe(g_pcScratchTopic);
+        if(iRelays > 0)
+        {
+            usnprintf(g_pcScratchTopic, sizeof(g_pcScratchTopic),
+                      "%s/relay/+/set", g_pcBase);
+            MQTTClientSubscribe(g_pcScratchTopic);
+            usnprintf(g_pcScratchTopic, sizeof(g_pcScratchTopic),
+                      "%s/relay/+/pulse", g_pcBase);
+            MQTTClientSubscribe(g_pcScratchTopic);
+        }
         UARTprintf("MQTT: %d relays published (HA discovery).\n", iRelays);
     }
     else if(iStep <= (iSub + iInputs))

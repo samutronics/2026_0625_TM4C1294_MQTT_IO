@@ -215,6 +215,11 @@ ConfigInit(void)
     {
         memset(&g_sIONames, 0, sizeof(tIONames));
         g_sIONames.ui32Magic = CFG_IO_NAMES_MAGIC;
+        // Write the zeroed defaults to EEPROM immediately so that subsequent
+        // targeted ConfigNameSet() writes produce a CRC that matches what
+        // EEPROMRead() will return on the next boot.  Without this, unwritten
+        // name slots retain 0xFF (or stale bytes), causing a CRC mismatch.
+        ConfigNamesSave();
         UARTprintf("No names config in EEPROM; using generated labels.\n");
     }
 }
@@ -233,7 +238,7 @@ ConfigGetDinDevices(void)
 void
 ConfigSetDinDevices(uint8_t ui8Devices)
 {
-    if((ui8Devices == 0) || (ui8Devices > CFG_DIN_MAX_DEVICES))
+    if(ui8Devices > CFG_DIN_MAX_DEVICES)
     {
         ui8Devices = CFG_DIN_DEFAULT_DEVICES;
     }
@@ -250,7 +255,7 @@ ConfigGetRelayDevices(void)
 void
 ConfigSetRelayDevices(uint8_t ui8Devices)
 {
-    if((ui8Devices == 0) || (ui8Devices > CFG_RELAY_MAX_DEVICES))
+    if(ui8Devices > CFG_RELAY_MAX_DEVICES)
     {
         ui8Devices = CFG_RELAY_DEFAULT_DEVICES;
     }
@@ -561,6 +566,9 @@ ConfigNameSet(bool bInput, int iIdx, const char *pcName)
     memset(pcDst, 0, CFG_NAME_LEN);
     strncpy(pcDst, pcName, CFG_NAME_LEN - 1);
 
+    // Persist the magic word on every targeted write so the record survives a
+    // reboot even if ConfigNamesSave() was never called (e.g. after factory reset).
+    EEPROMProgram(&g_sIONames.ui32Magic, CFG_IO_NAMES_ADDR, 4u);
     EEPROMProgram((uint32_t *)(uintptr_t)pcDst, ui32Addr, CFG_NAME_LEN);
 
     g_sIONames.ui32Crc = ConfigCRC32((const uint8_t *)&g_sIONames,

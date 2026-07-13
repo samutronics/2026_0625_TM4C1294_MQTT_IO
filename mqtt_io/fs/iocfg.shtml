@@ -6,7 +6,9 @@
 <title>SaKaHub &mdash; I/O Config</title>
 <style>
 *{box-sizing:border-box;margin:0;padding:0}
-body{font-family:"Segoe UI","Helvetica Neue",Arial,sans-serif;background:#f2f2f2;color:#333;font-size:14px;line-height:1.5}
+body{font-family:"Segoe UI","Helvetica Neue",Arial,sans-serif;background:#f2f2f2;color:#333;font-size:14px;line-height:1.5;padding-top:184px}
+.ti-topbar{position:fixed;top:0;left:0;right:0;z-index:100}
+.ti-save-bar{background:#fff;border-bottom:1px solid #e0e0e0;padding:6px 24px;display:flex;align-items:center}
 .ti-header{background:#1a1a1a;height:50px;display:flex;align-items:center;justify-content:space-between;padding:0 24px}
 .ti-brand{display:flex;align-items:baseline;gap:6px}
 .ti-brand-name{font-size:20px;font-weight:700;color:#fff;letter-spacing:.5px}
@@ -48,6 +50,11 @@ select.sel-out{min-width:76px}
 select.sel-trig{min-width:92px}
 select.sel-act{min-width:76px}
 .arrow-lbl{font-size:10px;color:#bbb;padding:0 3px}
+/* ── Input Status Matrix ── */
+.imx{display:flex;flex-wrap:wrap;gap:5px}
+.imx .cell{width:30px;height:30px;border-radius:4px;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;font-family:Consolas,"Courier New",monospace;background:#d8d8d8;color:#8a8a8a;box-shadow:inset 0 0 0 1px rgba(0,0,0,.05);transition:background .12s,color .12s;user-select:none}
+.imx .cell.on{background:#22a832;color:#fff;box-shadow:inset 0 0 0 1px rgba(0,0,0,.12)}
+.imx-empty{font-size:12px;color:#999}
 /* ── Button ── */
 .ti-btn{display:inline-block;padding:9px 26px;background:#cc0000;color:#fff;border:none;font-size:12px;font-weight:700;letter-spacing:.8px;text-transform:uppercase;cursor:pointer;font-family:inherit;transition:background .15s}
 .ti-btn:hover{background:#aa0000}
@@ -59,6 +66,7 @@ select.sel-act{min-width:76px}
 </head>
 <body>
 
+<div class="ti-topbar">
 <div class="ti-header">
   <div class="ti-brand">
     <span class="ti-brand-name"><em>Sa</em>Ka<em>Hub</em></span>
@@ -70,8 +78,7 @@ select.sel-act{min-width:76px}
 <div class="ti-nav">
   <a href="/index.shtml">Settings</a>
   <a href="/iocfg.shtml" class="active">I/O Config</a>
-  <a href="/fwupdate.shtml">Firmware</a>
-  <a href="/cfgbackup.shtml">Backup</a>
+  <a href="/tools.shtml">Tools</a>
 </div>
 
 <div class="ti-status">
@@ -79,24 +86,36 @@ select.sel-act{min-width:76px}
   <div class="ti-status-item"><b>MQTT&nbsp;</b><!--#mqstatus--></div>
   <div class="ti-status-item"><b>Time&nbsp;</b><span id="ntptm"><!--#ntptime--></span></div>
 </div>
+<div class="ti-save-bar">
+  <button type="submit" form="iof" class="ti-btn">Save Configuration</button>
+</div>
+</div>
 
 <main>
 
-  <!-- Device counts -->
+  <!-- Input Status matrix dashboard -->
   <div class="ti-card">
-    <div class="ti-card-head"><h2>Device Counts</h2></div>
+    <div class="ti-card-head"><h2>Input Status</h2></div>
+    <div class="ti-card-body">
+      <div id="imx" class="imx"></div>
+    </div>
+  </div>
+
+  <!-- Inputs: device count + per-input type & bindings -->
+  <div class="ti-card">
+    <div class="ti-card-head"><h2>Inputs</h2></div>
     <div class="ti-card-body">
       <form id="iof" method="get" action="/iocfg.cgi" onsubmit="return onIOCfgSubmit(event)">
         <div class="ti-2col">
           <div class="ti-field">
             <label>Input devices &mdash; SN65HVS882 (8 ch each)</label>
             <input type="number" id="din" name="din" value="<!--#mqdin-->"
-                   min="1" max="15" onchange="buildTable()">
+                   min="0" max="15" onchange="buildTable()">
           </div>
           <div class="ti-field">
             <label>Relay devices &mdash; DRV8860 (8 ch each)</label>
             <input type="number" id="relay" name="relay" value="<!--#mqrelay-->"
-                   min="1" max="15" onchange="buildRelayOpts()">
+                   min="0" max="15" onchange="buildRelayOpts()">
           </div>
         </div>
 
@@ -106,23 +125,13 @@ select.sel-act{min-width:76px}
         <input type="hidden" id="types" name="types" value="">
         <input type="hidden" id="binds" name="binds" value="">
 
-        <div class="ti-btn-row">
-          <button type="submit" class="ti-btn">Save Configuration</button>
-        </div>
       </form>
-
-      <div class="ti-note">
-        <b>Switch</b>: binary_sensor in HA; binds trigger on Level ON / Level OFF.<br>
-        <b>Pushbutton</b>: event entity in HA; binds trigger on Single / Double click.<br>
-        Each input supports up to 4 relay bindings. Bindings execute on-device
-        independent of network connectivity.
-      </div>
     </div>
   </div>
 
-  <!-- Relay Pulse -->
+  <!-- Outputs: relay states + pulse -->
   <div class="ti-card">
-    <div class="ti-card-head"><h2>Relay Pulse</h2></div>
+    <div class="ti-card-head"><h2>Outputs</h2></div>
     <div class="ti-card-body">
       <div id="pulse-tbl"></div>
       <div id="pulse-status" style="margin-top:10px;font-size:12px;color:#555"></div>
@@ -147,7 +156,7 @@ var B="<!--#iobinds-->";
 var INAMES="<!--#innames-->";
 var ONAMES="<!--#outnames-->";
 var IS="<!--#instates-->";
-var OS="<!--#outstates-->";
+var OS="<!--#outstats-->";
 
 function getBit(hex,i){var b=parseInt(hex.substr((i>>3)*2,2)||'0',16);return((b>>(i&7))&1)===1;}
 function getInBit(i){return getBit(IS,i);}
@@ -161,12 +170,14 @@ async function liveUpdate(){
     var p=t.split('|');
     if(p.length===2){IS=p[0].trim();OS=p[1].trim();}
   }catch(e){return;}
-  // Update input status dots + text
+  // Update input status dots + text and the status matrix
   var n=D*8;
   for(var i=0;i<n;i++){
+    var on=getInBit(i);
+    var cell=document.getElementById('imx_'+i);
+    if(cell){if(on)cell.classList.add('on');else cell.classList.remove('on');}
     var dot=document.getElementById('ids_'+i);
     if(!dot)continue;
-    var on=getInBit(i);
     dot.style.background=on?'#22a832':'#ccc';dot.title=on?'ON':'OFF';
     var txt=dot.nextSibling;if(txt)txt.textContent=on?'ON':'OFF';
   }
@@ -178,7 +189,7 @@ async function liveUpdate(){
     var on=getOutBit(k);
     dot.style.background=on?'#22a832':'#ccc';dot.title=on?'ON':'OFF';
     var txt=dot.nextSibling;if(txt&&txt.nodeType===3)txt=txt.nextSibling;
-    if(txt)txt.textContent=' '+(on?'ON':'OFF');
+    if(txt)txt.textContent=(on?'ON':'OFF');
   }
 }
 setInterval(liveUpdate,1000);
@@ -202,8 +213,9 @@ function pad2(n){return n<10?"0"+n:""+n;}
 
 var g_relayOpts="";
 function buildRelayOpts(){
-  var nr=parseInt(document.getElementById("relay").value)||R;
-  if(nr>=1&&nr<=15)R=nr;
+  var nr=parseInt(document.getElementById("relay").value);
+  if(isNaN(nr))nr=R;
+  if(nr>=0&&nr<=15)R=nr;
   var s="<option value='127'>None</option>";
   for(var k=0;k<R*8;k++){var on=getOutName(k)||('Out'+pad2(k+1));s+="<option value='"+k+"'>"+esc(on)+"</option>";}
   g_relayOpts=s;
@@ -230,9 +242,19 @@ function updateTrig(i){
   }
 }
 
+// Dense live status matrix — one cell per input, number only, colour = state.
+function buildInputMatrix(){
+  var n=D*8,h="",i;
+  for(i=0;i<n;i++){
+    h+="<div class='cell"+(getInBit(i)?" on":"")+"' id='imx_"+i+"' title='Input "+(i+1)+"'>"+pad2(i+1)+"</div>";
+  }
+  document.getElementById("imx").innerHTML=n?h:"<span class='imx-empty'>No inputs configured.</span>";
+}
+
 function buildTable(){
   var nd=parseInt(document.getElementById("din").value);
-  if(nd>=1&&nd<=15)D=nd;
+  if(nd>=0&&nd<=15)D=nd;
+  buildInputMatrix();
   buildRelayOpts();
   var n=D*8;
   var h="<table><thead><tr>"
@@ -295,7 +317,7 @@ function buildTable(){
 
 function serialize(){
   var nd=parseInt(document.getElementById("din").value);
-  if(nd>=1&&nd<=15)D=nd;
+  if(nd>=0&&nd<=15)D=nd;
   /* types */
   var types="";
   for(var b=0;b<D;b++){
@@ -349,7 +371,7 @@ function buildPulseTable() {
        + '<span id="ods_'+i+'" style="width:7px;height:7px;border-radius:50%;display:inline-block;background:'+(on?'#22a832':'#ccc')+'" title="'+(on?'ON':'OFF')+'"></span>'
        + '&nbsp;<span style="font-size:10px;color:#888">'+(on?'ON':'OFF')+'</span>'
        + '</td>'
-       + '<td style="padding:5px 10px"><input type="number" id="pms_' + i + '" value="500" min="1" max="3600000"'
+       + '<td style="padding:5px 10px"><input type="number" id="pms_' + i + '" value="1000" min="1" max="3600000"'
        + ' style="width:90px;padding:5px 7px;border:1px solid #bbb;font-size:12px;font-family:inherit"></td>'
        + '<td style="padding:5px 10px"><button class="ti-btn" style="padding:6px 16px"'
        + ' onclick="doPulse(' + i + ')">Pulse</button></td>'
@@ -360,7 +382,7 @@ function buildPulseTable() {
 }
 
 async function doPulse(n) {
-  var ms = parseInt(document.getElementById('pms_' + n).value) || 500;
+  var ms = parseInt(document.getElementById('pms_' + n).value) || 1000;
   if(ms < 1) ms = 1;
   if(ms > 3600000) ms = 3600000;
   var status = document.getElementById('pulse-status');

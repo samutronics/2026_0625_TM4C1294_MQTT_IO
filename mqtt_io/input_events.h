@@ -25,6 +25,16 @@ extern "C"
 void InputEventsSetCallback(void (*pfnCallback)(int iInput, const char *pcEvt));
 
 //
+// Register an optional predicate that returns true when the given input has a
+// double-click action that must be detected.  When it returns false, the click
+// detector fires "single" on the confirmed press edge (~30 ms) instead of
+// waiting out the double-click window on release, removing ~350 ms of latency
+// for single-only inputs.  If never registered, the detector always waits
+// (double-click always enabled).
+//
+void InputEventsSetDoubleQuery(bool (*pfnNeedsDouble)(int iInput));
+
+//
 // Feed raw (post-scan) level for one pushbutton input.  Call once per scan
 // cycle for every input that is currently configured as a pushbutton.
 // bActive = true while the physical input is asserted.

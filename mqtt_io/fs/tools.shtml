@@ -1,0 +1,326 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>SaKaHub &mdash; Tools</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:"Segoe UI","Helvetica Neue",Arial,sans-serif;background:#f2f2f2;color:#333;font-size:14px;line-height:1.5;padding-top:135px}
+.ti-topbar{position:fixed;top:0;left:0;right:0;z-index:100}
+.ti-header{background:#1a1a1a;height:50px;display:flex;align-items:center;justify-content:space-between;padding:0 24px}
+.ti-brand{display:flex;align-items:baseline;gap:6px}
+.ti-brand-name{font-size:20px;font-weight:700;color:#fff;letter-spacing:.5px}
+.ti-brand-name em{color:#cc0000;font-style:normal}
+.ti-brand-sub{font-size:10px;color:#888;letter-spacing:1.5px;text-transform:uppercase}
+.ti-tagline{font-size:10px;color:#777;letter-spacing:1.5px;text-transform:uppercase}
+.ti-nav{background:#fff;border-bottom:2px solid #e0e0e0;display:flex;padding:0 24px}
+.ti-nav a{display:inline-block;padding:13px 18px;font-size:13px;font-weight:600;color:#555;text-decoration:none;border-bottom:3px solid transparent;margin-bottom:-2px;letter-spacing:.2px;transition:color .15s,border-color .15s}
+.ti-nav a:hover{color:#cc0000}
+.ti-nav a.active{color:#cc0000;border-bottom-color:#cc0000}
+.ti-status{background:#f7f7f7;border-bottom:1px solid #ddd;padding:9px 24px;display:flex;gap:28px;font-size:12px;color:#444;align-items:center}
+.ti-status-item{display:flex;align-items:center;gap:6px}
+.ti-status-item b{font-weight:600;color:#222}
+.ti-dot{width:7px;height:7px;border-radius:50%;background:#22a832;display:inline-block;flex-shrink:0}
+main{padding:28px 24px;max-width:700px}
+.ti-card{background:#fff;border:1px solid #d8d8d8;margin-bottom:20px}
+.ti-card-head{padding:14px 20px;border-bottom:1px solid #e8e8e8;background:#fafafa}
+.ti-card-head h2{font-size:15px;font-weight:600;color:#1a1a1a}
+.ti-card-body{padding:22px 20px}
+.ti-field{margin-bottom:18px}
+.ti-field label{display:block;font-size:10px;font-weight:700;color:#767676;text-transform:uppercase;letter-spacing:1px;margin-bottom:5px}
+.ti-field input[type=file]{width:100%;padding:7px 9px;border:1px solid #bbb;font-size:13px;font-family:inherit;color:#222;background:#fff;cursor:pointer}
+textarea{width:100%;height:180px;padding:8px 10px;border:1px solid #bbb;font-size:12px;font-family:monospace;color:#222;resize:vertical;outline:none;transition:border-color .15s,background .15s}
+textarea:focus{border-color:#cc0000}
+textarea.drag-over{border-color:#cc0000;background:#fff5f5}
+.ti-btn{display:inline-block;padding:9px 26px;background:#cc0000;color:#fff;border:none;font-size:12px;font-weight:700;letter-spacing:.8px;text-transform:uppercase;cursor:pointer;font-family:inherit;transition:background .15s}
+.ti-btn:hover:not(:disabled){background:#aa0000}
+.ti-btn:disabled{background:#aaa;cursor:default}
+.ti-file-btn{display:inline-block;padding:7px 18px;background:#f0f0f0;color:#333;border:1px solid #bbb;font-size:12px;font-weight:600;cursor:pointer;font-family:inherit;letter-spacing:.4px}
+.ti-file-btn:hover{background:#e4e4e4}
+.ti-btn-row{margin-top:14px;display:flex;gap:10px;flex-wrap:wrap;align-items:center}
+.ti-note{margin-top:18px;padding:11px 14px;background:#f7f7f7;border-left:3px solid #cc0000;font-size:12px;color:#555;line-height:1.7}
+.ti-footer{margin-top:36px;padding:16px 24px;border-top:1px solid #d8d8d8;font-size:11px;color:#999;display:flex;justify-content:space-between}
+.prog-wrap{display:none;margin-top:12px}
+.prog-bar-bg{height:6px;background:#e0e0e0;border-radius:3px;overflow:hidden}
+.prog-bar-fg{height:100%;background:#cc0000;width:0%;transition:width .2s}
+.prog-txt{font-size:11px;color:#888;margin-top:4px}
+#fw-status{margin-top:14px;font-size:13px;font-weight:600;color:#1a1a1a}
+#cfg-status{margin-top:10px;font-size:13px;font-weight:600}
+</style>
+<!-- Hidden SSI inputs — JS reads these to build the backup JSON -->
+<input type="hidden" id="h_host"     value="<!--#mqhost-->">
+<input type="hidden" id="h_port"     value="<!--#mqport-->">
+<input type="hidden" id="h_client"   value="<!--#mqclient-->">
+<input type="hidden" id="h_user"     value="<!--#mquser-->">
+<input type="hidden" id="h_topic"    value="<!--#mqtopic-->">
+<input type="hidden" id="h_auth"     value="<!--#mqauth-->">
+<input type="hidden" id="h_din"      value="<!--#mqdin-->">
+<input type="hidden" id="h_relay"    value="<!--#mqrelay-->">
+<input type="hidden" id="h_ntp"      value="<!--#ntpsvr-->">
+<input type="hidden" id="h_tz"       value="<!--#ntptz-->">
+<input type="hidden" id="h_pass"     value="<!--#mqpass-->">
+<input type="hidden" id="h_types"    value="<!--#iotypes-->">
+<input type="hidden" id="h_binds"    value="<!--#iobinds-->">
+<input type="hidden" id="h_innames"  value="<!--#innames-->">
+<input type="hidden" id="h_outnames" value="<!--#outnames-->">
+</head>
+<body>
+
+<div class="ti-topbar">
+<div class="ti-header">
+  <div class="ti-brand">
+    <span class="ti-brand-name"><em>Sa</em>Ka<em>Hub</em></span>
+    <span class="ti-brand-sub"><!--#fwver--></span>
+  </div>
+  <span class="ti-tagline">MQTT I/O Gateway</span>
+</div>
+
+<div class="ti-nav">
+  <a href="/index.shtml">Settings</a>
+  <a href="/iocfg.shtml">I/O Config</a>
+  <a href="/tools.shtml" class="active">Tools</a>
+</div>
+
+<div class="ti-status">
+  <div class="ti-status-item"><span class="ti-dot"></span><b>IP&nbsp;</b><!--#ipaddr--></div>
+  <div class="ti-status-item"><b>MQTT&nbsp;</b><!--#mqstatus--></div>
+  <div class="ti-status-item"><b>Time&nbsp;</b><span id="ntptm"><!--#ntptime--></span></div>
+</div>
+</div>
+
+<main>
+
+  <!-- Firmware Update -->
+  <div class="ti-card">
+    <div class="ti-card-head"><h2>Firmware Update (OTA)</h2></div>
+    <div class="ti-card-body">
+      <div class="ti-field">
+        <label>Firmware binary (.bin)</label>
+        <input type="file" id="fwfile" accept=".bin">
+      </div>
+      <div class="ti-btn-row">
+        <button id="upbtn" class="ti-btn" onclick="startUpload()">Upload &amp; Apply</button>
+        <span id="fw-status"></span>
+      </div>
+      <div id="fw-prog" class="prog-wrap">
+        <div class="prog-bar-bg"><div class="prog-bar-fg" id="fw-bar"></div></div>
+        <div class="prog-txt" id="fw-txt">0%</div>
+      </div>
+      <div class="ti-note">Do <b>not</b> navigate away during upload. The device will reboot; reconnect after ~10 s.</div>
+    </div>
+  </div>
+
+  <!-- Config Backup -->
+  <div class="ti-card">
+    <div class="ti-card-head"><h2>Backup Configuration</h2></div>
+    <div class="ti-card-body">
+      <textarea id="backupJson" readonly></textarea>
+      <div class="ti-btn-row">
+        <button class="ti-btn" onclick="doDownload()">Download JSON</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Config Restore -->
+  <div class="ti-card">
+    <div class="ti-card-head"><h2>Restore Configuration</h2></div>
+    <div class="ti-card-body">
+      <textarea id="restoreJson" placeholder="Paste JSON here, drop a .json file, or use Choose File&hellip;"></textarea>
+      <div class="ti-btn-row">
+        <label class="ti-file-btn">Choose File<input type="file" accept=".json,application/json" id="restoreFile" style="display:none"></label>
+        <button class="ti-btn" onclick="doRestore()">Restore &amp; Reboot</button>
+      </div>
+      <div id="cfg-prog" class="prog-wrap">
+        <div class="prog-bar-bg"><div class="prog-bar-fg" id="cfg-bar"></div></div>
+        <div class="prog-txt" id="cfg-txt">0%</div>
+      </div>
+      <div id="cfg-status"></div>
+    </div>
+  </div>
+
+  <!-- Reboot Device -->
+  <div class="ti-card">
+    <div class="ti-card-head"><h2>Reboot Device</h2></div>
+    <div class="ti-card-body">
+      <div class="ti-btn-row">
+        <button class="ti-btn" onclick="doReboot()">Reboot Now</button>
+        <span id="rb-status"></span>
+      </div>
+      <div class="ti-note">The device restarts immediately. Settings are preserved. Reconnect after ~10 s.</div>
+    </div>
+  </div>
+
+</main>
+
+<div class="ti-footer">
+  <span>SaKaHub &copy; TomArts</span>
+  <span><!--#fwver--> &mdash; TivaWare 2.2.0</span>
+</div>
+
+<script>
+// ── Firmware upload ──────────────────────────────────────────────────────────
+var FWCHUNK = 200;
+
+function toHex(buf, off, len) {
+  var h = '', n = '0123456789abcdef';
+  for(var i = 0; i < len; i++) {
+    var b = buf[off + i];
+    h += n[b >> 4] + n[b & 15];
+  }
+  return h;
+}
+
+function fwStatus(msg) { document.getElementById('fw-status').textContent = msg; }
+function fwProgress(pct) {
+  document.getElementById('fw-bar').style.width = pct + '%';
+  document.getElementById('fw-txt').textContent = Math.round(pct) + '%';
+}
+
+async function startUpload() {
+  var file = document.getElementById('fwfile').files[0];
+  if(!file) { alert('Select a .bin file first.'); return; }
+  if(!file.name.endsWith('.bin')) { alert('File must be a .bin file.'); return; }
+  document.getElementById('upbtn').disabled = true;
+  document.getElementById('fw-prog').style.display = 'block';
+  fwProgress(0); fwStatus('Reading file...');
+  var buf;
+  try { buf = new Uint8Array(await file.arrayBuffer()); }
+  catch(e) { fwStatus('Failed to read file.'); document.getElementById('upbtn').disabled = false; return; }
+  var total = buf.length, seq = 0, offset = 0, ok = true;
+  fwStatus('Uploading...');
+  while(offset < total) {
+    var len = Math.min(FWCHUNK, total - offset);
+    var last = (offset + len >= total) ? 1 : 0;
+    var url = '/fwchunk.cgi?seq=' + seq + '&last=' + last + '&data=' + toHex(buf, offset, len);
+    try {
+      var resp = await fetch(url, {cache:'no-store'});
+      if(!resp.ok) { ok = false; break; }
+    } catch(e) { ok = false; break; }
+    offset += len; seq++;
+    fwProgress(offset / total * 100);
+  }
+  if(ok) {
+    fwProgress(100);
+    fwStatus('Upload complete. Device rebooting — reconnect in ~10 s.');
+  } else {
+    fwStatus('Upload failed at chunk ' + seq + '. Retry or power-cycle the device.');
+    document.getElementById('upbtn').disabled = false;
+  }
+}
+
+// ── Config backup ────────────────────────────────────────────────────────────
+function buildJson() {
+  var authRaw = document.getElementById('h_auth').value;
+  var authVal = (authRaw === 'checked' || authRaw === '1') ? 1 : 0;
+  return JSON.stringify({
+    host:     document.getElementById('h_host').value,
+    port:     parseInt(document.getElementById('h_port').value) || 1883,
+    client:   document.getElementById('h_client').value,
+    user:     document.getElementById('h_user').value,
+    pass:     document.getElementById('h_pass').value,
+    topic:    document.getElementById('h_topic').value,
+    auth:     authVal,
+    din:      parseInt(document.getElementById('h_din').value)   || 0,
+    relay:    parseInt(document.getElementById('h_relay').value) || 0,
+    ntp:      document.getElementById('h_ntp').value,
+    tz:       parseInt(document.getElementById('h_tz').value)    || 0,
+    types:    document.getElementById('h_types').value,
+    binds:    document.getElementById('h_binds').value,
+    innames:  document.getElementById('h_innames').value,
+    outnames: document.getElementById('h_outnames').value
+  }, null, 2);
+}
+
+window.onload = function() {
+  document.getElementById('backupJson').value = buildJson();
+};
+
+function doDownload() {
+  var json = document.getElementById('backupJson').value;
+  var client = document.getElementById('h_client').value || 'SaKaHub';
+  var d = new Date();
+  var ts = d.getFullYear()
+    + ('0'+(d.getMonth()+1)).slice(-2)
+    + ('0'+d.getDate()).slice(-2)
+    + ('0'+d.getHours()).slice(-2)
+    + ('0'+d.getMinutes()).slice(-2);
+  var blob = new Blob([json], {type:'application/json'});
+  var a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = 'Backup_' + client + '_' + ts + '.json';
+  a.click();
+  URL.revokeObjectURL(a.href);
+}
+
+// ── Config restore ───────────────────────────────────────────────────────────
+function loadFileIntoTextarea(file) {
+  if(!file) return;
+  var r = new FileReader();
+  r.onload = function(e) { document.getElementById('restoreJson').value = e.target.result; };
+  r.readAsText(file);
+}
+
+document.getElementById('restoreFile').addEventListener('change', function(e) {
+  loadFileIntoTextarea(e.target.files[0]);
+});
+
+(function() {
+  var ta = document.getElementById('restoreJson');
+  ta.addEventListener('dragover', function(e) { e.preventDefault(); e.dataTransfer.dropEffect='copy'; ta.classList.add('drag-over'); });
+  ta.addEventListener('dragleave', function() { ta.classList.remove('drag-over'); });
+  ta.addEventListener('drop', function(e) { e.preventDefault(); ta.classList.remove('drag-over'); loadFileIntoTextarea(e.dataTransfer.files[0]); });
+})();
+
+function cfgStatus(msg) { document.getElementById('cfg-status').textContent = msg; }
+function cfgProgress(pct) {
+  document.getElementById('cfg-bar').style.width = pct + '%';
+  document.getElementById('cfg-txt').textContent = Math.round(pct) + '%';
+}
+
+var CFGCHUNK = 200;
+
+function toHexStr(str) {
+  var h = '', n = '0123456789abcdef';
+  for(var i = 0; i < str.length; i++) {
+    var c = str.charCodeAt(i) & 0xFF;
+    h += n[c >> 4] + n[c & 15];
+  }
+  return h;
+}
+
+async function doRestore() {
+  var json = document.getElementById('restoreJson').value.trim();
+  if(!json) { alert('Paste a backup JSON first.'); return; }
+  try { JSON.parse(json); } catch(e) { alert('Invalid JSON: ' + e.message); return; }
+  if(!confirm('Restore these settings and reboot?')) return;
+  document.getElementById('cfg-prog').style.display = 'block';
+  cfgProgress(0); cfgStatus('Uploading...');
+  var total = json.length, offset = 0, seq = 0, ok = true;
+  while(offset < total) {
+    var len  = Math.min(CFGCHUNK, total - offset);
+    var last = (offset + len >= total) ? 1 : 0;
+    var url  = '/cfgrestore.cgi?seq=' + seq + '&last=' + last + '&data=' + toHexStr(json.substr(offset, len));
+    try {
+      var resp = await fetch(url, {cache:'no-store'});
+      if(!resp.ok) { ok = false; break; }
+    } catch(e) { ok = false; break; }
+    offset += len; seq++;
+    cfgProgress(offset / total * 100);
+  }
+  if(ok) { cfgProgress(100); cfgStatus('Done. Device rebooting — reconnect in ~10 s.'); }
+  else    { cfgStatus('Restore failed at chunk ' + seq + '.'); }
+}
+
+// ── Reboot ───────────────────────────────────────────────────────────────────
+function doReboot() {
+  if(!confirm('Reboot the device now?')) return;
+  document.getElementById('rb-status').textContent = 'Rebooting — reconnect in ~10 s.';
+  fetch('/reboot.cgi', {cache:'no-store'}).catch(function(){});
+}
+</script>
+<script>
+(function(){var el=document.getElementById('ntptm');if(!el)return;var p=el.textContent.split(':');if(p.length!==3)return;var s=parseInt(p[0])*3600+parseInt(p[1])*60+parseInt(p[2]);if(isNaN(s))return;setInterval(function(){s=(s+1)%86400;var h=s/3600|0,m=s%3600/60|0,ss=s%60;el.textContent=(h<10?'0':'')+h+':'+(m<10?'0':'')+m+':'+(ss<10?'0':'')+ss;},1000);})();
+</script>
+</body>
+</html>

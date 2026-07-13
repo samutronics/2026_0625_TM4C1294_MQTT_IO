@@ -6,7 +6,9 @@
 <title>SaKaHub &mdash; Settings</title>
 <style>
 *{box-sizing:border-box;margin:0;padding:0}
-body{font-family:"Segoe UI","Helvetica Neue",Arial,sans-serif;background:#f2f2f2;color:#333;font-size:14px;line-height:1.5}
+body{font-family:"Segoe UI","Helvetica Neue",Arial,sans-serif;background:#f2f2f2;color:#333;font-size:14px;line-height:1.5;padding-top:135px}
+/* ── Fixed top bar (header + nav + status) ── */
+.ti-topbar{position:fixed;top:0;left:0;right:0;z-index:100}
 /* ── Header ── */
 .ti-header{background:#1a1a1a;height:50px;display:flex;align-items:center;justify-content:space-between;padding:0 24px}
 .ti-brand{display:flex;align-items:baseline;gap:6px}
@@ -61,6 +63,7 @@ main{padding:28px 24px;max-width:620px}
 </head>
 <body>
 
+<div class="ti-topbar">
 <div class="ti-header">
   <div class="ti-brand">
     <span class="ti-brand-name"><em>Sa</em>Ka<em>Hub</em></span>
@@ -72,14 +75,14 @@ main{padding:28px 24px;max-width:620px}
 <div class="ti-nav">
   <a href="/index.shtml" class="active">Settings</a>
   <a href="/iocfg.shtml">I/O Config</a>
-  <a href="/fwupdate.shtml">Firmware</a>
-  <a href="/cfgbackup.shtml">Backup</a>
+  <a href="/tools.shtml">Tools</a>
 </div>
 
 <div class="ti-status">
   <div class="ti-status-item"><span class="ti-dot"></span><b>IP&nbsp;</b><!--#ipaddr--></div>
   <div class="ti-status-item"><b>MQTT&nbsp;</b><!--#mqstatus--></div>
   <div class="ti-status-item"><b>Time&nbsp;</b><span id="ntptm"><!--#ntptime--></span></div>
+</div>
 </div>
 
 <main>
