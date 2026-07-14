@@ -64,6 +64,13 @@ void MQTTAppRepublish(void);
 void MQTTAppSetRelay(int iRelay, bool bOn);
 
 //
+// Publish a shutter's cover state (retained): "opening" | "closing" | "open" |
+// "closed" | "stopped".  Called from the shutter state machine in output_ctrl.c.
+// Topic: <base>/cover/<N>/state.  No-op when the broker is not connected.
+//
+void MQTTAppPublishCoverState(int iShutter, const char *pcState);
+
+//
 // True once connected to the broker (CONNACK received).
 //
 bool MQTTAppIsConnected(void);

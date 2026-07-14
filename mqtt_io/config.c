@@ -28,11 +28,12 @@
 //
 // The live, in-RAM copies of the two EEPROM records.
 //
-static tMQTTConfig g_sConfig;
-static tIOSettings g_sIOSettings;
-static tIOBindings g_sBindings;
-static tNTPConfig  g_sNTPConfig;
-static tIONames    g_sIONames;
+static tMQTTConfig   g_sConfig;
+static tIOSettings   g_sIOSettings;
+static tIOBindings   g_sBindings;
+static tNTPConfig    g_sNTPConfig;
+static tIONames      g_sIONames;
+static tOutputConfig g_sOutCfg;
 
 //*****************************************************************************
 //
@@ -221,6 +222,48 @@ ConfigInit(void)
         // name slots retain 0xFF (or stale bytes), causing a CRC mismatch.
         ConfigNamesSave();
         UARTprintf("No names config in EEPROM; using generated labels.\n");
+    }
+
+    //
+    // Load per-output behavior (mode + timed duration + shutter table).
+    // On invalid or missing record apply defaults (all Standard, 1000 ms, no
+    // shutters) and write them back so the CRC matches on the next boot.
+    //
+    EEPROMRead((uint32_t *)&g_sOutCfg, CFG_OUTCFG_ADDR, sizeof(tOutputConfig));
+    ui32Crc = ConfigCRC32((const uint8_t *)&g_sOutCfg,
+                          sizeof(tOutputConfig) - sizeof(uint32_t));
+    if((g_sOutCfg.ui32Magic != CFG_OUTCFG_MAGIC) ||
+       (g_sOutCfg.ui32Crc != ui32Crc))
+    {
+        ConfigOutputSetDefaults();
+        ConfigOutputSave();
+        UARTprintf("No output config in EEPROM; all outputs default to Standard.\n");
+    }
+}
+
+//*****************************************************************************
+//
+// Populate the in-RAM output-config record with compiled-in defaults:
+// every output Standard with a 1000 ms timed duration, and no shutters.
+//
+//*****************************************************************************
+void
+ConfigOutputSetDefaults(void)
+{
+    int i;
+
+    memset(&g_sOutCfg, 0, sizeof(tOutputConfig));
+    g_sOutCfg.ui32Magic = CFG_OUTCFG_MAGIC;
+    for(i = 0; i < CFG_MAX_OUTPUTS; i++)
+    {
+        g_sOutCfg.ui8Mode[i]    = OUT_MODE_STANDARD;
+        g_sOutCfg.ui32TimedMs[i] = 1000u;
+    }
+    for(i = 0; i < CFG_MAX_SHUTTERS; i++)
+    {
+        g_sOutCfg.ui8ShUp[i]   = SHUTTER_NONE;
+        g_sOutCfg.ui8ShDown[i] = SHUTTER_NONE;
+        g_sOutCfg.ui32ShTravelMs[i] = 20000u;
     }
 }
 
@@ -485,7 +528,127 @@ ConfigFactoryReset(void)
     EEPROMProgram(&ui32Zero, CFG_OTA_EEPROM_ADDR,  4);   // OTA flag
     EEPROMProgram(&ui32Zero, CFG_NTP_EEPROM_ADDR,  4);   // tNTPConfig
     EEPROMProgram(&ui32Zero, CFG_IO_NAMES_ADDR,    4);   // tIONames
+    EEPROMProgram(&ui32Zero, CFG_OUTCFG_ADDR,      4);   // tOutputConfig
     UARTprintf("Config: EEPROM factory reset complete.\n");
+}
+
+//*****************************************************************************
+//
+// Per-output mode accessors.
+//
+//*****************************************************************************
+uint8_t
+ConfigOutMode(int iOut)
+{
+    if((iOut < 0) || (iOut >= CFG_MAX_OUTPUTS)) { return(OUT_MODE_STANDARD); }
+    return(g_sOutCfg.ui8Mode[iOut]);
+}
+
+void
+ConfigSetOutMode(int iOut, uint8_t ui8Mode)
+{
+    if((iOut < 0) || (iOut >= CFG_MAX_OUTPUTS)) { return; }
+    if(ui8Mode > OUT_MODE_TIMED) { ui8Mode = OUT_MODE_STANDARD; }
+    g_sOutCfg.ui8Mode[iOut] = ui8Mode;
+}
+
+uint32_t
+ConfigOutTimedMs(int iOut)
+{
+    if((iOut < 0) || (iOut >= CFG_MAX_OUTPUTS)) { return(1000u); }
+    return(g_sOutCfg.ui32TimedMs[iOut]);
+}
+
+void
+ConfigSetOutTimedMs(int iOut, uint32_t ui32Ms)
+{
+    if((iOut < 0) || (iOut >= CFG_MAX_OUTPUTS)) { return; }
+    if(ui32Ms < 1u)          { ui32Ms = 1u; }
+    if(ui32Ms > 3600000u)    { ui32Ms = 3600000u; }
+    g_sOutCfg.ui32TimedMs[iOut] = ui32Ms;
+}
+
+//*****************************************************************************
+//
+// Shutter table accessors.
+//
+//*****************************************************************************
+bool
+ConfigShutterGet(int iSlot, uint8_t *pui8Up, uint8_t *pui8Down,
+                 uint32_t *pui32TravelMs)
+{
+    if((iSlot < 0) || (iSlot >= CFG_MAX_SHUTTERS)) { return(false); }
+    if(g_sOutCfg.ui8ShUp[iSlot] == SHUTTER_NONE)   { return(false); }
+    if(pui8Up)        { *pui8Up        = g_sOutCfg.ui8ShUp[iSlot]; }
+    if(pui8Down)      { *pui8Down      = g_sOutCfg.ui8ShDown[iSlot]; }
+    if(pui32TravelMs) { *pui32TravelMs = g_sOutCfg.ui32ShTravelMs[iSlot]; }
+    return(true);
+}
+
+void
+ConfigShutterSet(int iSlot, uint8_t ui8Up, uint8_t ui8Down,
+                 uint32_t ui32TravelMs)
+{
+    if((iSlot < 0) || (iSlot >= CFG_MAX_SHUTTERS)) { return; }
+    if(ui32TravelMs < 1u)       { ui32TravelMs = 1u; }
+    if(ui32TravelMs > 3600000u) { ui32TravelMs = 3600000u; }
+    g_sOutCfg.ui8ShUp[iSlot]        = ui8Up;
+    g_sOutCfg.ui8ShDown[iSlot]      = ui8Down;
+    g_sOutCfg.ui32ShTravelMs[iSlot] = ui32TravelMs;
+}
+
+void
+ConfigShutterClear(int iSlot)
+{
+    if((iSlot < 0) || (iSlot >= CFG_MAX_SHUTTERS)) { return; }
+    g_sOutCfg.ui8ShUp[iSlot]   = SHUTTER_NONE;
+    g_sOutCfg.ui8ShDown[iSlot] = SHUTTER_NONE;
+}
+
+int
+ConfigShutterOfRelay(int iOut, bool *pbIsUp)
+{
+    int i;
+    if((iOut < 0) || (iOut >= CFG_MAX_OUTPUTS)) { return(-1); }
+    for(i = 0; i < CFG_MAX_SHUTTERS; i++)
+    {
+        if(g_sOutCfg.ui8ShUp[i] == SHUTTER_NONE) { continue; }
+        if((int)g_sOutCfg.ui8ShUp[i] == iOut)
+        {
+            if(pbIsUp) { *pbIsUp = true; }
+            return(i);
+        }
+        if((int)g_sOutCfg.ui8ShDown[i] == iOut)
+        {
+            if(pbIsUp) { *pbIsUp = false; }
+            return(i);
+        }
+    }
+    return(-1);
+}
+
+//*****************************************************************************
+//
+// Persist the complete tOutputConfig record to EEPROM.
+//
+//*****************************************************************************
+bool
+ConfigOutputSave(void)
+{
+    uint32_t ui32Rc;
+
+    g_sOutCfg.ui32Magic = CFG_OUTCFG_MAGIC;
+    g_sOutCfg.ui32Crc   = ConfigCRC32((const uint8_t *)&g_sOutCfg,
+                                      sizeof(tOutputConfig) - sizeof(uint32_t));
+    ui32Rc = EEPROMProgram((uint32_t *)&g_sOutCfg, CFG_OUTCFG_ADDR,
+                           sizeof(tOutputConfig));
+    if(ui32Rc != 0)
+    {
+        UARTprintf("EEPROM write failed (output config, 0x%x).\n", ui32Rc);
+        return(false);
+    }
+    UARTprintf("Output config saved to EEPROM.\n");
+    return(true);
 }
 
 //*****************************************************************************

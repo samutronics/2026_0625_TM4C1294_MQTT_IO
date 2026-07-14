@@ -58,6 +58,12 @@ select.sel-act{min-width:76px}
 /* ── Button ── */
 .ti-btn{display:inline-block;padding:9px 26px;background:#cc0000;color:#fff;border:none;font-size:12px;font-weight:700;letter-spacing:.8px;text-transform:uppercase;cursor:pointer;font-family:inherit;transition:background .15s}
 .ti-btn:hover{background:#aa0000}
+/* ── Sub-page tabs (Inputs / Outputs) ── */
+.io-subtabs{display:flex;border:1px solid #d0d0d0;border-radius:4px;overflow:hidden}
+.io-subtab{padding:7px 22px;background:#fff;border:none;border-right:1px solid #e0e0e0;font-size:12px;font-weight:700;letter-spacing:.5px;text-transform:uppercase;color:#666;cursor:pointer;font-family:inherit;transition:background .15s,color .15s}
+.io-subtab:last-child{border-right:none}
+.io-subtab.active{background:#cc0000;color:#fff}
+.io-subtab:not(.active):hover{background:#f3f3f3;color:#cc0000}
 .ti-btn-row{margin-top:18px}
 /* ── Note ── */
 .ti-note{margin-top:18px;padding:11px 14px;background:#f7f7f7;border-left:3px solid #cc0000;font-size:12px;color:#555;line-height:1.7}
@@ -87,11 +93,22 @@ select.sel-act{min-width:76px}
   <div class="ti-status-item"><b>Time&nbsp;</b><span id="ntptm"><!--#ntptime--></span></div>
 </div>
 <div class="ti-save-bar">
-  <button type="submit" form="iof" class="ti-btn">Save Configuration</button>
+  <div class="io-subtabs">
+    <button type="button" id="tab-in"  class="io-subtab active" onclick="showIOPage('in')">Inputs</button>
+    <button type="button" id="tab-out" class="io-subtab"        onclick="showIOPage('out')">Outputs</button>
+  </div>
+  <button type="submit" form="iof" class="ti-btn" style="margin-left:auto">Save Configuration</button>
 </div>
 </div>
 
 <main>
+
+  <form id="iof" method="get" action="/iocfg.cgi" onsubmit="return onIOCfgSubmit(event)">
+  <input type="hidden" id="types" name="types" value="">
+  <input type="hidden" id="binds" name="binds" value="">
+
+  <!-- ============================ INPUTS SUB-PAGE ============================ -->
+  <div id="page-in">
 
   <!-- Input Status matrix dashboard -->
   <div class="ti-card">
@@ -105,42 +122,67 @@ select.sel-act{min-width:76px}
   <div class="ti-card">
     <div class="ti-card-head"><h2>Inputs</h2></div>
     <div class="ti-card-body">
-      <form id="iof" method="get" action="/iocfg.cgi" onsubmit="return onIOCfgSubmit(event)">
-        <div class="ti-2col">
-          <div class="ti-field">
-            <label>Input devices &mdash; SN65HVS882 (8 ch each)</label>
-            <input type="number" id="din" name="din" value="<!--#mqdin-->"
-                   min="0" max="15" onchange="buildTable()">
-          </div>
-          <div class="ti-field">
-            <label>Relay devices &mdash; DRV8860 (8 ch each)</label>
-            <input type="number" id="relay" name="relay" value="<!--#mqrelay-->"
-                   min="0" max="15" onchange="buildRelayOpts()">
-          </div>
-        </div>
+      <div class="ti-field">
+        <label>Input devices &mdash; SN65HVS882 (8 ch each)</label>
+        <input type="number" id="din" name="din" value="<!--#mqdin-->"
+               min="0" max="15" onchange="buildTable()">
+      </div>
 
-        <!-- Per-input type + bindings table -->
-        <div id="tbl"></div>
-
-        <input type="hidden" id="types" name="types" value="">
-        <input type="hidden" id="binds" name="binds" value="">
-
-      </form>
+      <!-- Per-input type + bindings table -->
+      <div id="tbl"></div>
     </div>
   </div>
 
-  <!-- Outputs: relay states + pulse -->
+  </div><!-- /page-in -->
+
+  <!-- ============================ OUTPUTS SUB-PAGE =========================== -->
+  <div id="page-out" style="display:none">
+
+  <!-- Outputs: device count + relay states + modes -->
   <div class="ti-card">
     <div class="ti-card-head"><h2>Outputs</h2></div>
     <div class="ti-card-body">
+      <div class="ti-field">
+        <label>Relay devices &mdash; DRV8860 (8 ch each)</label>
+        <input type="number" id="relay" name="relay" value="<!--#mqrelay-->"
+               min="0" max="15" onchange="onRelayChange()">
+      </div>
       <div id="pulse-tbl"></div>
       <div id="pulse-status" style="margin-top:10px;font-size:12px;color:#555"></div>
       <div class="ti-note" style="margin-top:12px">
-        Close a relay for the specified time, then open it automatically.
-        Useful for testing door strikes, gate openers, and momentary contacts.
+        <b>Standard</b> outputs switch ON/OFF and stay. <b>Timed</b> outputs turn OFF
+        automatically after the Auto-off time; any ON restarts the timer, OFF cancels it.
+        <b>Pulse</b> closes the relay for the given time regardless of mode.
       </div>
     </div>
   </div>
+
+  <!-- Shutters -->
+  <div class="ti-card">
+    <div class="ti-card-head"><h2>Shutters</h2></div>
+    <div class="ti-card-body">
+      <div id="shutter-tbl"></div>
+      <div style="margin-top:12px"><button type="button" class="ti-btn" onclick="addShutter()">+ Add Shutter</button></div>
+      <div id="shutter-status" style="margin-top:10px;font-size:12px;color:#555"></div>
+      <div class="ti-note" style="margin-top:12px">
+        A shutter pairs two relays (Up/Down), interlocked so only one energizes at a
+        time with a mandatory 500&nbsp;ms delay on direction change. Each direction
+        runs for the Travel time, then stops. The two relays are hidden from the
+        Outputs list and exposed to Home Assistant as a cover.
+        <br><b>Buttons:</b> &#9650; Up / &#9660; Down are <b>momentary</b> &mdash; press
+        while moving to stop; &#9632; Stop; &#8635; is single-button cycle
+        (up&nbsp;/&nbsp;stop&nbsp;/&nbsp;down). They act on the <b>saved</b> configuration &mdash;
+        add or edit a shutter, then Save Configuration before using them.
+        <br><b>Pushbuttons:</b> in the Inputs table bind a pushbutton to this shutter's
+        <b>&#9650;Up</b> or <b>&#9660;Down</b> entry with action <b>Turn ON</b> (momentary
+        up/down &mdash; press again while moving to stop), <b>Turn OFF</b> (stop), or
+        <b>Toggle</b> (single-button up/stop/down cycle).
+      </div>
+    </div>
+  </div>
+
+  </div><!-- /page-out -->
+  </form>
 
 </main>
 
@@ -150,6 +192,19 @@ select.sel-act{min-width:76px}
 </div>
 
 <script>
+// Toggle between the Inputs and Outputs sub-pages.  Both live inside the one
+// #iof form, so CSS-hiding a page does not stop its fields submitting - a single
+// Save still persists inputs and outputs together.
+var g_ioPage='in';
+function showIOPage(which){
+  var bIn=(which==='in');
+  g_ioPage=bIn?'in':'out';
+  document.getElementById('page-in').style.display  = bIn?'':'none';
+  document.getElementById('page-out').style.display = bIn?'none':'';
+  document.getElementById('tab-in').classList.toggle('active', bIn);
+  document.getElementById('tab-out').classList.toggle('active', !bIn);
+}
+
 var D=<!--#mqdin-->, R=<!--#mqrelay-->;
 var T="<!--#iotypes-->";
 var B="<!--#iobinds-->";
@@ -157,6 +212,23 @@ var INAMES="<!--#innames-->";
 var ONAMES="<!--#outnames-->";
 var IS="<!--#instates-->";
 var OS="<!--#outstats-->";
+var OMODES="<!--#outmodes-->";
+var OTMO="<!--#outtmo-->";
+var SHUT="<!--#shutters-->";
+
+// Per-output mode (0=Standard,1=Timed), timed auto-off ms, and shutter list.
+var OM=[], OT=[], SH=[];
+(function(){
+  var i;
+  for(i=0;i<128;i++){OM[i]=(OMODES.charAt(i)==='1')?1:0;OT[i]=1000;}
+  var parts=OTMO.split(',');
+  for(i=0;i<parts.length;i++){var v=parseInt(parts[i]);if(!isNaN(v))OT[i]=v;}
+  var segs=SHUT.split(';');
+  for(i=0;i<segs.length;i++){
+    var t=segs[i].split(':');
+    if(t.length>=3){SH.push({up:parseInt(t[0]),down:parseInt(t[1]),travel:parseInt(t[2])||20000});}
+  }
+})();
 
 function getBit(hex,i){var b=parseInt(hex.substr((i>>3)*2,2)||'0',16);return((b>>(i&7))&1)===1;}
 function getInBit(i){return getBit(IS,i);}
@@ -217,7 +289,12 @@ function buildRelayOpts(){
   if(isNaN(nr))nr=R;
   if(nr>=0&&nr<=15)R=nr;
   var s="<option value='127'>None</option>";
-  for(var k=0;k<R*8;k++){var on=getOutName(k)||('Out'+pad2(k+1));s+="<option value='"+k+"'>"+esc(on)+"</option>";}
+  for(var k=0;k<R*8;k++){
+    var mem=shMemberOf(k);
+    var lab=mem?('Shutter '+pad2(mem.n+1)+(mem.up?' ▲Up':' ▼Down'))
+               :(getOutName(k)||('Out'+pad2(k+1)));
+    s+="<option value='"+k+"'>"+esc(lab)+"</option>";
+  }
   g_relayOpts=s;
 }
 
@@ -251,6 +328,27 @@ function buildInputMatrix(){
   document.getElementById("imx").innerHTML=n?h:"<span class='imx-empty'>No inputs configured.</span>";
 }
 
+// Action <option>s for a binding slot.  For a shutter member the actions are
+// direction-aware: Move (that member's way, press again to stop), Stop, or the
+// single-button Cycle (up/stop/down).  For plain relays: Turn ON/OFF/Toggle.
+function actOptsHtml(out,act){
+  if(shMemberOf(out)){
+    return "<option value='0'"+(act===0?" selected":"")+">Move (press=stop)</option>"
+          +"<option value='1'"+(act===1?" selected":"")+">Stop</option>"
+          +"<option value='3'"+(act===3?" selected":"")+">Cycle up/stop/down</option>";
+  }
+  return "<option value='0'"+(act===0?" selected":"")+">Turn ON</option>"
+        +"<option value='1'"+(act===1?" selected":"")+">Turn OFF</option>"
+        +"<option value='2'"+(act===2?" selected":"")+">Toggle</option>";
+}
+
+// Rebuild a slot's Action select when its Output changes (relay <-> shutter).
+function onBindOut(i,s){
+  var out=parseInt(document.getElementById('bout_'+i+'_'+s).value);
+  var as=document.getElementById('bact_'+i+'_'+s);
+  as.innerHTML=actOptsHtml(out, parseInt(as.value)||0);
+}
+
 function buildTable(){
   var nd=parseInt(document.getElementById("din").value);
   if(nd>=0&&nd<=15)D=nd;
@@ -258,7 +356,7 @@ function buildTable(){
   buildRelayOpts();
   var n=D*8;
   var h="<table><thead><tr>"
-    +"<th>Input</th><th>Type</th>"
+    +"<th>#</th><th>Input</th><th>Type</th>"
     +"<th>Slot</th><th>Output</th><th>Trigger</th><th>Action</th>"
     +"</tr></thead><tbody>";
 
@@ -267,6 +365,7 @@ function buildTable(){
     /* first slot row: also contains editable name + Type select (rowspan=4) */
     var iname=getInName(i)||('In'+pad2(i+1));
     h+="<tr class='input-row'>"
+      +"<td rowspan='4' style='padding:5px 8px;width:30px;font-weight:700;color:#555;vertical-align:top'>"+pad2(i+1)+"</td>"
       +"<td rowspan='4' style='padding:4px 6px'>"
       +"<input type='text' id='iname_"+i+"' value='"+esc(iname)+"' maxlength='11' "
       +"style='width:68px;padding:3px 5px;border:1px solid #bbb;font-size:11px;font-weight:600;font-family:inherit;color:#1a1a1a;background:#fff' "
@@ -289,7 +388,7 @@ function buildTable(){
       /* Slot# */
       h+="<td class='slot-num'>"+pad2(s+1)+"</td>";
       /* Output */
-      h+="<td><select class='sel-out' id='bout_"+i+"_"+s+"'>"
+      h+="<td><select class='sel-out' id='bout_"+i+"_"+s+"' onchange='onBindOut("+i+","+s+")'>"
         +g_relayOpts.replace("value='"+out+"'","value='"+out+"' selected")
         +"</select></td>";
       /* Trigger */
@@ -303,11 +402,9 @@ function buildTable(){
           +"<option value='2'"+(trig===2?" selected":"")+">Level OFF</option>";
       }
       h+="</select></td>";
-      /* Action */
+      /* Action (shutter-aware) */
       h+="<td><select class='sel-act' id='bact_"+i+"_"+s+"'>"
-        +"<option value='0'"+(act===0?" selected":"")+">Turn ON</option>"
-        +"<option value='1'"+(act===1?" selected":"")+">Turn OFF</option>"
-        +"<option value='2'"+(act===2?" selected":"")+">Toggle</option>"
+        +actOptsHtml(out,act)
         +"</select></td></tr>";
     }
   }
@@ -329,8 +426,10 @@ function serialize(){
     types+=("0"+v.toString(16)).slice(-2);
   }
   document.getElementById("types").value=types;
-  /* binds */
-  var maxIn=Math.min(D*8,16),binds="";
+  /* binds: pack every configured input (3 hex/slot x 4 slots).  method=get,
+     so the URL carries D*8*12 chars of binds (<=768 for 64 inputs) under the
+     2048 B request limit. */
+  var maxIn=D*8,binds="";
   for(var i=0;i<maxIn;i++){
     for(var s=0;s<4;s++){
       var os=document.getElementById("bout_"+i+"_"+s);
@@ -349,36 +448,158 @@ function serialize(){
 
 buildTable();
 
-function buildPulseTable() {
-  var nr = R * 8;
-  var h = '<table style="width:100%;border-collapse:collapse;font-size:12px">'
-        + '<thead><tr style="background:#1a1a1a;color:#fff">'
-        + '<th style="padding:8px 10px;text-align:left;font-size:10px;font-weight:700;letter-spacing:1px;text-transform:uppercase">Output</th>'
-        + '<th style="padding:8px 6px;text-align:center;font-size:10px;font-weight:700;letter-spacing:1px;text-transform:uppercase">State</th>'
-        + '<th style="padding:8px 10px;text-align:left;font-size:10px;font-weight:700;letter-spacing:1px;text-transform:uppercase">Duration (ms)</th>'
-        + '<th style="padding:8px 10px"></th>'
-        + '</tr></thead><tbody>';
-  for(var i = 0; i < nr; i++) {
-    var name = getOutName(i) || ('Out' + pad2(i + 1));
-    var on   = getOutBit(i);
-    h += '<tr style="border-bottom:1px solid #e8e8e8;background:' + (i%2?'#fff':'#f9f9f9') + '">'
-       + '<td style="padding:5px 6px">'
-       + '<input type="text" id="oname_'+i+'" value="'+esc(name)+'" maxlength="11" '
-       + 'style="width:68px;padding:3px 5px;border:1px solid #bbb;font-size:11px;font-weight:600;font-family:inherit;color:#1a1a1a;background:#fff" '
-       + 'onblur=\'saveName("out",'+i+',this.value)\'>'
-       + '</td>'
-       + '<td style="padding:5px 6px;text-align:center;white-space:nowrap">'
-       + '<span id="ods_'+i+'" style="width:7px;height:7px;border-radius:50%;display:inline-block;background:'+(on?'#22a832':'#ccc')+'" title="'+(on?'ON':'OFF')+'"></span>'
-       + '&nbsp;<span style="font-size:10px;color:#888">'+(on?'ON':'OFF')+'</span>'
-       + '</td>'
-       + '<td style="padding:5px 10px"><input type="number" id="pms_' + i + '" value="1000" min="1" max="3600000"'
-       + ' style="width:90px;padding:5px 7px;border:1px solid #bbb;font-size:12px;font-family:inherit"></td>'
-       + '<td style="padding:5px 10px"><button class="ti-btn" style="padding:6px 16px"'
-       + ' onclick="doPulse(' + i + ')">Pulse</button></td>'
-       + '</tr>';
+var TH='padding:8px 10px;text-align:left;font-size:10px;font-weight:700;letter-spacing:1px;text-transform:uppercase';
+
+// Which shutter (if any) uses output i.  Returns {n, up} or null.
+function shMemberOf(i){
+  for(var n=0;n<SH.length;n++){
+    if(SH[n].up===i)   return {n:n,up:true};
+    if(SH[n].down===i) return {n:n,up:false};
   }
-  h += '</tbody></table>';
-  document.getElementById('pulse-tbl').innerHTML = h;
+  return null;
+}
+
+// <option> list of all outputs (for shutter Up/Down selects).
+function buildOutOpts(sel){
+  var s='';
+  for(var k=0;k<R*8;k++){var on=getOutName(k)||('Out'+pad2(k+1));
+    s+="<option value='"+k+"'"+(k===sel?" selected":"")+">"+esc(on)+"</option>";}
+  return s;
+}
+
+function buildOutputTable(){
+  var nr=R*8,i;
+  var h='<table style="width:100%;border-collapse:collapse;font-size:12px">'
+      +'<thead><tr style="background:#1a1a1a;color:#fff">'
+      +'<th style="'+TH+'">#</th>'
+      +'<th style="'+TH+'">Output</th>'
+      +'<th style="'+TH+';text-align:center">State</th>'
+      +'<th style="'+TH+'">Mode</th>'
+      +'<th style="'+TH+'">Auto-off (ms)</th>'
+      +'<th style="'+TH+'">Pulse</th>'
+      +'</tr></thead><tbody>';
+  for(i=0;i<nr;i++){
+    var name=getOutName(i)||('Out'+pad2(i+1));
+    var on=getOutBit(i);
+    var mem=shMemberOf(i);
+    h+='<tr style="border-bottom:1px solid #e8e8e8;background:'+(i%2?'#fff':'#f9f9f9')+'">'
+      +'<td style="padding:5px 8px;width:30px;font-weight:700;color:#555">'+pad2(i+1)+'</td>'
+      +'<td style="padding:5px 6px"><input type="text" id="oname_'+i+'" value="'+esc(name)+'" maxlength="11" '
+      +'style="width:68px;padding:3px 5px;border:1px solid #bbb;font-size:11px;font-weight:600;font-family:inherit;color:#1a1a1a;background:#fff" '
+      +'onblur=\'saveName("out",'+i+',this.value)\'></td>'
+      +'<td style="padding:5px 6px;text-align:center;white-space:nowrap">'
+      +'<span id="ods_'+i+'" style="width:7px;height:7px;border-radius:50%;display:inline-block;background:'+(on?'#22a832':'#ccc')+'" title="'+(on?'ON':'OFF')+'"></span>'
+      +'&nbsp;<span style="font-size:10px;color:#888">'+(on?'ON':'OFF')+'</span></td>';
+    if(mem){
+      h+='<td colspan="3" style="padding:5px 10px;color:#888;font-size:11px">'
+        +'&#128274; Shutter '+pad2(mem.n+1)+' &mdash; '+(mem.up?'&#9650; UP':'&#9660; DOWN')+' (linked)</td>';
+    } else {
+      var timed=(OM[i]===1);
+      h+='<td style="padding:5px 10px"><select id="omode_'+i+'" onchange="onModeChange('+i+')" '
+        +'style="padding:4px 6px;border:1px solid #bbb;font-size:12px;font-family:inherit">'
+        +'<option value="0"'+(timed?"":" selected")+'>Standard</option>'
+        +'<option value="1"'+(timed?" selected":"")+'>Timed</option></select></td>'
+        +'<td style="padding:5px 10px"><input type="number" id="otmo_'+i+'" value="'+(OT[i]||1000)+'" '
+        +'min="1000" max="3600000" oninput="OT['+i+']=parseInt(this.value)||1000"'+(timed?"":" disabled")
+        +' style="width:88px;padding:4px 6px;border:1px solid #bbb;font-size:12px;font-family:inherit;'
+        +(timed?'':'background:#f0f0f0;color:#aaa')+'"></td>'
+        +'<td style="padding:5px 10px;white-space:nowrap"><input type="number" id="pms_'+i+'" value="1000" '
+        +'min="1" max="3600000" style="width:78px;padding:4px 6px;border:1px solid #bbb;font-size:12px;font-family:inherit"> '
+        +'<button type="button" class="ti-btn" style="padding:5px 12px" onclick="doPulse('+i+')">Pulse</button></td>';
+    }
+    h+='</tr>';
+  }
+  h+='</tbody></table>';
+  document.getElementById('pulse-tbl').innerHTML=h;
+}
+
+function onModeChange(i){
+  var sel=document.getElementById('omode_'+i);
+  OM[i]=parseInt(sel.value);
+  var tmo=document.getElementById('otmo_'+i);
+  if(tmo){
+    tmo.disabled=(OM[i]!==1);
+    tmo.style.background=(OM[i]===1)?'#fff':'#f0f0f0';
+    tmo.style.color=(OM[i]===1)?'#222':'#aaa';
+  }
+}
+
+// ── Shutters ─────────────────────────────────────────────────────────────────
+function buildShutterTable(){
+  var h='<table style="width:100%;border-collapse:collapse;font-size:12px">'
+      +'<thead><tr style="background:#1a1a1a;color:#fff">'
+      +'<th style="'+TH+'">#</th><th style="'+TH+'">Up relay</th><th style="'+TH+'">Down relay</th>'
+      +'<th style="'+TH+'">Travel (ms)</th><th style="'+TH+'">Control</th><th style="'+TH+'"></th>'
+      +'</tr></thead><tbody>';
+  if(SH.length===0){
+    h+='<tr><td colspan="6" style="padding:10px;color:#888;font-size:12px">No shutters configured.</td></tr>';
+  }
+  for(var n=0;n<SH.length;n++){
+    var s=SH[n], bad=(s.up===s.down);
+    h+='<tr style="border-bottom:1px solid #e8e8e8;background:'+(n%2?'#fff':'#f9f9f9')+'">'
+      +'<td style="padding:5px 10px;font-weight:700;color:#555">'+pad2(n+1)+'</td>'
+      +'<td style="padding:5px 8px"><select id="shup_'+n+'" onchange="onShutterEdit('+n+')" style="padding:4px 6px;border:1px solid #bbb;font-size:12px;font-family:inherit">'+buildOutOpts(s.up)+'</select></td>'
+      +'<td style="padding:5px 8px"><select id="shdn_'+n+'" onchange="onShutterEdit('+n+')" style="padding:4px 6px;border:1px solid '+(bad?'#cc0000':'#bbb')+';font-size:12px;font-family:inherit">'+buildOutOpts(s.down)+'</select></td>'
+      +'<td style="padding:5px 8px"><input type="number" id="shtv_'+n+'" value="'+(s.travel||20000)+'" min="1000" max="3600000" onchange="onShutterEdit('+n+')" style="width:82px;padding:4px 6px;border:1px solid #bbb;font-size:12px;font-family:inherit"></td>'
+      +'<td style="padding:5px 8px;white-space:nowrap">'
+      +'<button type="button" class="ti-btn" style="padding:5px 10px" title="Up (press again to stop)" onclick="cover('+n+',\'up\')">&#9650;</button> '
+      +'<button type="button" class="ti-btn" style="padding:5px 10px" title="Stop" onclick="cover('+n+',\'stop\')">&#9632;</button> '
+      +'<button type="button" class="ti-btn" style="padding:5px 10px" title="Down (press again to stop)" onclick="cover('+n+',\'down\')">&#9660;</button> '
+      +'<button type="button" class="ti-btn" style="padding:5px 10px;background:#555" title="Single-button cycle: up / stop / down" onclick="cover('+n+',\'cycle\')">&#8635;</button></td>'
+      +'<td style="padding:5px 8px"><button type="button" onclick="removeShutter('+n+')" style="padding:5px 10px;background:#eee;border:1px solid #bbb;font-size:11px;cursor:pointer;font-family:inherit">Remove</button></td>'
+      +'</tr>';
+  }
+  h+='</tbody></table>';
+  document.getElementById('shutter-tbl').innerHTML=h;
+}
+
+function onShutterEdit(n){
+  SH[n]={up:parseInt(document.getElementById('shup_'+n).value),
+         down:parseInt(document.getElementById('shdn_'+n).value),
+         travel:parseInt(document.getElementById('shtv_'+n).value)||20000};
+  buildOutputTable();   // membership changed → refresh output rows
+  buildShutterTable();  // refresh validation highlight
+}
+
+function addShutter(){
+  if(R*8<2){alert('Need at least 2 relays to define a shutter.');return;}
+  if(SH.length>=16){alert('Maximum 16 shutters.');return;}
+  SH.push({up:0,down:1,travel:20000});
+  buildShutterTable(); buildOutputTable();
+}
+
+function removeShutter(n){ SH.splice(n,1); buildShutterTable(); buildOutputTable(); }
+
+async function cover(n,cmd){
+  var st=document.getElementById('shutter-status');
+  st.textContent='Shutter '+pad2(n+1)+': '+cmd+'…';
+  try{
+    var r=await fetch('/cover.cgi?sh='+n+'&cmd='+cmd,{cache:'no-store'});
+    st.textContent=r.ok?('Shutter '+pad2(n+1)+' '+cmd+' sent.'):('Error '+r.status);
+  }catch(e){st.textContent='Network error: '+e.message;}
+}
+
+function onRelayChange(){ buildRelayOpts(); buildOutputTable(); buildShutterTable(); }
+
+// Collect the output-config query for /outcfg.cgi (values are digit/,/:/; safe).
+function syncOutputsFromDom(){
+  var i,el,n;
+  for(i=0;i<R*8;i++){
+    el=document.getElementById('omode_'+i); if(el)OM[i]=parseInt(el.value);
+    el=document.getElementById('otmo_'+i);  if(el){var v=parseInt(el.value);if(!isNaN(v))OT[i]=v;}
+  }
+  for(n=0;n<SH.length;n++){
+    el=document.getElementById('shup_'+n); if(el)SH[n].up=parseInt(el.value);
+    el=document.getElementById('shdn_'+n); if(el)SH[n].down=parseInt(el.value);
+    el=document.getElementById('shtv_'+n); if(el){var t=parseInt(el.value);if(!isNaN(t))SH[n].travel=t;}
+  }
+}
+function outCfgQuery(){
+  var i,modes='',tmo=[],sh=[];
+  for(i=0;i<R*8;i++){modes+=(OM[i]===1?'1':'0');tmo.push(OT[i]||1000);}
+  for(i=0;i<SH.length;i++){var s=SH[i];
+    if(s.up!==s.down&&s.up<R*8&&s.down<R*8)sh.push(s.up+':'+s.down+':'+(s.travel||20000));}
+  return 'modes='+modes+'&tmo='+tmo.join(',')+'&sh='+sh.join(';');
 }
 
 async function doPulse(n) {
@@ -397,7 +618,22 @@ async function doPulse(n) {
   }
 }
 
-buildPulseTable();
+buildOutputTable();
+buildShutterTable();
+
+// After a Save-triggered reload, return to the sub-page and scroll position the
+// user was at (stored just before submit) instead of jumping to the top.
+if(history.scrollRestoration){ history.scrollRestoration='manual'; }
+(function(){
+  try{
+    var pg=sessionStorage.getItem('iocfg_page');
+    var sc=sessionStorage.getItem('iocfg_scroll');
+    sessionStorage.removeItem('iocfg_page');
+    sessionStorage.removeItem('iocfg_scroll');
+    if(pg==='out'){ showIOPage('out'); }
+    if(sc!==null){ window.scrollTo(0, parseInt(sc,10)||0); }
+  }catch(e){}
+})();
 
 // onIOCfgSubmit — synchronous onsubmit wrapper.
 // Returns false AND calls e.preventDefault() to block default form submission
@@ -435,6 +671,20 @@ async function doSaveNamesAndSubmit() {
     if(v === orig) continue;                            // unchanged — skip
     await saveName('out', k, v===('Out'+pad2(k+1)) ? '' : v);
   }
+
+  //
+  // Persist per-output modes, timed durations and the shutter table.  Values are
+  // digits and , : ; only, so no URL-encoding is required.
+  //
+  syncOutputsFromDom();
+  try { await fetch('/outcfg.cgi?' + outCfgQuery(), {cache:'no-store'}); } catch(e) {}
+
+  // Remember which sub-page and scroll position we were at so the reload that
+  // follows the form submit lands back here instead of jumping to the top.
+  try {
+    sessionStorage.setItem('iocfg_page', g_ioPage);
+    sessionStorage.setItem('iocfg_scroll', String(window.pageYOffset|0));
+  } catch(e) {}
 
   document.getElementById('iof').submit();             // does NOT fire onsubmit again
 }

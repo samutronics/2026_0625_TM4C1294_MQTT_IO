@@ -50,6 +50,12 @@
 // Our OTA upload CGI sends ~1040-byte GET lines (988 hex chars in the URI).
 #define LWIP_HTTPD_SUPPORT_REQUESTLIST  1
 #define LWIP_HTTPD_MAX_REQ_LENGTH       2048
+// A single SSI tag insert must hold the packed channel-name blocks
+// (innames/outnames): up to 64 names x 12 bytes = 768 B.  The lwIP default is
+// 192 B, which capped names at 16 outputs (16*12=192) - names past #16 never
+// reached the browser and looked "unsaved".  Grows each active http_state by
+// ~600 B (mem_malloc'd from the 64 KB heap); well under TCP_SND_BUF (9000 B).
+#define LWIP_HTTPD_MAX_TAG_INSERT_LEN   800
 //#define HTTPD_DEBUG                     LWIP_DBG_ON
 #if !defined(EMAC_PHY_IS_EXT_MII) && !defined(EMAC_PHY_IS_EXT_RMII)
 #define EMAC_PHY_CONFIG (EMAC_PHY_TYPE_INTERNAL | EMAC_PHY_INT_MDIX_EN |      \

@@ -148,6 +148,7 @@ bool ConfigIOSave(void);
 #define BIND_ACT_ON         0
 #define BIND_ACT_OFF        1
 #define BIND_ACT_TOGGLE     2
+#define BIND_ACT_CYCLE      3   // shutter single-button cycle (up/stop/down)
 
 typedef struct
 {
@@ -225,6 +226,70 @@ void ConfigNameSet(bool bInput, int iIdx, const char *pcName);
 // is sufficient; this is provided for bulk restore.
 //
 bool ConfigNamesSave(void);
+
+//
+// Per-output behavior — stored at CFG_OUTCFG_ADDR (first free address after the
+// names record, which ends at 2848).  Each output is Standard (plain ON/OFF) or
+// Timed (auto-OFF after ui32TimedMs).  Shutters pair two explicit relay indices
+// (UP/DOWN) with a travel time; an empty slot has ui8ShUp == 0xFF.  Shutter
+// membership of an output is derived from the shutter table, not the mode array.
+//
+#define CFG_MAX_OUTPUTS      (CFG_RELAY_MAX_DEVICES * 8)   // 120
+#define CFG_MAX_SHUTTERS     16
+#define CFG_OUTCFG_ADDR      2848
+#define CFG_OUTCFG_MAGIC     0x4F555443u   // "OUTC"
+
+#define OUT_MODE_STANDARD    0
+#define OUT_MODE_TIMED       1
+
+#define SHUTTER_NONE         0xFFu         // empty shutter slot / no member
+
+typedef struct
+{
+    uint32_t ui32Magic;
+    uint8_t  ui8Mode[CFG_MAX_OUTPUTS];         // OUT_MODE_* per output (120 B)
+    uint32_t ui32TimedMs[CFG_MAX_OUTPUTS];     // auto-OFF ms per output (480 B)
+    uint8_t  ui8ShUp  [CFG_MAX_SHUTTERS];      // UP relay index or SHUTTER_NONE
+    uint8_t  ui8ShDown[CFG_MAX_SHUTTERS];      // DOWN relay index
+    uint32_t ui32ShTravelMs[CFG_MAX_SHUTTERS]; // travel time ms
+    uint32_t ui32Crc;
+}
+tOutputConfig;   // 4+120+480+16+16+64+4 = 704 B, ends at addr 3552
+
+//
+// Per-output mode accessors.
+//
+uint8_t  ConfigOutMode(int iOut);
+void     ConfigSetOutMode(int iOut, uint8_t ui8Mode);
+uint32_t ConfigOutTimedMs(int iOut);
+void     ConfigSetOutTimedMs(int iOut, uint32_t ui32Ms);
+
+//
+// Shutter table accessors.  Slot 0..CFG_MAX_SHUTTERS-1.  A slot is empty when
+// its UP index is SHUTTER_NONE.  ConfigShutterGet returns false for empty slots.
+//
+bool ConfigShutterGet(int iSlot, uint8_t *pui8Up, uint8_t *pui8Down,
+                      uint32_t *pui32TravelMs);
+void ConfigShutterSet(int iSlot, uint8_t ui8Up, uint8_t ui8Down,
+                      uint32_t ui32TravelMs);
+void ConfigShutterClear(int iSlot);
+
+//
+// Return the shutter slot that uses relay iOut (as UP or DOWN), or -1 if none.
+// When found and pbIsUp is non-NULL, *pbIsUp is set true if iOut is the UP relay.
+//
+int  ConfigShutterOfRelay(int iOut, bool *pbIsUp);
+
+//
+// Apply compiled-in output defaults to the in-RAM record (all Standard,
+// 1000 ms timed duration, no shutters).
+//
+void ConfigOutputSetDefaults(void);
+
+//
+// Persist the complete tOutputConfig record to EEPROM.
+//
+bool ConfigOutputSave(void);
 
 //
 // OTA pending flag in EEPROM.  Thin wrappers called by ota.c.
