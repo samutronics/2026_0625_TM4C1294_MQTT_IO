@@ -82,6 +82,7 @@ select.sel-act{min-width:76px}
 </div>
 
 <div class="ti-nav">
+  <a href="/control.shtml">Control</a>
   <a href="/index.shtml">Settings</a>
   <a href="/iocfg.shtml" class="active">I/O Config</a>
   <a href="/tools.shtml">Tools</a>
@@ -137,6 +138,19 @@ select.sel-act{min-width:76px}
 
   <!-- ============================ OUTPUTS SUB-PAGE =========================== -->
   <div id="page-out" style="display:none">
+
+  <!-- Rooms / zones -->
+  <div class="ti-card">
+    <div class="ti-card-head"><h2>Rooms</h2></div>
+    <div class="ti-card-body">
+      <div id="room-tbl"></div>
+      <div class="ti-note" style="margin-top:12px">
+        Name the rooms/zones you want on the <b>Control</b> dashboard, then assign
+        each light (Outputs table) and shutter to a room. Leave a room name blank to
+        remove it. Unassigned actuators appear under &ldquo;Unassigned&rdquo;.
+      </div>
+    </div>
+  </div>
 
   <!-- Outputs: device count + relay states + modes -->
   <div class="ti-card">
@@ -215,6 +229,10 @@ var OS="<!--#outstats-->";
 var OMODES="<!--#outmodes-->";
 var OTMO="<!--#outtmo-->";
 var SHUT="<!--#shutters-->";
+var SHNAMES="<!--#shnames-->";
+
+// Shutter name for slot n from the packed 12-byte blocks (trailing spaces trimmed).
+function getShName(n){var s=SHNAMES.substr(n*12,12);return s?s.replace(/\s+$/,''):'';}
 
 // Per-output mode (0=Standard,1=Timed), timed auto-off ms, and shutter list.
 var OM=[], OT=[], SH=[];
@@ -226,9 +244,29 @@ var OM=[], OT=[], SH=[];
   var segs=SHUT.split(';');
   for(i=0;i<segs.length;i++){
     var t=segs[i].split(':');
-    if(t.length>=3){SH.push({up:parseInt(t[0]),down:parseInt(t[1]),travel:parseInt(t[2])||20000});}
+    if(t.length>=3){SH.push({up:parseInt(t[0]),down:parseInt(t[1]),travel:parseInt(t[2])||20000,name:getShName(SH.length)});}
   }
 })();
+
+// ── Rooms / zones ────────────────────────────────────────────────────────────
+var RMN="<!--#rmnames-->", OUTR="<!--#outrooms-->", SHR="<!--#shrooms-->";
+var NROOMS=16;
+var ROOMS=[];   // room names by index (empty string = undefined room)
+var OR=[];      // room index per output (255 = unassigned)
+var SR=[];      // room index per shutter slot (aligned with SH[])
+(function(){
+  var i;
+  for(i=0;i<NROOMS;i++){ROOMS[i]=RMN.substr(i*12,12).replace(/\s+$/,'');}
+  OUTR.split(',').forEach(function(v,i){var n=parseInt(v);OR[i]=isNaN(n)?255:n;});
+  SHR.split(',').forEach(function(v,i){var n=parseInt(v);if(i<SH.length)SH[i].room=isNaN(n)?255:n;});
+})();
+// <option> list for a room <select>: "Unassigned" + every defined (named) room.
+function roomOpts(sel){
+  var s="<option value='255'"+(sel===255||sel===undefined?" selected":"")+">— Unassigned —</option>";
+  for(var i=0;i<NROOMS;i++){ if(!ROOMS[i]) continue;
+    s+="<option value='"+i+"'"+(sel===i?" selected":"")+">"+esc(ROOMS[i])+"</option>";}
+  return s;
+}
 
 function getBit(hex,i){var b=parseInt(hex.substr((i>>3)*2,2)||'0',16);return((b>>(i&7))&1)===1;}
 function getInBit(i){return getBit(IS,i);}
@@ -477,6 +515,7 @@ function buildOutputTable(){
       +'<th style="'+TH+'">Mode</th>'
       +'<th style="'+TH+'">Auto-off (ms)</th>'
       +'<th style="'+TH+'">Pulse</th>'
+      +'<th style="'+TH+'">Room</th>'
       +'</tr></thead><tbody>';
   for(i=0;i<nr;i++){
     var name=getOutName(i)||('Out'+pad2(i+1));
@@ -492,7 +531,8 @@ function buildOutputTable(){
       +'&nbsp;<span style="font-size:10px;color:#888">'+(on?'ON':'OFF')+'</span></td>';
     if(mem){
       h+='<td colspan="3" style="padding:5px 10px;color:#888;font-size:11px">'
-        +'&#128274; Shutter '+pad2(mem.n+1)+' &mdash; '+(mem.up?'&#9650; UP':'&#9660; DOWN')+' (linked)</td>';
+        +'&#128274; Shutter '+pad2(mem.n+1)+' &mdash; '+(mem.up?'&#9650; UP':'&#9660; DOWN')+' (linked)</td>'
+        +'<td style="padding:5px 10px;color:#bbb;text-align:center">&mdash;</td>';
     } else {
       var timed=(OM[i]===1);
       h+='<td style="padding:5px 10px"><select id="omode_'+i+'" onchange="onModeChange('+i+')" '
@@ -506,6 +546,15 @@ function buildOutputTable(){
         +'<td style="padding:5px 10px;white-space:nowrap"><input type="number" id="pms_'+i+'" value="1000" '
         +'min="1" max="3600000" style="width:78px;padding:4px 6px;border:1px solid #bbb;font-size:12px;font-family:inherit"> '
         +'<button type="button" class="ti-btn" style="padding:5px 12px" onclick="doPulse('+i+')">Pulse</button></td>';
+    }
+    // Room assignment (lights only; shutter members show a dash above).
+    if(!mem){
+      var named=!!getOutName(i);
+      h+='<td style="padding:5px 8px">'
+        +'<select id="orm_'+i+'" onchange="OR['+i+']=parseInt(this.value)" '
+        +(named?'':'disabled title="Name this output to assign it a room" ')
+        +'style="padding:4px 6px;border:1px solid #bbb;font-size:12px;font-family:inherit'+(named?'':';background:#f0f0f0;color:#aaa')+'">'
+        +roomOpts(OR[i])+'</select></td>';
     }
     h+='</tr>';
   }
@@ -528,19 +577,21 @@ function onModeChange(i){
 function buildShutterTable(){
   var h='<table style="width:100%;border-collapse:collapse;font-size:12px">'
       +'<thead><tr style="background:#1a1a1a;color:#fff">'
-      +'<th style="'+TH+'">#</th><th style="'+TH+'">Up relay</th><th style="'+TH+'">Down relay</th>'
-      +'<th style="'+TH+'">Travel (ms)</th><th style="'+TH+'">Control</th><th style="'+TH+'"></th>'
+      +'<th style="'+TH+'">#</th><th style="'+TH+'">Name</th><th style="'+TH+'">Up relay</th><th style="'+TH+'">Down relay</th>'
+      +'<th style="'+TH+'">Travel (ms)</th><th style="'+TH+'">Room</th><th style="'+TH+'">Control</th><th style="'+TH+'"></th>'
       +'</tr></thead><tbody>';
   if(SH.length===0){
-    h+='<tr><td colspan="6" style="padding:10px;color:#888;font-size:12px">No shutters configured.</td></tr>';
+    h+='<tr><td colspan="8" style="padding:10px;color:#888;font-size:12px">No shutters configured.</td></tr>';
   }
   for(var n=0;n<SH.length;n++){
     var s=SH[n], bad=(s.up===s.down);
     h+='<tr style="border-bottom:1px solid #e8e8e8;background:'+(n%2?'#fff':'#f9f9f9')+'">'
       +'<td style="padding:5px 10px;font-weight:700;color:#555">'+pad2(n+1)+'</td>'
+      +'<td style="padding:5px 8px"><input type="text" id="shnm_'+n+'" value="'+esc(s.name||'')+'" maxlength="11" placeholder="Shutter '+pad2(n+1)+'" oninput="SH['+n+'].name=this.value" style="width:96px;padding:4px 6px;border:1px solid #bbb;font-size:12px;font-family:inherit"></td>'
       +'<td style="padding:5px 8px"><select id="shup_'+n+'" onchange="onShutterEdit('+n+')" style="padding:4px 6px;border:1px solid #bbb;font-size:12px;font-family:inherit">'+buildOutOpts(s.up)+'</select></td>'
       +'<td style="padding:5px 8px"><select id="shdn_'+n+'" onchange="onShutterEdit('+n+')" style="padding:4px 6px;border:1px solid '+(bad?'#cc0000':'#bbb')+';font-size:12px;font-family:inherit">'+buildOutOpts(s.down)+'</select></td>'
       +'<td style="padding:5px 8px"><input type="number" id="shtv_'+n+'" value="'+(s.travel||20000)+'" min="1000" max="3600000" onchange="onShutterEdit('+n+')" style="width:82px;padding:4px 6px;border:1px solid #bbb;font-size:12px;font-family:inherit"></td>'
+      +'<td style="padding:5px 8px"><select id="shrm_'+n+'" onchange="SH['+n+'].room=parseInt(this.value)" style="padding:4px 6px;border:1px solid #bbb;font-size:12px;font-family:inherit">'+roomOpts(s.room)+'</select></td>'
       +'<td style="padding:5px 8px;white-space:nowrap">'
       +'<button type="button" class="ti-btn" style="padding:5px 10px" title="Up (press again to stop)" onclick="cover('+n+',\'up\')">&#9650;</button> '
       +'<button type="button" class="ti-btn" style="padding:5px 10px" title="Stop" onclick="cover('+n+',\'stop\')">&#9632;</button> '
@@ -553,18 +604,40 @@ function buildShutterTable(){
   document.getElementById('shutter-tbl').innerHTML=h;
 }
 
+// ── Rooms editor ─────────────────────────────────────────────────────────────
+function buildRoomTable(){
+  var h='<table style="width:100%;border-collapse:collapse;font-size:12px"><tbody>';
+  for(var i=0;i<NROOMS;i++){
+    if(i%4===0)h+='<tr>';
+    h+='<td style="padding:4px 6px;white-space:nowrap">'
+      +'<span style="font-size:10px;color:#aaa;font-weight:700">R'+pad2(i+1)+'</span> '
+      +'<input type="text" id="rm_'+i+'" value="'+esc(ROOMS[i]||'')+'" maxlength="11" placeholder="&mdash;" '
+      +'oninput="ROOMS['+i+']=this.value" onchange="onRoomRename()" '
+      +'style="width:96px;padding:3px 5px;border:1px solid #bbb;font-size:12px;font-family:inherit"></td>';
+    if(i%4===3)h+='</tr>';
+  }
+  h+='</tbody></table>';
+  document.getElementById('room-tbl').innerHTML=h;
+}
+// A room was (re)named: refresh the assignment dropdowns so it appears/disappears.
+function onRoomRename(){ buildOutputTable(); buildShutterTable(); }
+
 function onShutterEdit(n){
+  var nm=document.getElementById('shnm_'+n), rm=document.getElementById('shrm_'+n);
+  var prev=SH[n]||{};
   SH[n]={up:parseInt(document.getElementById('shup_'+n).value),
          down:parseInt(document.getElementById('shdn_'+n).value),
-         travel:parseInt(document.getElementById('shtv_'+n).value)||20000};
+         travel:parseInt(document.getElementById('shtv_'+n).value)||20000,
+         name:nm?nm.value:(prev.name||''),
+         room:rm?parseInt(rm.value):(prev.room===undefined?255:prev.room)};
   buildOutputTable();   // membership changed → refresh output rows
   buildShutterTable();  // refresh validation highlight
 }
 
 function addShutter(){
   if(R*8<2){alert('Need at least 2 relays to define a shutter.');return;}
-  if(SH.length>=16){alert('Maximum 16 shutters.');return;}
-  SH.push({up:0,down:1,travel:20000});
+  if(SH.length>=32){alert('Maximum 32 shutters.');return;}
+  SH.push({up:0,down:1,travel:20000,name:'',room:255});
   buildShutterTable(); buildOutputTable();
 }
 
@@ -592,13 +665,17 @@ function syncOutputsFromDom(){
     el=document.getElementById('shup_'+n); if(el)SH[n].up=parseInt(el.value);
     el=document.getElementById('shdn_'+n); if(el)SH[n].down=parseInt(el.value);
     el=document.getElementById('shtv_'+n); if(el){var t=parseInt(el.value);if(!isNaN(t))SH[n].travel=t;}
+    el=document.getElementById('shnm_'+n); if(el)SH[n].name=el.value;
   }
 }
+// Shutter entries carry an optional 4th ":name" field (URL-encoded, so the ':'/';'
+// structural delimiters stay unambiguous). modes/tmo are digit/,-only.
 function outCfgQuery(){
   var i,modes='',tmo=[],sh=[];
   for(i=0;i<R*8;i++){modes+=(OM[i]===1?'1':'0');tmo.push(OT[i]||1000);}
   for(i=0;i<SH.length;i++){var s=SH[i];
-    if(s.up!==s.down&&s.up<R*8&&s.down<R*8)sh.push(s.up+':'+s.down+':'+(s.travel||20000));}
+    if(s.up!==s.down&&s.up<R*8&&s.down<R*8)
+      sh.push(s.up+':'+s.down+':'+(s.travel||20000)+':'+encodeURIComponent((s.name||'').substring(0,11)));}
   return 'modes='+modes+'&tmo='+tmo.join(',')+'&sh='+sh.join(';');
 }
 
@@ -618,6 +695,7 @@ async function doPulse(n) {
   }
 }
 
+buildRoomTable();
 buildOutputTable();
 buildShutterTable();
 
@@ -645,6 +723,25 @@ function onIOCfgSubmit(e) {
   if(!serialize()) { return false; }
   doSaveNamesAndSubmit();  // start async — form.submit() called when done
   return false;
+}
+
+// Pull the room editor + assignment dropdowns into the ROOMS/OR/SH models.
+function syncRoomsFromDom(){
+  var i,el;
+  for(i=0;i<NROOMS;i++){el=document.getElementById('rm_'+i);  if(el)ROOMS[i]=el.value;}
+  for(i=0;i<R*8;i++)   {el=document.getElementById('orm_'+i); if(el)OR[i]=parseInt(el.value);}
+  for(i=0;i<SH.length;i++){el=document.getElementById('shrm_'+i); if(el)SH[i].room=parseInt(el.value);}
+}
+// Room names (URL-encoded, ';'-joined) + per-output/per-defined-shutter room idx.
+// shr is built from the SAME valid-shutter filter/order as outCfgQuery's sh, so
+// it aligns with the EEPROM slots /outcfg.cgi rebuilds (run roomcfg AFTER outcfg).
+function roomCfgQuery(){
+  var i,names=[],outr=[],shr=[];
+  for(i=0;i<NROOMS;i++){names.push(encodeURIComponent((ROOMS[i]||'').substring(0,11)));}
+  for(i=0;i<R*8;i++){var r=OR[i]; outr.push((r>=0&&r<NROOMS)?r:255);}
+  for(i=0;i<SH.length;i++){var s=SH[i];
+    if(s.up!==s.down&&s.up<R*8&&s.down<R*8){var q=s.room; shr.push((q>=0&&q<NROOMS)?q:255);}}
+  return 'rooms='+names.join(';')+'&outr='+outr.join(',')+'&shr='+shr.join(',');
 }
 
 // Sequential name saves, then programmatic form submit.
@@ -678,6 +775,11 @@ async function doSaveNamesAndSubmit() {
   //
   syncOutputsFromDom();
   try { await fetch('/outcfg.cgi?' + outCfgQuery(), {cache:'no-store'}); } catch(e) {}
+
+  // Room names + assignments — sequential, AFTER /outcfg.cgi so shutter slots
+  // are already rebuilt in the order shr is aligned to.
+  syncRoomsFromDom();
+  try { await fetch('/roomcfg.cgi?' + roomCfgQuery(), {cache:'no-store'}); } catch(e) {}
 
   // Remember which sub-page and scroll position we were at so the reload that
   // follows the form submit lands back here instead of jumping to the top.

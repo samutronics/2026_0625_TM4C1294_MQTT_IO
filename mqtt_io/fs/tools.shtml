@@ -77,6 +77,7 @@ textarea.drag-over{border-color:#cc0000;background:#fff5f5}
 </div>
 
 <div class="ti-nav">
+  <a href="/control.shtml">Control</a>
   <a href="/index.shtml">Settings</a>
   <a href="/iocfg.shtml">I/O Config</a>
   <a href="/tools.shtml" class="active">Tools</a>

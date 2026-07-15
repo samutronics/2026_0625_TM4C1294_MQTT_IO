@@ -1,0 +1,178 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>SaKaHub &mdash; Control</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:"Segoe UI","Helvetica Neue",Arial,sans-serif;background:#f2f2f2;color:#333;font-size:14px;line-height:1.5;padding-top:140px}
+.ti-topbar{position:fixed;top:0;left:0;right:0;z-index:100}
+.ti-header{background:#1a1a1a;height:50px;display:flex;align-items:center;justify-content:space-between;padding:0 24px}
+.ti-brand{display:flex;align-items:baseline;gap:6px}
+.ti-brand-name{font-size:20px;font-weight:700;color:#fff;letter-spacing:.5px}
+.ti-brand-name em{color:#cc0000;font-style:normal}
+.ti-brand-sub{font-size:10px;color:#888;letter-spacing:1.5px;text-transform:uppercase}
+.ti-tagline{font-size:10px;color:#777;letter-spacing:1.5px;text-transform:uppercase}
+.ti-nav{background:#fff;border-bottom:2px solid #e0e0e0;display:flex;padding:0 24px}
+.ti-nav a{display:inline-block;padding:13px 18px;font-size:13px;font-weight:600;color:#555;text-decoration:none;border-bottom:3px solid transparent;margin-bottom:-2px;letter-spacing:.2px;transition:color .15s,border-color .15s}
+.ti-nav a:hover{color:#cc0000}
+.ti-nav a.active{color:#cc0000;border-bottom-color:#cc0000}
+.ti-status{background:#f7f7f7;border-bottom:1px solid #ddd;padding:9px 24px;display:flex;gap:28px;font-size:12px;color:#444;align-items:center}
+.ti-status-item{display:flex;align-items:center;gap:6px}
+.ti-status-item b{font-weight:600;color:#222}
+.ti-dot{width:7px;height:7px;border-radius:50%;background:#22a832;display:inline-block;flex-shrink:0}
+main{padding:28px 24px;max-width:960px}
+.ti-card{background:#fff;border:1px solid #d8d8d8;margin-bottom:20px}
+.ti-card-head{padding:14px 20px;border-bottom:1px solid #e8e8e8;background:#fafafa}
+.ti-card-head h2{font-size:15px;font-weight:600;color:#1a1a1a}
+.ti-card-body{padding:18px 20px}
+.grid{display:flex;flex-wrap:wrap;gap:12px}
+.tile{border:1px solid #e4e4e4;border-radius:6px;padding:12px;width:158px;display:flex;flex-direction:column;gap:9px;background:#fff}
+.tlabel{font-size:12px;font-weight:700;color:#1a1a1a;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.lbtn{padding:14px 8px;border:none;border-radius:4px;background:#e2e2e2;color:#777;font-size:13px;font-weight:700;cursor:pointer;letter-spacing:1.5px;transition:background .15s,color .15s;font-family:inherit}
+.lbtn.on{background:#22a832;color:#fff}
+.lbtn:hover{filter:brightness(.96)}
+.sbtns{display:flex;gap:6px}
+.sbtn{flex:1;padding:11px 0;border:1px solid #cc0000;background:#fff;color:#cc0000;font-size:15px;cursor:pointer;border-radius:4px;transition:background .12s,color .12s,box-shadow .12s;font-family:inherit}
+.sbtn:hover{background:#cc0000;color:#fff}
+.sbtn.moving{background:#cc0000;color:#fff;box-shadow:0 0 0 2px rgba(204,0,0,.25)}
+.dash-empty{padding:40px 20px;text-align:center;color:#999;font-size:13px}
+.ti-footer{margin-top:36px;padding:16px 24px;border-top:1px solid #d8d8d8;font-size:11px;color:#999;display:flex;justify-content:space-between}
+</style>
+</head>
+<body>
+
+<div class="ti-topbar">
+<div class="ti-header">
+  <div class="ti-brand">
+    <span class="ti-brand-name"><em>Sa</em>Ka<em>Hub</em></span>
+    <span class="ti-brand-sub"><!--#fwver--></span>
+  </div>
+  <span class="ti-tagline">MQTT I/O Gateway</span>
+</div>
+<div class="ti-nav">
+  <a href="/control.shtml" class="active">Control</a>
+  <a href="/index.shtml">Settings</a>
+  <a href="/iocfg.shtml">I/O Config</a>
+  <a href="/tools.shtml">Tools</a>
+</div>
+<div class="ti-status">
+  <div class="ti-status-item"><span class="ti-dot"></span><b>IP&nbsp;</b><!--#ipaddr--></div>
+  <div class="ti-status-item"><b>MQTT&nbsp;</b><!--#mqstatus--></div>
+  <div class="ti-status-item"><b>Time&nbsp;</b><span id="ntptm"><!--#ntptime--></span></div>
+</div>
+</div>
+
+<main>
+  <div id="dash"></div>
+  <div id="empty" class="ti-card"><div class="dash-empty">
+    No named lights or shutters yet. Add them on the <a href="/iocfg.shtml" style="color:#cc0000">I/O Config</a>
+    page (name your outputs, define shutters, and assign rooms), then they appear here.
+  </div></div>
+</main>
+
+<div class="ti-footer">
+  <span>SaKaHub &copy; TomArts</span>
+  <span><!--#fwver--> &mdash; TivaWare 2.2.0</span>
+</div>
+
+<script>
+var ONAMES="<!--#outnames-->", SHUT="<!--#shutters-->", SHNAMES="<!--#shnames-->";
+var RMN="<!--#rmnames-->", OUTR="<!--#outrooms-->", SHR="<!--#shrooms-->";
+var R=<!--#mqrelay-->;
+var OS="<!--#outstats-->";
+var NROOMS=16;
+
+function pad2(n){return n<10?'0'+n:''+n;}
+function esc(s){return (s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');}
+function getBit(hex,i){var b=parseInt(hex.substr((i>>3)*2,2)||'0',16);return((b>>(i&7))&1)===1;}
+function outBit(k){return getBit(OS,k);}
+function outName(k){return ONAMES.substr(k*12,12).replace(/\s+$/,'');}
+function shName(n){return SHNAMES.substr(n*12,12).replace(/\s+$/,'');}
+function roomName(i){return RMN.substr(i*12,12).replace(/\s+$/,'');}
+
+// Model: shutters (up/down relays), room-per-shutter (aligned with SH), room-per-output.
+var SH=[];
+(function(){var segs=SHUT.split(';');for(var i=0;i<segs.length;i++){var t=segs[i].split(':');
+  if(t.length>=3)SH.push({up:parseInt(t[0]),down:parseInt(t[1])});}})();
+var SR=[]; SHR.split(',').forEach(function(v,i){SR[i]=parseInt(v);});
+var OR=[]; OUTR.split(',').forEach(function(v,i){OR[i]=parseInt(v);});
+var ROOMS=[]; for(var i=0;i<NROOMS;i++)ROOMS[i]=roomName(i);
+
+function isShutterMember(k){for(var n=0;n<SH.length;n++){if(SH[n].up===k||SH[n].down===k)return true;}return false;}
+function lights(){var a=[];for(var k=0;k<R*8;k++){if(outName(k)&&!isShutterMember(k))a.push(k);}return a;}
+function roomDefined(r){return r>=0&&r<NROOMS&&!!ROOMS[r];}
+
+function lightTile(k){
+  var on=outBit(k);
+  return '<div class="tile"><div class="tlabel" title="'+esc(outName(k))+'">'+esc(outName(k))+'</div>'
+    +'<button class="lbtn'+(on?' on':'')+'" id="L'+k+'" onclick="toggleLight('+k+')">'+(on?'ON':'OFF')+'</button></div>';
+}
+function shutterTile(n){
+  var nm=shName(n)||('Shutter '+pad2(n+1));
+  return '<div class="tile"><div class="tlabel" title="'+esc(nm)+'">'+esc(nm)+'</div>'
+    +'<div class="sbtns">'
+    +'<button class="sbtn" id="U'+n+'" title="Up" onclick="cover('+n+',\'up\')">&#9650;</button>'
+    +'<button class="sbtn" title="Stop" onclick="cover('+n+',\'stop\')">&#9632;</button>'
+    +'<button class="sbtn" id="D'+n+'" title="Down" onclick="cover('+n+',\'down\')">&#9660;</button>'
+    +'</div></div>';
+}
+function section(title,litems,sitems){
+  if(!litems.length && !sitems.length) return '';
+  var s='<div class="ti-card"><div class="ti-card-head"><h2>'+esc(title)+'</h2></div><div class="ti-card-body"><div class="grid">';
+  litems.forEach(function(k){s+=lightTile(k);});
+  sitems.forEach(function(n){s+=shutterTile(n);});
+  return s+'</div></div></div>';
+}
+function build(){
+  var L=lights(), html='', any=false, r, n;
+  for(r=0;r<NROOMS;r++){
+    if(!ROOMS[r]) continue;
+    var li=L.filter(function(k){return OR[k]===r;});
+    var si=[]; for(n=0;n<SH.length;n++)if(SR[n]===r)si.push(n);
+    var sec=section(ROOMS[r],li,si);
+    if(sec){html+=sec;any=true;}
+  }
+  var lu=L.filter(function(k){return !roomDefined(OR[k]);});
+  var su=[]; for(n=0;n<SH.length;n++)if(!roomDefined(SR[n]))su.push(n);
+  var uns=section('Unassigned',lu,su);
+  if(uns){html+=uns;any=true;}
+  document.getElementById('dash').innerHTML=html;
+  document.getElementById('empty').style.display=any?'none':'';
+}
+
+async function toggleLight(k){
+  try{await fetch('/relayset.cgi?relay='+k+'&cmd=toggle',{cache:'no-store'});}catch(e){}
+  refresh();
+}
+async function cover(n,cmd){
+  try{await fetch('/cover.cgi?sh='+n+'&cmd='+cmd,{cache:'no-store'});}catch(e){}
+}
+
+async function refresh(){
+  try{
+    var r=await fetch('/iostate.shtml',{cache:'no-store'});
+    var t=(await r.text()).trim(); var p=t.split('|');
+    if(p.length===2)OS=p[1].trim();
+  }catch(e){return;}
+  var i,b;
+  var lb=document.querySelectorAll('.lbtn');
+  for(i=0;i<lb.length;i++){b=lb[i];var k=parseInt(b.id.substr(1));var on=outBit(k);
+    b.classList.toggle('on',on); b.textContent=on?'ON':'OFF';}
+  for(i=0;i<SH.length;i++){
+    var u=document.getElementById('U'+i), d=document.getElementById('D'+i);
+    if(u)u.classList.toggle('moving',outBit(SH[i].up));
+    if(d)d.classList.toggle('moving',outBit(SH[i].down));
+  }
+}
+
+build();
+refresh();
+setInterval(refresh,1000);
+</script>
+<script>
+(function(){var el=document.getElementById('ntptm');if(!el)return;var p=el.textContent.split(':');if(p.length!==3)return;var s=parseInt(p[0])*3600+parseInt(p[1])*60+parseInt(p[2]);if(isNaN(s))return;setInterval(function(){s=(s+1)%86400;var h=s/3600|0,m=s%3600/60|0,ss=s%60;el.textContent=(h<10?'0':'')+h+':'+(m<10?'0':'')+m+':'+(ss<10?'0':'')+ss;},1000);})();
+</script>
+</body>
+</html>

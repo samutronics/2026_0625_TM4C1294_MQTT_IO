@@ -73,6 +73,7 @@ main{padding:28px 24px;max-width:620px}
 </div>
 
 <div class="ti-nav">
+  <a href="/control.shtml">Control</a>
   <a href="/index.shtml" class="active">Settings</a>
   <a href="/iocfg.shtml">I/O Config</a>
   <a href="/tools.shtml">Tools</a>

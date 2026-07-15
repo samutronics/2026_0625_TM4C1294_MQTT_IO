@@ -235,7 +235,7 @@ bool ConfigNamesSave(void);
 // membership of an output is derived from the shutter table, not the mode array.
 //
 #define CFG_MAX_OUTPUTS      (CFG_RELAY_MAX_DEVICES * 8)   // 120
-#define CFG_MAX_SHUTTERS     16
+#define CFG_MAX_SHUTTERS     32
 #define CFG_OUTCFG_ADDR      2848
 #define CFG_OUTCFG_MAGIC     0x4F555443u   // "OUTC"
 
@@ -249,12 +249,13 @@ typedef struct
     uint32_t ui32Magic;
     uint8_t  ui8Mode[CFG_MAX_OUTPUTS];         // OUT_MODE_* per output (120 B)
     uint32_t ui32TimedMs[CFG_MAX_OUTPUTS];     // auto-OFF ms per output (480 B)
-    uint8_t  ui8ShUp  [CFG_MAX_SHUTTERS];      // UP relay index or SHUTTER_NONE
-    uint8_t  ui8ShDown[CFG_MAX_SHUTTERS];      // DOWN relay index
-    uint32_t ui32ShTravelMs[CFG_MAX_SHUTTERS]; // travel time ms
+    uint8_t  ui8ShUp  [CFG_MAX_SHUTTERS];      // UP relay index or SHUTTER_NONE (32 B)
+    uint8_t  ui8ShDown[CFG_MAX_SHUTTERS];      // DOWN relay index (32 B)
+    uint32_t ui32ShTravelMs[CFG_MAX_SHUTTERS]; // travel time ms (128 B)
+    char     pcShName[CFG_MAX_SHUTTERS][CFG_NAME_LEN]; // shutter names (384 B)
     uint32_t ui32Crc;
 }
-tOutputConfig;   // 4+120+480+16+16+64+4 = 704 B, ends at addr 3552
+tOutputConfig;   // 4+120+480+32+32+128+384+4 = 1184 B, ends at addr 4032
 
 //
 // Per-output mode accessors.
@@ -275,6 +276,13 @@ void ConfigShutterSet(int iSlot, uint8_t ui8Up, uint8_t ui8Down,
 void ConfigShutterClear(int iSlot);
 
 //
+// Shutter name accessors.  Names are stored in the tOutputConfig record and
+// persisted by ConfigOutputSave().  ConfigShutterName returns "" for empty/OOB.
+//
+const char *ConfigShutterName(int iSlot);
+void        ConfigShutterNameSet(int iSlot, const char *pcName);
+
+//
 // Return the shutter slot that uses relay iOut (as UP or DOWN), or -1 if none.
 // When found and pbIsUp is non-NULL, *pbIsUp is set true if iOut is the UP relay.
 //
@@ -290,6 +298,37 @@ void ConfigOutputSetDefaults(void);
 // Persist the complete tOutputConfig record to EEPROM.
 //
 bool ConfigOutputSave(void);
+
+//*****************************************************************************
+//
+// Room / zone assignments (for the Control dashboard).  Stored in a SEPARATE
+// EEPROM record so tOutputConfig is never resized.  Each output and each shutter
+// carries a room index (ROOM_NONE = unassigned); rooms have editable names.
+//
+//*****************************************************************************
+#define CFG_MAX_ROOMS        16
+#define CFG_ROOMCFG_ADDR     4096u          // after tOutputConfig (ends 4032)
+#define CFG_ROOMCFG_MAGIC    0x4D4F4F52u    // "ROOM"
+#define ROOM_NONE            0xFFu          // output/shutter not assigned to a room
+
+typedef struct
+{
+    uint32_t ui32Magic;
+    char     pcRoomName[CFG_MAX_ROOMS][CFG_NAME_LEN];  // room names (192 B)
+    uint8_t  ui8OutRoom[CFG_MAX_OUTPUTS];              // room per output (120 B)
+    uint8_t  ui8ShRoom [CFG_MAX_SHUTTERS];             // room per shutter (32 B)
+    uint32_t ui32Crc;
+}
+tRoomConfig;   // 4+192+120+32+4 = 352 B, at 4096 ends at addr 4448
+
+const char *ConfigRoomName(int iRoom);
+void        ConfigRoomNameSet(int iRoom, const char *pcName);
+uint8_t     ConfigOutRoom(int iOut);
+void        ConfigOutRoomSet(int iOut, uint8_t ui8Room);
+uint8_t     ConfigShRoom(int iShutter);
+void        ConfigShRoomSet(int iShutter, uint8_t ui8Room);
+void        ConfigRoomSetDefaults(void);
+bool        ConfigRoomSave(void);
 
 //
 // OTA pending flag in EEPROM.  Thin wrappers called by ota.c.

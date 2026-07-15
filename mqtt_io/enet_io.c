@@ -184,6 +184,10 @@ extern void httpd_init(void);
 #define SSI_INDEX_OUTMODES  21
 #define SSI_INDEX_OUTTMO    22
 #define SSI_INDEX_SHUTTERS  23
+#define SSI_INDEX_SHNAMES   24
+#define SSI_INDEX_RMNAMES   25
+#define SSI_INDEX_OUTROOMS  26
+#define SSI_INDEX_SHROOMS   27
 
 //*****************************************************************************
 //
@@ -219,7 +223,11 @@ static const char *g_pcConfigSSITags[] =
     "outstats",      // SSI_INDEX_OUTSTATES — live relay states as hex bytes (8-char limit)
     "outmodes",      // SSI_INDEX_OUTMODES  — per-output mode hex (1 char each, up to 16)
     "outtmo",        // SSI_INDEX_OUTTMO    — timed durations, comma list (up to 16)
-    "shutters"       // SSI_INDEX_SHUTTERS  — packed "up:down:travel;" list
+    "shutters",      // SSI_INDEX_SHUTTERS  — packed "up:down:travel;" list
+    "shnames",       // SSI_INDEX_SHNAMES   — packed shutter names (12 B each, up to 32)
+    "rmnames",       // SSI_INDEX_RMNAMES   — packed room names (12 B each, 16 rooms)
+    "outrooms",      // SSI_INDEX_OUTROOMS  — room index per output (comma list)
+    "shrooms"        // SSI_INDEX_SHROOMS   — room index per defined shutter (comma list)
 };
 
 //*****************************************************************************
@@ -257,6 +265,10 @@ static char *OutCfgCGIHandler(int32_t iIndex, int32_t i32NumParams,
                                char *pcParam[], char *pcValue[]);
 static char *CoverCGIHandler(int32_t iIndex, int32_t i32NumParams,
                               char *pcParam[], char *pcValue[]);
+static char *RelaySetCGIHandler(int32_t iIndex, int32_t i32NumParams,
+                                 char *pcParam[], char *pcValue[]);
+static char *RoomCfgCGIHandler(int32_t iIndex, int32_t i32NumParams,
+                                char *pcParam[], char *pcValue[]);
 
 //*****************************************************************************
 //
@@ -282,6 +294,8 @@ static int32_t SSIHandler(int32_t iIndex, char *pcInsert, int32_t iInsertLen);
 #define CGI_INDEX_NAMESET       8
 #define CGI_INDEX_OUTCFG        9
 #define CGI_INDEX_COVER         10
+#define CGI_INDEX_RELAYSET      11
+#define CGI_INDEX_ROOMCFG       12
 
 //*****************************************************************************
 //
@@ -303,7 +317,9 @@ static const tCGI g_psConfigCGIURIs[] =
     { "/reboot.cgi",      (tCGIHandler)RebootCGIHandler         }, // CGI_INDEX_REBOOT
     { "/nameset.cgi",     (tCGIHandler)NameSetCGIHandler        }, // CGI_INDEX_NAMESET
     { "/outcfg.cgi",      (tCGIHandler)OutCfgCGIHandler         }, // CGI_INDEX_OUTCFG
-    { "/cover.cgi",       (tCGIHandler)CoverCGIHandler          }  // CGI_INDEX_COVER
+    { "/cover.cgi",       (tCGIHandler)CoverCGIHandler          }, // CGI_INDEX_COVER
+    { "/relayset.cgi",    (tCGIHandler)RelaySetCGIHandler       }, // CGI_INDEX_RELAYSET
+    { "/roomcfg.cgi",     (tCGIHandler)RoomCfgCGIHandler        }  // CGI_INDEX_ROOMCFG
 };
 
 //*****************************************************************************
@@ -322,6 +338,7 @@ static const tCGI g_psConfigCGIURIs[] =
 //*****************************************************************************
 #define DEFAULT_CGI_RESPONSE    "/index.shtml"
 #define IOCFG_CGI_RESPONSE      "/iocfg.shtml"
+#define CONTROL_CGI_RESPONSE    "/control.shtml"
 
 //*****************************************************************************
 //
@@ -1316,6 +1333,8 @@ OutCfgCGIHandler(int32_t iIndex, int32_t i32NumParams, char *pcParam[],
         while((*p != '\0') && (iSlot < CFG_MAX_SHUTTERS))
         {
             uint32_t up = 0, down = 0, travel = 0;
+            char     acName[CFG_NAME_LEN];
+            acName[0] = '\0';
             while((*p >= '0') && (*p <= '9')) { up = (up * 10u) + (uint32_t)(*p - '0'); p++; }
             if(*p != ':') { break; }
             p++;
@@ -1324,10 +1343,28 @@ OutCfgCGIHandler(int32_t iIndex, int32_t i32NumParams, char *pcParam[],
             p++;
             while((*p >= '0') && (*p <= '9')) { travel = (travel * 10u) + (uint32_t)(*p - '0'); p++; }
 
+            //
+            // Optional 4th field ":name" (URL-encoded, runs to ';' or end).
+            //
+            if(*p == ':')
+            {
+                char acEnc[3 * CFG_NAME_LEN];
+                int  iEnc = 0;
+                p++;
+                while((*p != '\0') && (*p != ';'))
+                {
+                    if(iEnc < (int)sizeof(acEnc) - 1) { acEnc[iEnc++] = *p; }
+                    p++;
+                }
+                acEnc[iEnc] = '\0';
+                UrlDecodeParam(acEnc, acName, CFG_NAME_LEN);
+            }
+
             if((up != down) && (up < RelayChainCount()) && (down < RelayChainCount()))
             {
                 ConfigShutterSet(iSlot, (uint8_t)up, (uint8_t)down,
                                  travel ? travel : 20000u);
+                ConfigShutterNameSet(iSlot, acName);
                 iSlot++;
             }
             if(*p == ';') { p++; } else { break; }
@@ -1376,6 +1413,140 @@ CoverCGIHandler(int32_t iIndex, int32_t i32NumParams, char *pcParam[],
 
     UARTprintf("Cover: shutter %u cmd %d (web UI)\n", ui32Sh, (int)eCmd);
     OutputCtrlShutter((int)ui32Sh, eCmd);
+    return(IOCFG_CGI_RESPONSE);
+}
+
+//*****************************************************************************
+//
+// RelaySetCGIHandler - direct ON/OFF/Toggle for a light (Control dashboard).
+//   /relayset.cgi?relay=N&cmd=on|off|toggle
+// Routed through OutputCtrlCommand so the output's mode (Standard/Timed) and
+// any shutter-member translation are honored, and the state is published.
+//
+//*****************************************************************************
+static char *
+RelaySetCGIHandler(int32_t iIndex, int32_t i32NumParams, char *pcParam[],
+                   char *pcValue[])
+{
+    int32_t  iRelIdx, iCmdIdx;
+    uint32_t ui32Relay;
+    tOutCmd  eCmd;
+
+    (void)iIndex;
+
+    iRelIdx = FindCGIParameter("relay", pcParam, i32NumParams);
+    iCmdIdx = FindCGIParameter("cmd",   pcParam, i32NumParams);
+    if((iRelIdx < 0) || (iCmdIdx < 0))
+    {
+        return(CONTROL_CGI_RESPONSE);
+    }
+
+    ui32Relay = ustrtoul(pcValue[iRelIdx], NULL, 10);
+    if(ui32Relay >= RelayChainCount())
+    {
+        return(CONTROL_CGI_RESPONSE);
+    }
+
+    //
+    // cmd = "on" | "off" | "toggle".  "on"/"off" share a first char, so
+    // disambiguate on the second; anything else is a toggle.
+    //
+    if(pcValue[iCmdIdx][0] == 'o')
+    {
+        eCmd = (pcValue[iCmdIdx][1] == 'n') ? OUT_CMD_ON : OUT_CMD_OFF;
+    }
+    else
+    {
+        eCmd = OUT_CMD_TOGGLE;
+    }
+
+    UARTprintf("RelaySet: relay %u cmd %d (web UI)\n", ui32Relay, (int)eCmd);
+    OutputCtrlCommand((int)ui32Relay, eCmd);
+    return(CONTROL_CGI_RESPONSE);
+}
+
+//*****************************************************************************
+//
+// RoomCfgCGIHandler - save room names + per-output/per-shutter room assignment.
+//   /roomcfg.cgi?rooms=<;-sep URL-encoded names>&outr=<csv>&shr=<csv>
+// "255" (or any value >= CFG_MAX_ROOMS) means unassigned.
+//
+//*****************************************************************************
+static char *
+RoomCfgCGIHandler(int32_t iIndex, int32_t i32NumParams, char *pcParam[],
+                  char *pcValue[])
+{
+    int32_t idx;
+    int     i;
+
+    (void)iIndex;
+
+    //
+    // Room names: ';'-separated, each URL-encoded (so ';'/'&' cannot appear
+    // literally inside a name), index 0..CFG_MAX_ROOMS-1.
+    //
+    idx = FindCGIParameter("rooms", pcParam, i32NumParams);
+    if(idx >= 0)
+    {
+        const char *p = pcValue[idx];
+        int iRoom = 0;
+        while(iRoom < CFG_MAX_ROOMS)
+        {
+            char acEnc[3 * CFG_NAME_LEN];
+            char acName[CFG_NAME_LEN];
+            int  iEnc = 0;
+            while((*p != '\0') && (*p != ';'))
+            {
+                if(iEnc < (int)sizeof(acEnc) - 1) { acEnc[iEnc++] = *p; }
+                p++;
+            }
+            acEnc[iEnc] = '\0';
+            UrlDecodeParam(acEnc, acName, CFG_NAME_LEN);
+            ConfigRoomNameSet(iRoom, acName);
+            iRoom++;
+            if(*p == ';') { p++; } else { break; }
+        }
+        for(; iRoom < CFG_MAX_ROOMS; iRoom++) { ConfigRoomNameSet(iRoom, ""); }
+    }
+
+    //
+    // Per-output room index (comma list, one per output).
+    //
+    idx = FindCGIParameter("outr", pcParam, i32NumParams);
+    if(idx >= 0)
+    {
+        const char *p = pcValue[idx];
+        i = 0;
+        while((*p != '\0') && (i < CFG_MAX_OUTPUTS))
+        {
+            uint32_t v = 0;
+            while((*p >= '0') && (*p <= '9')) { v = (v * 10u) + (uint32_t)(*p - '0'); p++; }
+            ConfigOutRoomSet(i, (v < CFG_MAX_ROOMS) ? (uint8_t)v : ROOM_NONE);
+            i++;
+            if(*p == ',') { p++; } else { break; }
+        }
+    }
+
+    //
+    // Per-shutter room index (comma list, defined shutters in slot order).
+    //
+    idx = FindCGIParameter("shr", pcParam, i32NumParams);
+    if(idx >= 0)
+    {
+        const char *p = pcValue[idx];
+        i = 0;
+        while((*p != '\0') && (i < CFG_MAX_SHUTTERS))
+        {
+            uint32_t v = 0;
+            while((*p >= '0') && (*p <= '9')) { v = (v * 10u) + (uint32_t)(*p - '0'); p++; }
+            ConfigShRoomSet(i, (v < CFG_MAX_ROOMS) ? (uint8_t)v : ROOM_NONE);
+            i++;
+            if(*p == ',') { p++; } else { break; }
+        }
+    }
+
+    ConfigRoomSave();
+    UARTprintf("Room config saved via web UI.\n");
     return(IOCFG_CGI_RESPONSE);
 }
 
@@ -1673,6 +1844,102 @@ SSIHandler(int32_t iIndex, char *pcInsert, int32_t iInsertLen)
                 if((iPos + L) >= iInsertLen) { break; }
                 memcpy(pcInsert + iPos, tmp, L);
                 iPos += L;
+            }
+            pcInsert[iPos] = '\0';
+            break;
+        }
+
+        case SSI_INDEX_SHNAMES:
+        {
+            //
+            // One CFG_NAME_LEN (12) char space-padded block per DEFINED shutter,
+            // in slot order - same skip condition and ordering as SSI_INDEX_SHUTTERS
+            // so block n aligns with shutter entry n on the client.  Up to
+            // 32 x 12 = 384 B, within the SSI insert buffer.
+            //
+            int i, j, iPos = 0;
+            for(i = 0; i < CFG_MAX_SHUTTERS &&
+                       (iPos + CFG_NAME_LEN) <= iInsertLen; i++)
+            {
+                uint8_t  up, down;
+                uint32_t travel;
+                const char *pcN;
+                if(!ConfigShutterGet(i, &up, &down, &travel)) { continue; }
+                pcN = ConfigShutterName(i);
+                for(j = 0; j < CFG_NAME_LEN; j++)
+                {
+                    pcInsert[iPos++] = (j < CFG_NAME_LEN - 1 && pcN[j])
+                                       ? pcN[j] : ' ';
+                }
+            }
+            pcInsert[iPos] = '\0';
+            break;
+        }
+
+        case SSI_INDEX_RMNAMES:
+        {
+            //
+            // 12-char space-padded block for EVERY room (0..CFG_MAX_ROOMS-1) so
+            // the client can index by room number.  16 x 12 = 192 B.
+            //
+            int i, j, iPos = 0;
+            for(i = 0; i < CFG_MAX_ROOMS &&
+                       (iPos + CFG_NAME_LEN) <= iInsertLen; i++)
+            {
+                const char *pcN = ConfigRoomName(i);
+                for(j = 0; j < CFG_NAME_LEN; j++)
+                {
+                    pcInsert[iPos++] = (j < CFG_NAME_LEN - 1 && pcN[j])
+                                       ? pcN[j] : ' ';
+                }
+            }
+            pcInsert[iPos] = '\0';
+            break;
+        }
+
+        case SSI_INDEX_OUTROOMS:
+        {
+            //
+            // Comma-separated room index per output (ROOM_NONE = 255).
+            //
+            int i, iCount = (int)ConfigGetRelayDevices() * 8;
+            int iPos = 0;
+            char tmp[8];
+            for(i = 0; i < iCount; i++)
+            {
+                int L;
+                usnprintf(tmp, sizeof(tmp), (i == 0) ? "%d" : ",%d",
+                          (int)ConfigOutRoom(i));
+                L = (int)strlen(tmp);
+                if((iPos + L) >= iInsertLen) { break; }
+                memcpy(pcInsert + iPos, tmp, L);
+                iPos += L;
+            }
+            pcInsert[iPos] = '\0';
+            break;
+        }
+
+        case SSI_INDEX_SHROOMS:
+        {
+            //
+            // Comma-separated room index per DEFINED shutter, slot order (same
+            // skip as SSI_INDEX_SHUTTERS so entry n aligns with client SH[n]).
+            //
+            int i, iPos = 0, iEmit = 0;
+            char tmp[8];
+            for(i = 0; i < CFG_MAX_SHUTTERS; i++)
+            {
+                uint8_t  up, down;
+                uint32_t travel;
+                int      L;
+                if(!ConfigShutterGet(i, &up, &down, &travel)) { continue; }
+                usnprintf(tmp, sizeof(tmp), (iEmit == 0) ? "%d" : ",%d",
+                          (int)ConfigShRoom(i));
+                L = (int)strlen(tmp);
+                if((iPos + L) >= iInsertLen) { break; }
+                memcpy(pcInsert + iPos, tmp, L);
+                iPos += L;
+                iEmit++;
             }
             pcInsert[iPos] = '\0';
             break;

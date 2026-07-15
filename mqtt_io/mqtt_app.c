@@ -156,17 +156,33 @@ MQTTAppPublishCoverDiscovery(int iShutter)
         return;
     }
 
-    usnprintf(g_pcDiscPayload, sizeof(g_pcDiscPayload),
-              "{\"~\":\"%s\",\"name\":\"Shutter%02d\",\"uniq_id\":\"%s_cover%d\","
-              "\"cmd_t\":\"~/cover/%d/set\",\"stat_t\":\"~/cover/%d/state\","
-              "\"pl_open\":\"OPEN\",\"pl_cls\":\"CLOSE\",\"pl_stop\":\"STOP\","
-              "\"stat_open\":\"open\",\"stat_clsd\":\"closed\","
-              "\"stat_opening\":\"opening\",\"stat_closing\":\"closing\","
-              "\"dev_cla\":\"shutter\",\"avty_t\":\"~/status\","
-              "\"dev\":{\"ids\":[\"%s\"],\"name\":\"SaKaHub\","
-              "\"mdl\":\"%s\",\"mf\":\"TomArts\"}}",
-              g_pcBase, iShutter + 1, g_pcDevId, iShutter, iShutter, iShutter,
-              g_pcDevId, ConfigGet()->pcClientID);
+    //
+    // Friendly name: the user-assigned shutter name if set, else "Shutter NN".
+    //
+    {
+        const char *pcShN = ConfigShutterName(iShutter);
+        char        acName[CFG_NAME_LEN + 8];
+        if(pcShN && pcShN[0])
+        {
+            usnprintf(acName, sizeof(acName), "%s", pcShN);
+        }
+        else
+        {
+            usnprintf(acName, sizeof(acName), "Shutter%02d", iShutter + 1);
+        }
+
+        usnprintf(g_pcDiscPayload, sizeof(g_pcDiscPayload),
+                  "{\"~\":\"%s\",\"name\":\"%s\",\"uniq_id\":\"%s_cover%d\","
+                  "\"cmd_t\":\"~/cover/%d/set\",\"stat_t\":\"~/cover/%d/state\","
+                  "\"pl_open\":\"OPEN\",\"pl_cls\":\"CLOSE\",\"pl_stop\":\"STOP\","
+                  "\"stat_open\":\"open\",\"stat_clsd\":\"closed\","
+                  "\"stat_opening\":\"opening\",\"stat_closing\":\"closing\","
+                  "\"dev_cla\":\"shutter\",\"avty_t\":\"~/status\","
+                  "\"dev\":{\"ids\":[\"%s\"],\"name\":\"SaKaHub\","
+                  "\"mdl\":\"%s\",\"mf\":\"TomArts\"}}",
+                  g_pcBase, acName, g_pcDevId, iShutter, iShutter, iShutter,
+                  g_pcDevId, ConfigGet()->pcClientID);
+    }
 
     MQTTClientPublish(g_pcDiscTopic, (const uint8_t *)g_pcDiscPayload,
                       (uint16_t)strlen(g_pcDiscPayload), 1);

@@ -34,6 +34,7 @@ static tIOBindings   g_sBindings;
 static tNTPConfig    g_sNTPConfig;
 static tIONames      g_sIONames;
 static tOutputConfig g_sOutCfg;
+static tRoomConfig   g_sRoomCfg;
 
 //*****************************************************************************
 //
@@ -83,6 +84,8 @@ ConfigSetDefaults(tMQTTConfig *psCfg)
     strcpy(psCfg->pcClientID, "tm4c1294");
     strcpy(psCfg->pcTopicBase, "tm4c1294");
 }
+
+static bool ConfigOutputMigrateV1(void);   // one-time upgrade of the pre-32-shutter record
 
 //*****************************************************************************
 //
@@ -235,10 +238,91 @@ ConfigInit(void)
     if((g_sOutCfg.ui32Magic != CFG_OUTCFG_MAGIC) ||
        (g_sOutCfg.ui32Crc != ui32Crc))
     {
-        ConfigOutputSetDefaults();
-        ConfigOutputSave();
-        UARTprintf("No output config in EEPROM; all outputs default to Standard.\n");
+        //
+        // The new-format record did not validate.  Before wiping to defaults,
+        // try to upgrade an older (16-shutter, no-names) record written by a
+        // previous firmware so modes + shutters survive a firmware update.
+        //
+        if(!ConfigOutputMigrateV1())
+        {
+            ConfigOutputSetDefaults();
+            ConfigOutputSave();
+            UARTprintf("No output config in EEPROM; all outputs default to Standard.\n");
+        }
     }
+
+    //
+    // Load the room / zone assignments (separate record, so adding it never
+    // disturbs any other config).  Missing or invalid -> everything unassigned,
+    // written back so the CRC matches on the next boot.
+    //
+    EEPROMRead((uint32_t *)&g_sRoomCfg, CFG_ROOMCFG_ADDR, sizeof(tRoomConfig));
+    ui32Crc = ConfigCRC32((const uint8_t *)&g_sRoomCfg,
+                          sizeof(tRoomConfig) - sizeof(uint32_t));
+    if((g_sRoomCfg.ui32Magic != CFG_ROOMCFG_MAGIC) ||
+       (g_sRoomCfg.ui32Crc != ui32Crc))
+    {
+        ConfigRoomSetDefaults();
+        ConfigRoomSave();
+        UARTprintf("No room config in EEPROM; all outputs/shutters unassigned.\n");
+    }
+}
+
+//*****************************************************************************
+//
+// Legacy tOutputConfig layout (magic "OUTC"): 16 shutter slots, no shutter
+// names.  Kept only for one-time migration when the record grew to 32 shutters
+// + names.  Returns true if a valid v1 record was found and upgraded in place.
+//
+//*****************************************************************************
+#define CFG_OUTCFG_V1_SHUTTERS  16
+typedef struct
+{
+    uint32_t ui32Magic;
+    uint8_t  ui8Mode[CFG_MAX_OUTPUTS];
+    uint32_t ui32TimedMs[CFG_MAX_OUTPUTS];
+    uint8_t  ui8ShUp  [CFG_OUTCFG_V1_SHUTTERS];
+    uint8_t  ui8ShDown[CFG_OUTCFG_V1_SHUTTERS];
+    uint32_t ui32ShTravelMs[CFG_OUTCFG_V1_SHUTTERS];
+    uint32_t ui32Crc;
+}
+tOutputConfigV1;   // 4+120+480+16+16+64+4 = 704 B
+
+static bool
+ConfigOutputMigrateV1(void)
+{
+    tOutputConfigV1 sV1;
+    uint32_t        ui32Crc;
+    int             i;
+
+    EEPROMRead((uint32_t *)&sV1, CFG_OUTCFG_ADDR, sizeof(tOutputConfigV1));
+    ui32Crc = ConfigCRC32((const uint8_t *)&sV1,
+                          sizeof(tOutputConfigV1) - sizeof(uint32_t));
+    if((sV1.ui32Magic != CFG_OUTCFG_MAGIC) || (sV1.ui32Crc != ui32Crc))
+    {
+        return(false);   // no valid legacy record
+    }
+
+    //
+    // Valid legacy record: start from clean defaults (zeroes names), then copy
+    // the modes, timed durations and the first 16 shutters across, and rewrite
+    // in the new 32-shutter format.
+    //
+    ConfigOutputSetDefaults();
+    for(i = 0; i < CFG_MAX_OUTPUTS; i++)
+    {
+        g_sOutCfg.ui8Mode[i]     = sV1.ui8Mode[i];
+        g_sOutCfg.ui32TimedMs[i] = sV1.ui32TimedMs[i];
+    }
+    for(i = 0; i < CFG_OUTCFG_V1_SHUTTERS; i++)
+    {
+        g_sOutCfg.ui8ShUp[i]        = sV1.ui8ShUp[i];
+        g_sOutCfg.ui8ShDown[i]      = sV1.ui8ShDown[i];
+        g_sOutCfg.ui32ShTravelMs[i] = sV1.ui32ShTravelMs[i];
+    }
+    ConfigOutputSave();
+    UARTprintf("Output config migrated from v1 (16 shutters, names blank).\n");
+    return(true);
 }
 
 //*****************************************************************************
@@ -529,6 +613,7 @@ ConfigFactoryReset(void)
     EEPROMProgram(&ui32Zero, CFG_NTP_EEPROM_ADDR,  4);   // tNTPConfig
     EEPROMProgram(&ui32Zero, CFG_IO_NAMES_ADDR,    4);   // tIONames
     EEPROMProgram(&ui32Zero, CFG_OUTCFG_ADDR,      4);   // tOutputConfig
+    EEPROMProgram(&ui32Zero, CFG_ROOMCFG_ADDR,     4);   // tRoomConfig
     UARTprintf("Config: EEPROM factory reset complete.\n");
 }
 
@@ -603,6 +688,22 @@ ConfigShutterClear(int iSlot)
     if((iSlot < 0) || (iSlot >= CFG_MAX_SHUTTERS)) { return; }
     g_sOutCfg.ui8ShUp[iSlot]   = SHUTTER_NONE;
     g_sOutCfg.ui8ShDown[iSlot] = SHUTTER_NONE;
+    memset(g_sOutCfg.pcShName[iSlot], 0, CFG_NAME_LEN);
+}
+
+const char *
+ConfigShutterName(int iSlot)
+{
+    if((iSlot < 0) || (iSlot >= CFG_MAX_SHUTTERS)) { return(""); }
+    return(g_sOutCfg.pcShName[iSlot]);
+}
+
+void
+ConfigShutterNameSet(int iSlot, const char *pcName)
+{
+    if((iSlot < 0) || (iSlot >= CFG_MAX_SHUTTERS)) { return; }
+    memset(g_sOutCfg.pcShName[iSlot], 0, CFG_NAME_LEN);
+    if(pcName) { strncpy(g_sOutCfg.pcShName[iSlot], pcName, CFG_NAME_LEN - 1); }
 }
 
 int
@@ -648,6 +749,84 @@ ConfigOutputSave(void)
         return(false);
     }
     UARTprintf("Output config saved to EEPROM.\n");
+    return(true);
+}
+
+//*****************************************************************************
+//
+// Room / zone accessors.  Room index 0..CFG_MAX_ROOMS-1; ROOM_NONE = unassigned.
+// A room is "defined" on the UI side when its name is non-empty.
+//
+//*****************************************************************************
+const char *
+ConfigRoomName(int iRoom)
+{
+    if((iRoom < 0) || (iRoom >= CFG_MAX_ROOMS)) { return(""); }
+    return(g_sRoomCfg.pcRoomName[iRoom]);
+}
+
+void
+ConfigRoomNameSet(int iRoom, const char *pcName)
+{
+    if((iRoom < 0) || (iRoom >= CFG_MAX_ROOMS)) { return; }
+    memset(g_sRoomCfg.pcRoomName[iRoom], 0, CFG_NAME_LEN);
+    if(pcName) { strncpy(g_sRoomCfg.pcRoomName[iRoom], pcName, CFG_NAME_LEN - 1); }
+}
+
+uint8_t
+ConfigOutRoom(int iOut)
+{
+    if((iOut < 0) || (iOut >= CFG_MAX_OUTPUTS)) { return(ROOM_NONE); }
+    return(g_sRoomCfg.ui8OutRoom[iOut]);
+}
+
+void
+ConfigOutRoomSet(int iOut, uint8_t ui8Room)
+{
+    if((iOut < 0) || (iOut >= CFG_MAX_OUTPUTS)) { return; }
+    g_sRoomCfg.ui8OutRoom[iOut] = (ui8Room < CFG_MAX_ROOMS) ? ui8Room : ROOM_NONE;
+}
+
+uint8_t
+ConfigShRoom(int iShutter)
+{
+    if((iShutter < 0) || (iShutter >= CFG_MAX_SHUTTERS)) { return(ROOM_NONE); }
+    return(g_sRoomCfg.ui8ShRoom[iShutter]);
+}
+
+void
+ConfigShRoomSet(int iShutter, uint8_t ui8Room)
+{
+    if((iShutter < 0) || (iShutter >= CFG_MAX_SHUTTERS)) { return; }
+    g_sRoomCfg.ui8ShRoom[iShutter] = (ui8Room < CFG_MAX_ROOMS) ? ui8Room : ROOM_NONE;
+}
+
+void
+ConfigRoomSetDefaults(void)
+{
+    int i;
+    memset(&g_sRoomCfg, 0, sizeof(tRoomConfig));
+    g_sRoomCfg.ui32Magic = CFG_ROOMCFG_MAGIC;
+    for(i = 0; i < CFG_MAX_OUTPUTS; i++)  { g_sRoomCfg.ui8OutRoom[i] = ROOM_NONE; }
+    for(i = 0; i < CFG_MAX_SHUTTERS; i++) { g_sRoomCfg.ui8ShRoom[i]  = ROOM_NONE; }
+}
+
+bool
+ConfigRoomSave(void)
+{
+    uint32_t ui32Rc;
+
+    g_sRoomCfg.ui32Magic = CFG_ROOMCFG_MAGIC;
+    g_sRoomCfg.ui32Crc   = ConfigCRC32((const uint8_t *)&g_sRoomCfg,
+                                       sizeof(tRoomConfig) - sizeof(uint32_t));
+    ui32Rc = EEPROMProgram((uint32_t *)&g_sRoomCfg, CFG_ROOMCFG_ADDR,
+                           sizeof(tRoomConfig));
+    if(ui32Rc != 0)
+    {
+        UARTprintf("EEPROM write failed (room config, 0x%x).\n", ui32Rc);
+        return(false);
+    }
+    UARTprintf("Room config saved to EEPROM.\n");
     return(true);
 }
 

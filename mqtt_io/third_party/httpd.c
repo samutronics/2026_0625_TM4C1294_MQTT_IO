@@ -245,6 +245,7 @@ typedef struct
 } default_filename;
 
 const default_filename g_psDefaultFilenames[] = {
+  {"/control.shtml", true },
   {"/index.shtml", true },
   {"/index.ssi", true },
   {"/index.shtm", true },
