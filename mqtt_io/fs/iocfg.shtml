@@ -525,7 +525,7 @@ function buildOutputTable(){
       +'<td style="padding:5px 8px;width:30px;font-weight:700;color:#555">'+pad2(i+1)+'</td>'
       +'<td style="padding:5px 6px"><input type="text" id="oname_'+i+'" value="'+esc(name)+'" maxlength="11" '
       +'style="width:68px;padding:3px 5px;border:1px solid #bbb;font-size:11px;font-weight:600;font-family:inherit;color:#1a1a1a;background:#fff" '
-      +'onblur=\'saveName("out",'+i+',this.value)\'></td>'
+      +'onblur=\'saveName("out",'+i+',this.value)\' oninput=\'onOutNameInput('+i+')\'></td>'
       +'<td style="padding:5px 6px;text-align:center;white-space:nowrap">'
       +'<span id="ods_'+i+'" style="width:7px;height:7px;border-radius:50%;display:inline-block;background:'+(on?'#22a832':'#ccc')+'" title="'+(on?'ON':'OFF')+'"></span>'
       +'&nbsp;<span style="font-size:10px;color:#888">'+(on?'ON':'OFF')+'</span></td>';
@@ -560,6 +560,21 @@ function buildOutputTable(){
   }
   h+='</tbody></table>';
   document.getElementById('pulse-tbl').innerHTML=h;
+}
+
+// The Room dropdown for an output is only meaningful once the output has a name
+// (the Control dashboard lists named outputs as lights).  Enable/disable it live
+// as the name is typed, so you no longer have to Save-and-reload first to unlock
+// it.  On Save the name is written before /roomcfg.cgi, so the assignment sticks.
+function onOutNameInput(i){
+  var nm=document.getElementById('oname_'+i), rm=document.getElementById('orm_'+i);
+  if(!nm||!rm)return;                       // shutter-member rows have no room select
+  var named=nm.value.trim().length>0;
+  rm.disabled=!named;
+  rm.style.background=named?'#fff':'#f0f0f0';
+  rm.style.color=named?'#333':'#aaa';
+  rm.title=named?'':'Name this output to assign it a room';
+  if(!named){rm.value='255';OR[i]=255;}     // clearing the name drops any room
 }
 
 function onModeChange(i){
