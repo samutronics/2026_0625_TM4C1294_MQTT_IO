@@ -661,6 +661,21 @@ get_tag_insert(struct http_state *hs)
  * Generate the relevant HTTP headers for the given filename and write
  * them into the supplied buffer.
  */
+/*
+ * Server identification plus cache-control, sent as hdrs[1] on every response.
+ * Replaces the stock "Server:" header so the browser never caches our pages.
+ * Without this, browsers cache tools.shtml / iocfg.shtml across firmware updates
+ * and can serve a STALE uploader that no longer matches the running firmware
+ * (e.g. missing the OTA totlen/totcrc fields), which shows up as "upload failed"
+ * until a manual hard-refresh.  Ends with a single CRLF; the terminating blank
+ * line still comes from the Content-Type header (hdrs[2]).
+ */
+static const char g_pcServerNoCacheHdr[] =
+  "Server: lwIP/1.4.1\r\n"
+  "Cache-Control: no-cache, no-store, must-revalidate\r\n"
+  "Pragma: no-cache\r\n"
+  "Expires: 0\r\n";
+
 static void
 get_http_headers(struct http_state *pState, char *pszURI)
 {
@@ -673,8 +688,8 @@ get_http_headers(struct http_state *pState, char *pszURI)
   iLoop = 0;
 
   /* In all cases, the second header we send is the server identification
-     so set it here. */
-  pState->hdrs[1] = g_psHTTPHeaderStrings[HTTP_HDR_SERVER];
+     (with cache-control appended so browsers never serve a stale page). */
+  pState->hdrs[1] = g_pcServerNoCacheHdr;
 
   /* Is this a normal file or the special case we use to send back the
      default "404: Page not found" response? */
