@@ -55,7 +55,9 @@ tOTAHeader;
 
 //
 // EEPROM OTA-pending flag, stored at CFG_OTA_EEPROM_ADDR (two 4-byte words).
-// Written after a successful upload; cleared before OtaApply() runs.
+// Written after a verified upload; stays set across OtaApply() and is cleared
+// only once the app slot is confirmed to match the staged image (see
+// OtaCheckAndApply), so a power loss mid-programming retries instead of bricks.
 //
 #define CFG_OTA_EEPROM_ADDR     1252u
 #define OTA_EEPROM_MAGIC        0x4F544150u  // "OTAP"
@@ -72,15 +74,16 @@ bool OtaIsPending(void);
 void OtaSetPending(uint32_t ui32Size);
 
 //
-// Clear the EEPROM flag.  Called before OtaApply() so a power-loss during
-// programming doesn't loop forever.
+// Clear the EEPROM flag.  Called only after the update is fully applied and
+// verified (or when the staged image is found invalid).
 //
 void OtaClearPending(void);
 
 //
 // Called early in main(): if an update is pending and the staged image passes
 // CRC validation, this function calls OtaApply() and never returns.  If the
-// CRC fails it clears the flag and returns normally.
+// staged image is invalid it clears the flag and returns normally so the
+// current firmware keeps running.
 //
 void OtaCheckAndApply(void);
 

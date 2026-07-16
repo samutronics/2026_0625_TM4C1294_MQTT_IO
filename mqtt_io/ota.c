@@ -64,13 +64,18 @@ OtaCheckAndApply(void)
     }
 
     UARTprintf("OTA: update pending, validating...\n");
-    OtaClearPending();
 
     psHdr = (const tOTAHeader *)OTA_HEADER_ADDR;
 
+    //
+    // Validate the STAGED image before touching the app slot.  A failure here
+    // means staging is unusable, so it is safe to clear the flag and boot the
+    // existing (untouched) firmware.
+    //
     if(psHdr->ui32Magic != OTA_HDR_MAGIC)
     {
         UARTprintf("OTA: bad header magic, aborting.\n");
+        OtaClearPending();
         return;
     }
 
@@ -78,6 +83,7 @@ OtaCheckAndApply(void)
     {
         UARTprintf("OTA: image size %u out of range, aborting.\n",
                    psHdr->ui32Size);
+        OtaClearPending();
         return;
     }
 
@@ -89,8 +95,22 @@ OtaCheckAndApply(void)
 
     if(ui32Crc != psHdr->ui32CRC32)
     {
-        UARTprintf("OTA: CRC mismatch (got 0x%08x, expected 0x%08x).\n",
+        UARTprintf("OTA: staging CRC mismatch (got 0x%08x, expected 0x%08x).\n",
                    ui32Crc, psHdr->ui32CRC32);
+        OtaClearPending();
+        return;
+    }
+
+    //
+    // Staging is valid.  Is the app slot ALREADY this exact image?  That is the
+    // case when a previous OtaApply() finished but power was lost before this
+    // boot could clear the flag.  Finish cleanly without re-erasing.
+    //
+    if(ConfigCRC32((const uint8_t *)OTA_APP_ADDR, psHdr->ui32Size) ==
+       psHdr->ui32CRC32)
+    {
+        UARTprintf("OTA: app already matches staged image; clearing flag.\n");
+        OtaClearPending();
         return;
     }
 
@@ -98,6 +118,15 @@ OtaCheckAndApply(void)
 
     //
     // Hand off to the SRAM-resident copier — does not return.
+    //
+    // CRITICAL: the pending flag stays SET across the erase/program.  If power
+    // is lost while OtaApply() is writing, the next boot re-validates staging
+    // (still intact) and — because the app slot will NOT yet match — re-applies.
+    // Once the app slot CRC matches staging, the branch above clears the flag.
+    // This turns a mid-write power loss into an automatic retry instead of a
+    // bricked device.  (Residual single-bank window: a power loss while page 0
+    // itself is mid-erase/program can still prevent boot — unavoidable without a
+    // separate bootloader sector.)
     //
     OtaApply(psHdr->ui32Size);
 }

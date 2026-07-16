@@ -20,6 +20,7 @@ p{font-size:14px;color:#555;margin-bottom:8px}
 </style>
 </head>
 <body>
+<!-- FWUPDATE_OK: machine-readable marker the uploader checks to confirm the device accepted and verified the image.  Do not remove. -->
 <div class="ti-header">
   <span class="ti-brand-name"><em>Sa</em>Ka<em>Hub</em></span>
   <span class="ti-tagline">MQTT I/O Gateway</span>

@@ -162,6 +162,25 @@ textarea.drag-over{border-color:#cc0000;background:#fff5f5}
 <script>
 // ── Firmware upload ──────────────────────────────────────────────────────────
 var FWCHUNK = 200;
+// Staging region on the device (OTA_IMAGE_MAX_SIZE = 1 MB - 0x84000 = 496 KB).
+var OTA_MAX_BYTES = 507904;
+
+// CRC32 (IEEE 802.3, reflected; init/xorout 0xFFFFFFFF).  MUST match ConfigCRC32
+// on the device — the firmware rejects the image unless this CRC agrees, so this
+// is exactly the standard CRC32 (self-check: crc32("123456789") === 0xCBF43926).
+var CRC32_TAB = (function(){
+  var t = new Uint32Array(256), n, c, k;
+  for(n = 0; n < 256; n++){ c = n;
+    for(k = 0; k < 8; k++){ c = (c & 1) ? (0xEDB88320 ^ (c >>> 1)) : (c >>> 1); }
+    t[n] = c >>> 0;
+  }
+  return t;
+})();
+function crc32(u8){
+  var c = 0xFFFFFFFF, i;
+  for(i = 0; i < u8.length; i++){ c = (c >>> 8) ^ CRC32_TAB[(c ^ u8[i]) & 0xFF]; }
+  return (c ^ 0xFFFFFFFF) >>> 0;
+}
 
 function toHex(buf, off, len) {
   var h = '', n = '0123456789abcdef';
@@ -188,24 +207,41 @@ async function startUpload() {
   var buf;
   try { buf = new Uint8Array(await file.arrayBuffer()); }
   catch(e) { fwStatus('Failed to read file.'); document.getElementById('upbtn').disabled = false; return; }
-  var total = buf.length, seq = 0, offset = 0, ok = true;
+  var total = buf.length;
+  // Reject an oversized/empty image up front — the device would refuse it anyway.
+  if(total === 0 || total > OTA_MAX_BYTES) {
+    fwStatus('File is ' + total + ' bytes; must be 1 .. ' + OTA_MAX_BYTES + ' (496 KB).');
+    document.getElementById('upbtn').disabled = false; return;
+  }
+  // CRC + size the device verifies against before it commits the image.
+  var crc = ('00000000' + crc32(buf).toString(16)).slice(-8);
+  var seq = 0, offset = 0, ok = true, failMsg = '';
   fwStatus('Uploading...');
   while(offset < total) {
     var len = Math.min(FWCHUNK, total - offset);
     var last = (offset + len >= total) ? 1 : 0;
     var url = '/fwchunk.cgi?seq=' + seq + '&last=' + last + '&data=' + toHex(buf, offset, len);
+    if(last) { url += '&totlen=' + total + '&totcrc=' + crc; }
     try {
       var resp = await fetch(url, {cache:'no-store'});
-      if(!resp.ok) { ok = false; break; }
-    } catch(e) { ok = false; break; }
+      if(!resp.ok) { ok = false; failMsg = 'HTTP ' + resp.status + ' at chunk ' + seq; break; }
+      // The device serves fwupdate_ok.shtml (which carries the FWUPDATE_OK
+      // marker) only after the size+CRC check passes; anything else = rejected.
+      if(last) {
+        var txt = await resp.text();
+        if(txt.indexOf('FWUPDATE_OK') < 0) {
+          ok = false; failMsg = 'device rejected image (integrity check failed)'; break;
+        }
+      }
+    } catch(e) { ok = false; failMsg = e.message; break; }
     offset += len; seq++;
     fwProgress(offset / total * 100);
   }
   if(ok) {
     fwProgress(100);
-    fwStatus('Upload complete. Device rebooting — reconnect in ~10 s.');
+    fwStatus('Upload verified. Device rebooting — reconnect in ~10 s.');
   } else {
-    fwStatus('Upload failed at chunk ' + seq + '. Retry or power-cycle the device.');
+    fwStatus('Upload failed: ' + failMsg + '. Device kept its current firmware; retry.');
     document.getElementById('upbtn').disabled = false;
   }
 }

@@ -397,6 +397,7 @@ static uint32_t g_ui32OTASize;
 static uint8_t  g_ui8OTAAlignBuf[4];
 static uint32_t g_ui32OTAAlignLen;
 static uint32_t g_ui32OTALastErasedPage;
+static bool     g_bOTAAbort;    // set on staging overflow — blocks the commit
 
 //*****************************************************************************
 //
@@ -678,11 +679,21 @@ FwChunkCGIHandler(int32_t iIndex, int32_t i32NumParams,
         g_ui32OTASize         = 0;
         g_ui32OTAAlignLen     = 0;
         g_ui32OTALastErasedPage = OTA_IMAGE_ADDR;
+        g_bOTAAbort           = false;
 
         MAP_FlashErase(OTA_HEADER_ADDR);
         MAP_FlashErase(OTA_IMAGE_ADDR);
 
         UARTprintf("OTA: upload started.\n");
+    }
+
+    //
+    // Once a chunk has overflowed the staging region (or otherwise failed),
+    // ignore every further chunk until a fresh seq==0 restarts the upload.
+    //
+    if(g_bOTAAbort)
+    {
+        return("/tools.shtml");
     }
 
     //
@@ -696,6 +707,20 @@ FwChunkCGIHandler(int32_t iIndex, int32_t i32NumParams,
 
         if(g_ui32OTAAlignLen == 4)
         {
+            //
+            // Never write past the end of the staging region.  A too-large image
+            // (or a buggy/hostile client) would otherwise erase and program past
+            // the OTA image slot into invalid flash.  Abort and block the commit.
+            //
+            if(g_ui32OTAWriteAddr >= OTA_IMAGE_ADDR + OTA_IMAGE_MAX_SIZE)
+            {
+                g_bOTAAbort       = true;
+                g_ui32OTAAlignLen = 0;
+                UARTprintf("OTA: image exceeds %u-byte staging region, aborting.\n",
+                           (unsigned)OTA_IMAGE_MAX_SIZE);
+                break;
+            }
+
             //
             // Erase the next 16 KB page when the write pointer first enters it.
             //
@@ -718,6 +743,20 @@ FwChunkCGIHandler(int32_t iIndex, int32_t i32NumParams,
     //
     if(bLast)
     {
+        int32_t  iTotLenIdx, iTotCrcIdx;
+        uint32_t ui32TotLen, ui32TotCrc;
+
+        //
+        // If any chunk overflowed the staging region, never commit: no header is
+        // written and no pending flag is set, so the next boot keeps the current
+        // firmware.
+        //
+        if(g_bOTAAbort)
+        {
+            UARTprintf("OTA: upload aborted, not committing.\n");
+            return("/tools.shtml");
+        }
+
         if(g_ui32OTAAlignLen > 0)
         {
             while(g_ui32OTAAlignLen < 4)
@@ -731,10 +770,38 @@ FwChunkCGIHandler(int32_t iIndex, int32_t i32NumParams,
         }
 
         //
-        // CRC32 the staged image and write the header to 0x80000.
+        // End-to-end integrity check.  The client sends the total byte count and
+        // CRC32 of the ORIGINAL file (totlen/totcrc).  A truncated, reordered or
+        // corrupted upload will not match, so it is rejected BEFORE the image is
+        // committed.  Without this the header CRC is only computed over whatever
+        // bytes happened to arrive, so a short upload looks self-consistent.
+        //
+        iTotLenIdx = FindCGIParameter("totlen", pcParam, i32NumParams);
+        iTotCrcIdx = FindCGIParameter("totcrc", pcParam, i32NumParams);
+        if(iTotLenIdx < 0 || iTotCrcIdx < 0)
+        {
+            UARTprintf("OTA: missing totlen/totcrc, rejecting.\n");
+            return("/tools.shtml");
+        }
+        ui32TotLen = (uint32_t)ustrtoul(pcValue[iTotLenIdx], NULL, 10);
+        ui32TotCrc = (uint32_t)ustrtoul(pcValue[iTotCrcIdx], NULL, 16);
+
+        //
+        // CRC32 the staged image (over exactly the received byte count).
         //
         ui32Crc = ConfigCRC32((const uint8_t *)OTA_IMAGE_ADDR, g_ui32OTASize);
 
+        if((g_ui32OTASize != ui32TotLen) || (ui32Crc != ui32TotCrc))
+        {
+            UARTprintf("OTA: integrity check failed "
+                       "(len %u/%u, crc 0x%08x/0x%08x), rejecting.\n",
+                       g_ui32OTASize, ui32TotLen, ui32Crc, ui32TotCrc);
+            return("/tools.shtml");
+        }
+
+        //
+        // Verified.  Write the header to 0x80000 and arm the pending flag.
+        //
         sHdr.ui32Magic = OTA_HDR_MAGIC;
         sHdr.ui32Size  = g_ui32OTASize;
         sHdr.ui32CRC32 = ui32Crc;
@@ -747,7 +814,7 @@ FwChunkCGIHandler(int32_t iIndex, int32_t i32NumParams,
         //
         OtaSetPending(g_ui32OTASize);
 
-        UARTprintf("OTA: %u bytes, CRC=0x%08x. Rebooting...\n",
+        UARTprintf("OTA: %u bytes, CRC=0x%08x verified. Rebooting...\n",
                    g_ui32OTASize, ui32Crc);
 
         //
