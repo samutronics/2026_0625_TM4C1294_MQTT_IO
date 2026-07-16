@@ -636,14 +636,20 @@ void
 ConfigOtaSetPending(uint32_t ui32Size)
 {
     uint32_t aui32Rec[2] = { OTA_EEPROM_MAGIC, ui32Size };
-    EEPROMProgram(aui32Rec, CFG_OTA_EEPROM_ADDR, sizeof(aui32Rec));
+    if(EEPROMProgram(aui32Rec, CFG_OTA_EEPROM_ADDR, sizeof(aui32Rec)) != 0)
+    {
+        UARTprintf("EEPROM write failed (OTA pending flag).\n");
+    }
 }
 
 void
 ConfigOtaClearPending(void)
 {
     uint32_t aui32Rec[2] = { 0u, 0u };
-    EEPROMProgram(aui32Rec, CFG_OTA_EEPROM_ADDR, sizeof(aui32Rec));
+    if(EEPROMProgram(aui32Rec, CFG_OTA_EEPROM_ADDR, sizeof(aui32Rec)) != 0)
+    {
+        UARTprintf("EEPROM write failed (OTA clear flag).\n");
+    }
 }
 
 //*****************************************************************************
@@ -658,15 +664,24 @@ void
 ConfigFactoryReset(void)
 {
     uint32_t ui32Zero = 0u;
-    EEPROMProgram(&ui32Zero, CFG_EEPROM_ADDR,      4);   // tMQTTConfig
-    EEPROMProgram(&ui32Zero, CFG_IO_EEPROM_ADDR,   4);   // tIOSettings
-    EEPROMProgram(&ui32Zero, CFG_IO_BINDINGS_ADDR, 4);   // tIOBindings
-    EEPROMProgram(&ui32Zero, CFG_OTA_EEPROM_ADDR,  4);   // OTA flag
-    EEPROMProgram(&ui32Zero, CFG_NTP_EEPROM_ADDR,  4);   // tNTPConfig
-    EEPROMProgram(&ui32Zero, CFG_IO_NAMES_ADDR,    4);   // tIONames
-    EEPROMProgram(&ui32Zero, CFG_OUTCFG_ADDR,      4);   // tOutputConfig
-    EEPROMProgram(&ui32Zero, CFG_ROOMCFG_ADDR,     4);   // tRoomConfig
-    UARTprintf("Config: EEPROM factory reset complete.\n");
+    uint32_t ui32Rc   = 0u;
+    ui32Rc |= EEPROMProgram(&ui32Zero, CFG_EEPROM_ADDR,      4);   // tMQTTConfig
+    ui32Rc |= EEPROMProgram(&ui32Zero, CFG_IO_EEPROM_ADDR,   4);   // tIOSettings
+    ui32Rc |= EEPROMProgram(&ui32Zero, CFG_IO_BINDINGS_ADDR, 4);   // tIOBindings
+    ui32Rc |= EEPROMProgram(&ui32Zero, CFG_OTA_EEPROM_ADDR,  4);   // OTA flag
+    ui32Rc |= EEPROMProgram(&ui32Zero, CFG_NTP_EEPROM_ADDR,  4);   // tNTPConfig
+    ui32Rc |= EEPROMProgram(&ui32Zero, CFG_IO_NAMES_ADDR,    4);   // tIONames
+    ui32Rc |= EEPROMProgram(&ui32Zero, CFG_OUTCFG_ADDR,      4);   // tOutputConfig
+    ui32Rc |= EEPROMProgram(&ui32Zero, CFG_ROOMCFG_ADDR,     4);   // tRoomConfig
+    if(ui32Rc != 0)
+    {
+        UARTprintf("Config: factory reset had EEPROM write error(s) (0x%x).\n",
+                   ui32Rc);
+    }
+    else
+    {
+        UARTprintf("Config: EEPROM factory reset complete.\n");
+    }
 }
 
 //*****************************************************************************
@@ -797,6 +812,42 @@ ConfigShutterOfRelay(int iOut, bool *pbIsUp)
 }
 
 //*****************************************************************************
+// Ensure no relay is used by more than one shutter (as UP or DOWN).  Two shutters
+// sharing a relay would drive it from two independent FSMs with unsynchronised
+// interlocks — a hardware-conflict path.  Any later slot that collides with an
+// earlier valid one is emptied.  Returns the number of slots cleared.
+//
+//*****************************************************************************
+static int
+ConfigShutterDedup(void)
+{
+    bool    bUsed[CFG_MAX_OUTPUTS];
+    int     iSlot, iCleared = 0;
+    uint8_t ui8Up, ui8Dn;
+
+    memset(bUsed, 0, sizeof(bUsed));
+    for(iSlot = 0; iSlot < CFG_MAX_SHUTTERS; iSlot++)
+    {
+        ui8Up = g_sOutCfg.ui8ShUp[iSlot];
+        ui8Dn = g_sOutCfg.ui8ShDown[iSlot];
+        if((ui8Up >= CFG_MAX_OUTPUTS) || (ui8Dn >= CFG_MAX_OUTPUTS))
+        {
+            continue;                       // empty / invalid slot
+        }
+        if(bUsed[ui8Up] || bUsed[ui8Dn])
+        {
+            g_sOutCfg.ui8ShUp[iSlot]   = SHUTTER_NONE;
+            g_sOutCfg.ui8ShDown[iSlot] = SHUTTER_NONE;
+            iCleared++;
+            continue;
+        }
+        bUsed[ui8Up] = true;
+        bUsed[ui8Dn] = true;
+    }
+    return(iCleared);
+}
+
+//*****************************************************************************
 //
 // Persist the complete tOutputConfig record to EEPROM.
 //
@@ -805,6 +856,13 @@ bool
 ConfigOutputSave(void)
 {
     uint32_t ui32Rc;
+    int      iCleared;
+
+    iCleared = ConfigShutterDedup();
+    if(iCleared != 0)
+    {
+        UARTprintf("Config: cleared %d shutter(s) sharing a relay.\n", iCleared);
+    }
 
     g_sOutCfg.ui32Magic = CFG_OUTCFG_MAGIC;
     g_sOutCfg.ui32Crc   = ConfigCRC32((const uint8_t *)&g_sOutCfg,
@@ -956,6 +1014,7 @@ ConfigNameSet(bool bInput, int iIdx, const char *pcName)
 {
     char     *pcDst;
     uint32_t ui32Addr;
+    uint32_t ui32Rc;
 
     if(bInput)
     {
@@ -978,13 +1037,20 @@ ConfigNameSet(bool bInput, int iIdx, const char *pcName)
 
     // Persist the magic word on every targeted write so the record survives a
     // reboot even if ConfigNamesSave() was never called (e.g. after factory reset).
-    EEPROMProgram(&g_sIONames.ui32Magic, CFG_IO_NAMES_ADDR, 4u);
-    EEPROMProgram((uint32_t *)(uintptr_t)pcDst, ui32Addr, CFG_NAME_LEN);
+    // The CRC is written LAST: if power is lost before it lands, the record fails
+    // CRC on next boot and self-heals to blank names (rather than trusting stale
+    // data).  All three writes are checked so a hardware failure is at least logged.
+    ui32Rc  = EEPROMProgram(&g_sIONames.ui32Magic, CFG_IO_NAMES_ADDR, 4u);
+    ui32Rc |= EEPROMProgram((uint32_t *)(uintptr_t)pcDst, ui32Addr, CFG_NAME_LEN);
 
     g_sIONames.ui32Crc = ConfigCRC32((const uint8_t *)&g_sIONames,
                                       sizeof(tIONames) - sizeof(uint32_t));
-    EEPROMProgram(&g_sIONames.ui32Crc,
+    ui32Rc |= EEPROMProgram(&g_sIONames.ui32Crc,
                   CFG_IO_NAMES_ADDR + sizeof(tIONames) - sizeof(uint32_t), 4u);
+    if(ui32Rc != 0)
+    {
+        UARTprintf("EEPROM write failed (name %d, 0x%x).\n", iIdx, ui32Rc);
+    }
 }
 
 bool
