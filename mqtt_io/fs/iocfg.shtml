@@ -95,8 +95,10 @@ select.sel-act{min-width:76px}
 </div>
 <div class="ti-save-bar">
   <div class="io-subtabs">
-    <button type="button" id="tab-in"  class="io-subtab active" onclick="showIOPage('in')">Inputs</button>
-    <button type="button" id="tab-out" class="io-subtab"        onclick="showIOPage('out')">Outputs</button>
+    <button type="button" id="tab-in"   class="io-subtab active" onclick="showIOPage('in')">Inputs</button>
+    <button type="button" id="tab-out"  class="io-subtab"        onclick="showIOPage('out')">Outputs</button>
+    <button type="button" id="tab-shut" class="io-subtab"        onclick="showIOPage('shut')">Shutters</button>
+    <button type="button" id="tab-room" class="io-subtab"        onclick="showIOPage('room')">Rooms</button>
   </div>
   <button type="submit" form="iof" class="ti-btn" style="margin-left:auto">Save Configuration</button>
 </div>
@@ -139,19 +141,6 @@ select.sel-act{min-width:76px}
   <!-- ============================ OUTPUTS SUB-PAGE =========================== -->
   <div id="page-out" style="display:none">
 
-  <!-- Rooms / zones -->
-  <div class="ti-card">
-    <div class="ti-card-head"><h2>Rooms</h2></div>
-    <div class="ti-card-body">
-      <div id="room-tbl"></div>
-      <div class="ti-note" style="margin-top:12px">
-        Name the rooms/zones you want on the <b>Control</b> dashboard, then assign
-        each light (Outputs table) and shutter to a room. Leave a room name blank to
-        remove it. Unassigned actuators appear under &ldquo;Unassigned&rdquo;.
-      </div>
-    </div>
-  </div>
-
   <!-- Outputs: device count + relay states + modes -->
   <div class="ti-card">
     <div class="ti-card-head"><h2>Outputs</h2></div>
@@ -167,9 +156,16 @@ select.sel-act{min-width:76px}
         <b>Standard</b> outputs switch ON/OFF and stay. <b>Timed</b> outputs turn OFF
         automatically after the Auto-off time; any ON restarts the timer, OFF cancels it.
         <b>Pulse</b> closes the relay for the given time regardless of mode.
+        Assign each named output to a room on the <b>Rooms</b> tab&rsquo;s dashboard
+        via the Room column here.
       </div>
     </div>
   </div>
+
+  </div><!-- /page-out -->
+
+  <!-- ============================ SHUTTERS SUB-PAGE ========================== -->
+  <div id="page-shut" style="display:none">
 
   <!-- Shutters -->
   <div class="ti-card">
@@ -195,7 +191,26 @@ select.sel-act{min-width:76px}
     </div>
   </div>
 
-  </div><!-- /page-out -->
+  </div><!-- /page-shut -->
+
+  <!-- ============================ ROOMS SUB-PAGE ============================= -->
+  <div id="page-room" style="display:none">
+
+  <!-- Rooms / zones -->
+  <div class="ti-card">
+    <div class="ti-card-head"><h2>Rooms</h2></div>
+    <div class="ti-card-body">
+      <div id="room-tbl"></div>
+      <div class="ti-note" style="margin-top:12px">
+        Name the rooms/zones you want on the <b>Control</b> dashboard, then assign
+        each light (Room column on the <b>Outputs</b> tab) and shutter (Room column on
+        the <b>Shutters</b> tab) to a room. Leave a room name blank to remove it.
+        Unassigned actuators appear under &ldquo;Unassigned&rdquo;.
+      </div>
+    </div>
+  </div>
+
+  </div><!-- /page-room -->
   </form>
 
 </main>
@@ -210,13 +225,17 @@ select.sel-act{min-width:76px}
 // #iof form, so CSS-hiding a page does not stop its fields submitting - a single
 // Save still persists inputs and outputs together.
 var g_ioPage='in';
+var IO_PAGES=['in','out','shut','room'];
 function showIOPage(which){
-  var bIn=(which==='in');
-  g_ioPage=bIn?'in':'out';
-  document.getElementById('page-in').style.display  = bIn?'':'none';
-  document.getElementById('page-out').style.display = bIn?'none':'';
-  document.getElementById('tab-in').classList.toggle('active', bIn);
-  document.getElementById('tab-out').classList.toggle('active', !bIn);
+  if(IO_PAGES.indexOf(which)<0){ which='in'; }
+  g_ioPage=which;
+  for(var i=0;i<IO_PAGES.length;i++){
+    var p=IO_PAGES[i];
+    var pg=document.getElementById('page-'+p);
+    var tb=document.getElementById('tab-'+p);
+    if(pg){ pg.style.display=(p===which)?'':'none'; }
+    if(tb){ tb.classList.toggle('active', p===which); }
+  }
 }
 
 var D=<!--#mqdin-->, R=<!--#mqrelay-->;
@@ -723,7 +742,7 @@ if(history.scrollRestoration){ history.scrollRestoration='manual'; }
     var sc=sessionStorage.getItem('iocfg_scroll');
     sessionStorage.removeItem('iocfg_page');
     sessionStorage.removeItem('iocfg_scroll');
-    if(pg==='out'){ showIOPage('out'); }
+    if(pg){ showIOPage(pg); }
     if(sc!==null){ window.scrollTo(0, parseInt(sc,10)||0); }
   }catch(e){}
 })();
