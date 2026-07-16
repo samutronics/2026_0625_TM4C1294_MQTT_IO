@@ -161,7 +161,11 @@ textarea.drag-over{border-color:#cc0000;background:#fff5f5}
 
 <script>
 // ── Firmware upload ──────────────────────────────────────────────────────────
-var FWCHUNK = 200;
+// Bytes per chunk. Larger = fewer HTTP round-trips (each is a separate short-lived
+// connection, and a single dropped one used to abort the whole upload). Kept so
+// the worst-case request line (2xhex + seq + totlen/totcrc + overhead) stays under
+// the device's 1023-byte request-line limit.
+var FWCHUNK = 448;
 // Staging region on the device (OTA_IMAGE_MAX_SIZE = 1 MB - 0x84000 = 496 KB).
 var OTA_MAX_BYTES = 507904;
 
@@ -197,6 +201,31 @@ function fwProgress(pct) {
   document.getElementById('fw-txt').textContent = Math.round(pct) + '%';
 }
 
+// Send one chunk, retrying on transient network / non-200 errors.  The device
+// applies each seq exactly once (idempotent), so resending a chunk whose response
+// was lost is safe — it is ACKed without being re-written.  Returns
+// {ok:true} or {ok:false, reason, fatal}.
+async function fwSendChunk(url, isLast) {
+  var reason = 'network error';
+  for(var attempt = 0; attempt < 5; attempt++) {
+    try {
+      var resp = await fetch(url, {cache:'no-store'});
+      if(resp.ok) {
+        if(!isLast) { return {ok:true}; }
+        // Final chunk succeeds only if the device served the verified-OK page.
+        var txt = await resp.text();
+        if(txt.indexOf('FWUPDATE_OK') >= 0) { return {ok:true}; }
+        // A rejection is deterministic — resending identical bytes won't change it.
+        return {ok:false, reason:'device rejected image (integrity check failed)', fatal:true};
+      }
+      reason = 'HTTP ' + resp.status;
+    } catch(e) { reason = e.message || 'network error'; }
+    // Back off briefly before retrying this same chunk.
+    await new Promise(function(r){ setTimeout(r, 200 + 250 * attempt); });
+  }
+  return {ok:false, reason:reason};
+}
+
 async function startUpload() {
   var file = document.getElementById('fwfile').files[0];
   if(!file) { alert('Select a .bin file first.'); return; }
@@ -215,6 +244,7 @@ async function startUpload() {
   }
   // CRC + size the device verifies against before it commits the image.
   var crc = ('00000000' + crc32(buf).toString(16)).slice(-8);
+  var nChunks = Math.ceil(total / FWCHUNK);
   var seq = 0, offset = 0, ok = true, failMsg = '';
   fwStatus('Uploading...');
   while(offset < total) {
@@ -222,18 +252,17 @@ async function startUpload() {
     var last = (offset + len >= total) ? 1 : 0;
     var url = '/fwchunk.cgi?seq=' + seq + '&last=' + last + '&data=' + toHex(buf, offset, len);
     if(last) { url += '&totlen=' + total + '&totcrc=' + crc; }
-    try {
-      var resp = await fetch(url, {cache:'no-store'});
-      if(!resp.ok) { ok = false; failMsg = 'HTTP ' + resp.status + ' at chunk ' + seq; break; }
-      // The device serves fwupdate_ok.shtml (which carries the FWUPDATE_OK
-      // marker) only after the size+CRC check passes; anything else = rejected.
-      if(last) {
-        var txt = await resp.text();
-        if(txt.indexOf('FWUPDATE_OK') < 0) {
-          ok = false; failMsg = 'device rejected image (integrity check failed)'; break;
-        }
+    var r = await fwSendChunk(url, last === 1);
+    if(!r.ok) {
+      ok = false;
+      failMsg = r.reason + ' (chunk ' + seq + ' of ' + nChunks + ')';
+      // A network failure on the LAST chunk may mean the device already committed
+      // and is rebooting — the update may in fact have succeeded.
+      if(last && !r.fatal) {
+        failMsg += ' — if the device reboots, it may have applied; check the running version before retrying';
       }
-    } catch(e) { ok = false; failMsg = e.message; break; }
+      break;
+    }
     offset += len; seq++;
     fwProgress(offset / total * 100);
   }

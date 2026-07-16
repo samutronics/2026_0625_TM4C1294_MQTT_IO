@@ -398,6 +398,7 @@ static uint8_t  g_ui8OTAAlignBuf[4];
 static uint32_t g_ui32OTAAlignLen;
 static uint32_t g_ui32OTALastErasedPage;
 static bool     g_bOTAAbort;    // set on staging overflow — blocks the commit
+static int32_t  g_i32OTANextSeq; // next chunk seq expected (idempotent retries)
 
 //*****************************************************************************
 //
@@ -680,6 +681,7 @@ FwChunkCGIHandler(int32_t iIndex, int32_t i32NumParams,
         g_ui32OTAAlignLen     = 0;
         g_ui32OTALastErasedPage = OTA_IMAGE_ADDR;
         g_bOTAAbort           = false;
+        g_i32OTANextSeq       = 0;
 
         MAP_FlashErase(OTA_HEADER_ADDR);
         MAP_FlashErase(OTA_IMAGE_ADDR);
@@ -693,6 +695,27 @@ FwChunkCGIHandler(int32_t iIndex, int32_t i32NumParams,
     //
     if(g_bOTAAbort)
     {
+        return("/tools.shtml");
+    }
+
+    //
+    // Ordering / idempotency guard, so a dropped connection can be safely retried
+    // by the client resending the SAME chunk.  Each seq is applied exactly once,
+    // in order:
+    //   seq <  next -> already applied (a retry whose response was lost) -> ACK
+    //                  without re-writing, keeping the byte stream intact.
+    //   seq >  next -> a chunk was missed -> abort; the client restarts at seq 0.
+    //   seq == next -> apply it below, then advance g_i32OTANextSeq.
+    //
+    if(iSeqNum < g_i32OTANextSeq)
+    {
+        return(bLast ? "/fwupdate_ok.shtml" : "/tools.shtml");
+    }
+    if(iSeqNum > g_i32OTANextSeq)
+    {
+        g_bOTAAbort = true;
+        UARTprintf("OTA: out-of-order chunk (got %d, want %d), aborting.\n",
+                   iSeqNum, g_i32OTANextSeq);
         return("/tools.shtml");
     }
 
@@ -736,6 +759,15 @@ FwChunkCGIHandler(int32_t iIndex, int32_t i32NumParams,
             g_ui32OTAWriteAddr += 4;
             g_ui32OTAAlignLen   = 0;
         }
+    }
+
+    //
+    // Chunk fully applied — advance so a resend of this same seq is treated as a
+    // duplicate ACK (idempotent retry) and the next seq is the one expected.
+    //
+    if(!g_bOTAAbort)
+    {
+        g_i32OTANextSeq++;
     }
 
     //
