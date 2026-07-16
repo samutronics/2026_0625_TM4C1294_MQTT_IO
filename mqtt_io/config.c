@@ -26,6 +26,44 @@
 #define CFG_EEPROM_ADDR         0
 
 //
+// Total on-chip EEPROM size on the TM4C1294NCPDT (6 KB).
+//
+#define CFG_EEPROM_SIZE         6144u
+
+//
+// Compile-time EEPROM map guards.  Each record occupies a fixed byte address;
+// these assertions fail the build if a struct ever grows into the next record's
+// slot or past the end of EEPROM — the exact failure that silently wiped stored
+// config in the past when tOutputConfig was resized.  (The OTA pending flag
+// occupies 8 bytes at CFG_OTA_EEPROM_ADDR, between BIND and NTP.)
+//
+_Static_assert(sizeof(tMQTTConfig) <= CFG_IO_EEPROM_ADDR,
+               "tMQTTConfig overflows into the IOST record");
+_Static_assert(CFG_IO_EEPROM_ADDR + sizeof(tIOSettings) <= CFG_IO_BINDINGS_ADDR,
+               "tIOSettings overflows into the BIND record");
+_Static_assert(CFG_IO_BINDINGS_ADDR + sizeof(tIOBindings) <= CFG_OTA_EEPROM_ADDR,
+               "tIOBindings overflows into the OTA pending flag");
+_Static_assert(CFG_OTA_EEPROM_ADDR + 8u <= CFG_NTP_EEPROM_ADDR,
+               "OTA pending flag overflows into the NTPC record");
+_Static_assert(CFG_NTP_EEPROM_ADDR + sizeof(tNTPConfig) <= CFG_IO_NAMES_ADDR,
+               "tNTPConfig overflows into the NMES record");
+_Static_assert(CFG_IO_NAMES_ADDR + sizeof(tIONames) <= CFG_OUTCFG_ADDR,
+               "tIONames overflows into the OUTC record");
+_Static_assert(CFG_OUTCFG_ADDR + sizeof(tOutputConfig) <= CFG_ROOMCFG_ADDR,
+               "tOutputConfig overflows into the ROOM record — add a NEW record, "
+               "never grow OUTC past CFG_ROOMCFG_ADDR");
+_Static_assert(CFG_ROOMCFG_ADDR + sizeof(tRoomConfig) <= CFG_EEPROM_SIZE,
+               "tRoomConfig overflows the end of EEPROM");
+//
+// Targeted per-name EEPROM writes (ConfigNameSet) require the name stride and the
+// names payload base to be 4-byte aligned, or EEPROMProgram faults/corrupts.
+//
+_Static_assert(CFG_NAME_LEN % 4u == 0u,
+               "CFG_NAME_LEN must be a multiple of 4 for targeted name writes");
+_Static_assert((CFG_IO_NAMES_ADDR + 4u) % 4u == 0u,
+               "names payload base must be 4-byte aligned");
+
+//
 // The live, in-RAM copies of the two EEPROM records.
 //
 static tMQTTConfig   g_sConfig;
@@ -535,6 +573,20 @@ ConfigBindingSet(int iInput, int iSlot, uint8_t ui8TrigAct, uint8_t ui8Output)
     {
         return;
     }
+
+    //
+    // Reject a malformed slot: the trigger (bits 2:0) must be a known code and
+    // the output must be a real relay index or BIND_OUTPUT_NONE.  Store anything
+    // else as an unused slot so bad data (e.g. a hand-crafted /iocfg.cgi request)
+    // can never drive relay logic.
+    //
+    if(((ui8TrigAct & 0x07u) > BIND_TRIG_CHANGE) ||
+       ((ui8Output != BIND_OUTPUT_NONE) && (ui8Output >= CFG_MAX_OUTPUTS)))
+    {
+        ui8TrigAct = 0u;
+        ui8Output  = BIND_OUTPUT_NONE;
+    }
+
     g_sBindings.ui8TrigAct[iInput * CFG_BIND_SLOTS + iSlot] = ui8TrigAct;
     g_sBindings.ui8Output [iInput * CFG_BIND_SLOTS + iSlot] = ui8Output;
 }
@@ -675,6 +727,22 @@ ConfigShutterSet(int iSlot, uint8_t ui8Up, uint8_t ui8Down,
                  uint32_t ui32TravelMs)
 {
     if((iSlot < 0) || (iSlot >= CFG_MAX_SHUTTERS)) { return; }
+
+    //
+    // Reject a dangerous/invalid pairing: the same relay for both directions, or
+    // an index past the max output count.  Such a slot would let the shutter FSM
+    // energize a relay it can never correctly release, so store it as empty.
+    // (SHUTTER_NONE is 0xFF = CFG_MAX_OUTPUTS-out-of-range, so the empty-slot
+    // path via ConfigShutterClear is unaffected — it sets both to SHUTTER_NONE.)
+    //
+    if((ui8Up == ui8Down) ||
+       (ui8Up >= CFG_MAX_OUTPUTS) || (ui8Down >= CFG_MAX_OUTPUTS))
+    {
+        g_sOutCfg.ui8ShUp[iSlot]   = SHUTTER_NONE;
+        g_sOutCfg.ui8ShDown[iSlot] = SHUTTER_NONE;
+        return;
+    }
+
     if(ui32TravelMs < 1u)       { ui32TravelMs = 1u; }
     if(ui32TravelMs > 3600000u) { ui32TravelMs = 3600000u; }
     g_sOutCfg.ui8ShUp[iSlot]        = ui8Up;
