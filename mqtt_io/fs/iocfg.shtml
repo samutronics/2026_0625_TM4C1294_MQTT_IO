@@ -95,10 +95,10 @@ select.sel-act{min-width:76px}
 </div>
 <div class="ti-save-bar">
   <div class="io-subtabs">
-    <button type="button" id="tab-in"   class="io-subtab active" onclick="showIOPage('in')">Inputs</button>
+    <button type="button" id="tab-room" class="io-subtab active" onclick="showIOPage('room')">Rooms</button>
     <button type="button" id="tab-out"  class="io-subtab"        onclick="showIOPage('out')">Outputs</button>
     <button type="button" id="tab-shut" class="io-subtab"        onclick="showIOPage('shut')">Shutters</button>
-    <button type="button" id="tab-room" class="io-subtab"        onclick="showIOPage('room')">Rooms</button>
+    <button type="button" id="tab-in"   class="io-subtab"        onclick="showIOPage('in')">Inputs</button>
   </div>
   <button type="submit" form="iof" class="ti-btn" style="margin-left:auto">Save Configuration</button>
 </div>
@@ -111,7 +111,7 @@ select.sel-act{min-width:76px}
   <input type="hidden" id="binds" name="binds" value="">
 
   <!-- ============================ INPUTS SUB-PAGE ============================ -->
-  <div id="page-in">
+  <div id="page-in" style="display:none">
 
   <!-- Input Status matrix dashboard -->
   <div class="ti-card">
@@ -194,7 +194,7 @@ select.sel-act{min-width:76px}
   </div><!-- /page-shut -->
 
   <!-- ============================ ROOMS SUB-PAGE ============================= -->
-  <div id="page-room" style="display:none">
+  <div id="page-room">
 
   <!-- Rooms / zones -->
   <div class="ti-card">
@@ -224,10 +224,10 @@ select.sel-act{min-width:76px}
 // Toggle between the Inputs and Outputs sub-pages.  Both live inside the one
 // #iof form, so CSS-hiding a page does not stop its fields submitting - a single
 // Save still persists inputs and outputs together.
-var g_ioPage='in';
-var IO_PAGES=['in','out','shut','room'];
+var g_ioPage='room';
+var IO_PAGES=['room','out','shut','in'];
 function showIOPage(which){
-  if(IO_PAGES.indexOf(which)<0){ which='in'; }
+  if(IO_PAGES.indexOf(which)<0){ which='room'; }
   g_ioPage=which;
   for(var i=0;i<IO_PAGES.length;i++){
     var p=IO_PAGES[i];
@@ -348,8 +348,13 @@ function buildRelayOpts(){
   var s="<option value='127'>None</option>";
   for(var k=0;k<R*8;k++){
     var mem=shMemberOf(k);
-    var lab=mem?('Shutter '+pad2(mem.n+1)+(mem.up?' ▲Up':' ▼Down'))
-               :(getOutName(k)||('Out'+pad2(k+1)));
+    var lab;
+    if(mem){
+      var snm=(SH[mem.n].name||'').trim()||('Shutter '+pad2(mem.n+1));
+      lab=snm+(mem.up?' ▲Up':' ▼Down');
+    } else {
+      lab=getOutName(k)||('Out'+pad2(k+1));
+    }
     s+="<option value='"+k+"'>"+esc(lab)+"</option>";
   }
   g_relayOpts=s;
@@ -441,6 +446,7 @@ function buildTable(){
     for(var s=0;s<4;s++){
       var v=slotV(i,s);
       var trig=slotTrig(v),act=slotAct(v),out=slotOut(v);
+      if(v===0)act=2;   // unconfigured slot -> default Action = Toggle
       if(s>0)h+="<tr class='slot-row'>";
       /* Slot# */
       h+="<td class='slot-num'>"+pad2(s+1)+"</td>";
@@ -742,7 +748,7 @@ if(history.scrollRestoration){ history.scrollRestoration='manual'; }
     var sc=sessionStorage.getItem('iocfg_scroll');
     sessionStorage.removeItem('iocfg_page');
     sessionStorage.removeItem('iocfg_scroll');
-    if(pg){ showIOPage(pg); }
+    showIOPage(pg||g_ioPage);   // always sync visible page to the active tab
     if(sc!==null){ window.scrollTo(0, parseInt(sc,10)||0); }
   }catch(e){}
 })();
