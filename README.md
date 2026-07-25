@@ -110,24 +110,35 @@ and EEPROM config is preserved. Keep the previous known-good `.bin` for rollback
 
 ## Status
 
-Working on hardware: DHCP, the web config UI with EEPROM persistence (survives reboot), the MQTT
-lifecycle (`status` online/offline + LWT), the **DRV8860 relay output chain** (relays controllable
-over MQTT, auto-discovered as HA `switch` entities, device count configurable), the **SN65HVS882
-input chain** (scanned, device count configurable, driving local input→output/shutter bindings),
-**per-output modes** (Standard / Timed / Shutter with a 500 ms interlock), **shutters** (up to 32,
-named, exposed as HA `cover` entities), **rooms + the Control dashboard**, and **OTA firmware
-update** (HW round-trip tested). Both chain drivers are currently bit-banged (not yet hardware SSI)
-but are verified on hardware; their channel-order mapping is confirmed.
+**Released / running on hardware.** Verified on hardware: DHCP, the web config UI with EEPROM
+persistence (survives reboot), the MQTT lifecycle (`status` online/offline + LWT), the **DRV8860
+relay output chain** (relays controllable over MQTT, auto-discovered as HA `switch` entities, device
+count configurable), the **SN65HVS882 input chain** (scanned, device count configurable, driving
+local input→output/shutter bindings), **per-output modes** (Standard / Timed / Shutter with a 500 ms
+interlock), **shutters** (up to 32, named, exposed as HA `cover` entities), **rooms + the Control
+dashboard**, **OTA firmware update** (round-trip tested), and **name resolution** — reach the board
+at `http://<clientid>/` via the NetBIOS responder (and via router DNS through the DHCP hostname).
+Both chain drivers are bit-banged (not yet hardware SSI) but are verified on hardware, with
+channel-order mapping confirmed.
 
-**Latest addition:** **NetBIOS name resolution** (`http://<clientid>/`) plus a DNS-clean DHCP
-hostname (build `mqtt_io_202607170825.bin`) — to be validated on hardware after the next OTA.
+### Known limitations
 
-Still to do: publish inputs over MQTT as HA `binary_sensor` (`<base>/in/<n>`); optional DRV8860
-per-channel fault readback; optionally migrate the bit-banged chains to hardware SSI.
+- **Router / subnet change:** DHCP is only (re)started on an Ethernet **link** transition. If the
+  router or subnet changes while the board is wired through a **switch** (so its link never drops),
+  **reboot the board — or briefly unplug/replug its cable** — to force a fresh lease. (An automatic
+  gateway watchdog was tried and deliberately removed: the only clean lwIP recovery call,
+  `dhcp_release()`, administratively downs the interface with no reliable way back up, which took
+  the board off Ethernet until reboot.)
+- **Inputs over MQTT:** inputs drive local bindings but are not yet published as HA `binary_sensor`
+  (`<base>/in/<n>`).
+- **Public MQTT broker:** against `test.mosquitto.org` the connection is unreliable — it connects
+  but is frequently aborted (lwIP `ERR_ABRT`, logged as `connection error (-10)`) and then retries,
+  which appears to be public-broker rate limiting rather than a firmware fault. Use a **local**
+  broker (e.g. Mosquitto) for stable operation.
 
-**MQTT is confirmed working against a local Mosquitto broker.** Against the public
-`test.mosquitto.org` the connection is unreliable — it connects but is frequently aborted
-(lwIP `ERR_ABRT`, logged as `connection error (-10)`) and then retries, which appears to be
-public-broker rate limiting rather than a firmware fault. Point the config at a local broker
-for stable operation.
+### Planned
+
+- Publish inputs over MQTT as HA `binary_sensor` (`<base>/in/<n>`).
+- Optional DRV8860 per-channel fault readback via DOUT (`nFAULT` edge is already logged).
+- Optionally migrate the bit-banged chains to hardware SSI0 (input) / SSI1 (output).
 </content>
