@@ -25,7 +25,7 @@
 #include <stdint.h>
 #include <string.h>
 #include "inc/hw_types.h"
-#include "utils/ustdlib.h"
+#include "pal_str.h"
 #include "cgifuncs.h"
 
 //*****************************************************************************
@@ -236,7 +236,7 @@ EncodeFormString(const char *pcDecoded, char *pcEncoded,
 
             case '\'':
             {
-                ui32Count += usnprintf(&pcEncoded[ui32Count],
+                ui32Count += PalSnprintf(&pcEncoded[ui32Count],
                                        (ui32Len - ui32Count), "&#39;");
                 break;
             }

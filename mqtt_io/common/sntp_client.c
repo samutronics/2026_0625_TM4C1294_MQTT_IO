@@ -18,7 +18,7 @@
 #include "lwip/pbuf.h"
 #include "lwip/ip_addr.h"
 #include "pal_log.h"
-#include "utils/ustdlib.h"
+#include "pal_str.h"
 #include "config.h"
 #include "sntp_client.h"
 
@@ -263,7 +263,7 @@ SntpGetTimeStr(char *pcBuf, int iBufLen)
 
     if(!g_bSynced || iBufLen < 9)
     {
-        if(iBufLen >= 9) { usnprintf(pcBuf, iBufLen, "--:--:--"); }
+        if(iBufLen >= 9) { PalSnprintf(pcBuf, iBufLen, "--:--:--"); }
         return;
     }
 
@@ -294,5 +294,5 @@ SntpGetTimeStr(char *pcBuf, int iBufLen)
     ui32Hour = (ui32Unix / 3600u) % 24u;
     (void)ui32Day;
 
-    usnprintf(pcBuf, iBufLen, "%02u:%02u:%02u", ui32Hour, ui32Min, ui32Sec);
+    PalSnprintf(pcBuf, iBufLen, "%02u:%02u:%02u", ui32Hour, ui32Min, ui32Sec);
 }

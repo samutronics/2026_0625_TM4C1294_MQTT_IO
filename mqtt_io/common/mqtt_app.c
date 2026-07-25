@@ -18,7 +18,7 @@
 #include <stdbool.h>
 #include <stdint.h>
 #include <string.h>
-#include "utils/ustdlib.h"
+#include "pal_str.h"
 #include "pal_log.h"
 #include "config.h"
 #include "relay_chain.h"
@@ -79,7 +79,7 @@ MQTTAppPublishRelayState(int iRelay)
 {
     const char *pcMsg = RelayChainGet((uint16_t)iRelay) ? "ON" : "OFF";
 
-    usnprintf(g_pcScratchTopic, sizeof(g_pcScratchTopic), "%s/relay/%d/state",
+    PalSnprintf(g_pcScratchTopic, sizeof(g_pcScratchTopic), "%s/relay/%d/state",
               g_pcBase, iRelay);
     MQTTClientPublish(g_pcScratchTopic, (const uint8_t *)pcMsg,
                       (uint16_t)strlen(pcMsg), 1);
@@ -93,7 +93,7 @@ MQTTAppPublishRelayState(int iRelay)
 static void
 MQTTAppPublishRelayDiscovery(int iRelay)
 {
-    usnprintf(g_pcDiscTopic, sizeof(g_pcDiscTopic),
+    PalSnprintf(g_pcDiscTopic, sizeof(g_pcDiscTopic),
               HA_PREFIX "/switch/%s/relay%d/config", g_pcDevId, iRelay);
 
     //
@@ -106,7 +106,7 @@ MQTTAppPublishRelayDiscovery(int iRelay)
         return;
     }
 
-    usnprintf(g_pcDiscPayload, sizeof(g_pcDiscPayload),
+    PalSnprintf(g_pcDiscPayload, sizeof(g_pcDiscPayload),
               "{\"~\":\"%s\",\"name\":\"Out%02d\",\"uniq_id\":\"%s_relay%d\","
               "\"cmd_t\":\"~/relay/%d/set\",\"stat_t\":\"~/relay/%d/state\","
               "\"pl_on\":\"ON\",\"pl_off\":\"OFF\",\"avty_t\":\"~/status\","
@@ -132,7 +132,7 @@ MQTTAppPublishCoverState(int iShutter, const char *pcState)
     {
         return;
     }
-    usnprintf(g_pcScratchTopic, sizeof(g_pcScratchTopic), "%s/cover/%d/state",
+    PalSnprintf(g_pcScratchTopic, sizeof(g_pcScratchTopic), "%s/cover/%d/state",
               g_pcBase, iShutter);
     MQTTClientPublish(g_pcScratchTopic, (const uint8_t *)pcState,
                       (uint16_t)strlen(pcState), 1);
@@ -147,7 +147,7 @@ MQTTAppPublishCoverState(int iShutter, const char *pcState)
 static void
 MQTTAppPublishCoverDiscovery(int iShutter)
 {
-    usnprintf(g_pcDiscTopic, sizeof(g_pcDiscTopic),
+    PalSnprintf(g_pcDiscTopic, sizeof(g_pcDiscTopic),
               HA_PREFIX "/cover/%s/cover%d/config", g_pcDevId, iShutter);
 
     if(!OutputCtrlShutterValid(iShutter))
@@ -164,14 +164,14 @@ MQTTAppPublishCoverDiscovery(int iShutter)
         char        acName[CFG_NAME_LEN + 8];
         if(pcShN && pcShN[0])
         {
-            usnprintf(acName, sizeof(acName), "%s", pcShN);
+            PalSnprintf(acName, sizeof(acName), "%s", pcShN);
         }
         else
         {
-            usnprintf(acName, sizeof(acName), "Shutter%02d", iShutter + 1);
+            PalSnprintf(acName, sizeof(acName), "Shutter%02d", iShutter + 1);
         }
 
-        usnprintf(g_pcDiscPayload, sizeof(g_pcDiscPayload),
+        PalSnprintf(g_pcDiscPayload, sizeof(g_pcDiscPayload),
                   "{\"~\":\"%s\",\"name\":\"%s\",\"uniq_id\":\"%s_cover%d\","
                   "\"cmd_t\":\"~/cover/%d/set\",\"stat_t\":\"~/cover/%d/state\","
                   "\"pl_open\":\"OPEN\",\"pl_cls\":\"CLOSE\",\"pl_stop\":\"STOP\","
@@ -206,19 +206,19 @@ MQTTAppPublishInputDiscovery(int iInput)
     //
     // Clear the stale component's retained config first.
     //
-    usnprintf(g_pcDiscTopic, sizeof(g_pcDiscTopic),
+    PalSnprintf(g_pcDiscTopic, sizeof(g_pcDiscTopic),
               HA_PREFIX "/%s/%s/input%d/config", pcStaleComp, g_pcDevId, iInput);
     MQTTClientPublish(g_pcDiscTopic, (const uint8_t *)"", 0, 1);
 
     //
     // Publish the active component's config.
     //
-    usnprintf(g_pcDiscTopic, sizeof(g_pcDiscTopic),
+    PalSnprintf(g_pcDiscTopic, sizeof(g_pcDiscTopic),
               HA_PREFIX "/%s/%s/input%d/config", pcActiveComp, g_pcDevId, iInput);
 
     if(bPB)
     {
-        usnprintf(g_pcDiscPayload, sizeof(g_pcDiscPayload),
+        PalSnprintf(g_pcDiscPayload, sizeof(g_pcDiscPayload),
                   "{\"~\":\"%s\",\"name\":\"In%02d\",\"uniq_id\":\"%s_input%d\","
                   "\"stat_t\":\"~/input/%d/event\","
                   "\"event_types\":[\"single\",\"double\"],"
@@ -230,7 +230,7 @@ MQTTAppPublishInputDiscovery(int iInput)
     }
     else
     {
-        usnprintf(g_pcDiscPayload, sizeof(g_pcDiscPayload),
+        PalSnprintf(g_pcDiscPayload, sizeof(g_pcDiscPayload),
                   "{\"~\":\"%s\",\"name\":\"In%02d\",\"uniq_id\":\"%s_input%d\","
                   "\"stat_t\":\"~/input/%d/state\",\"pl_on\":\"ON\",\"pl_off\":"
                   "\"OFF\",\"avty_t\":\"~/status\",\"dev\":{\"ids\":[\"%s\"],"
@@ -256,7 +256,7 @@ MQTTAppPublishInput(int iInput, bool bOn)
     {
         return;
     }
-    usnprintf(g_pcScratchTopic, sizeof(g_pcScratchTopic), "%s/input/%d/state",
+    PalSnprintf(g_pcScratchTopic, sizeof(g_pcScratchTopic), "%s/input/%d/state",
               g_pcBase, iInput);
     MQTTClientPublish(g_pcScratchTopic, (const uint8_t *)(bOn ? "ON" : "OFF"),
                       (uint16_t)(bOn ? 2 : 3), 1);
@@ -276,9 +276,9 @@ MQTTAppPublishInputEvent(int iInput, const char *pcEvt)
     {
         return;
     }
-    usnprintf(g_pcScratchTopic, sizeof(g_pcScratchTopic), "%s/input/%d/event",
+    PalSnprintf(g_pcScratchTopic, sizeof(g_pcScratchTopic), "%s/input/%d/event",
               g_pcBase, iInput);
-    usnprintf(pcPayload, sizeof(pcPayload), "{\"event_type\":\"%s\"}", pcEvt);
+    PalSnprintf(pcPayload, sizeof(pcPayload), "{\"event_type\":\"%s\"}", pcEvt);
     MQTTClientPublish(g_pcScratchTopic, (const uint8_t *)pcPayload,
                       (uint16_t)strlen(pcPayload), 0);
 }
@@ -488,7 +488,7 @@ MQTTAppMsgCB(const char *pcTopic, uint16_t ui16TopicLen,
             return;   // shutter relays are driven via the cover interface
         }
         //
-        // Copy payload to null-terminated buffer for ustrtoul.
+        // Copy payload to null-terminated buffer for PalStrToUl.
         //
         if(ui16PayloadLen >= sizeof(acNum))
         {
@@ -496,7 +496,7 @@ MQTTAppMsgCB(const char *pcTopic, uint16_t ui16TopicLen,
         }
         memcpy(acNum, pui8Payload, ui16PayloadLen);
         acNum[ui16PayloadLen] = '\0';
-        ui32Ms = ustrtoul(acNum, NULL, 10);
+        ui32Ms = PalStrToUl(acNum, NULL, 10);
         if(ui32Ms == 0)
         {
             ui32Ms = 1000;   // implicit default: empty/0 payload pulses for 1 s
@@ -522,7 +522,7 @@ MQTTAppBuildTopics(const char *pcBase)
     strncpy(g_pcBase, pcBase, sizeof(g_pcBase) - 1);
     g_pcBase[sizeof(g_pcBase) - 1] = '\0';
 
-    usnprintf(g_pcTopicStatus, sizeof(g_pcTopicStatus), "%s/status", pcBase);
+    PalSnprintf(g_pcTopicStatus, sizeof(g_pcTopicStatus), "%s/status", pcBase);
 }
 
 //*****************************************************************************
@@ -536,7 +536,7 @@ MQTTAppInit(const uint8_t *pui8MAC)
     g_bWasConnected = false;
     g_iPubStep = 0;
 
-    usnprintf(g_pcDevId, sizeof(g_pcDevId), "tm4c1294_%02x%02x%02x",
+    PalSnprintf(g_pcDevId, sizeof(g_pcDevId), "tm4c1294_%02x%02x%02x",
               pui8MAC[3], pui8MAC[4], pui8MAC[5]);
 
     MQTTClientInit(MQTTAppMsgCB);
@@ -626,10 +626,10 @@ MQTTAppPostConnect(int iStep)
     {
         if(iRelays > 0)
         {
-            usnprintf(g_pcScratchTopic, sizeof(g_pcScratchTopic),
+            PalSnprintf(g_pcScratchTopic, sizeof(g_pcScratchTopic),
                       "%s/relay/+/set", g_pcBase);
             MQTTClientSubscribe(g_pcScratchTopic);
-            usnprintf(g_pcScratchTopic, sizeof(g_pcScratchTopic),
+            PalSnprintf(g_pcScratchTopic, sizeof(g_pcScratchTopic),
                       "%s/relay/+/pulse", g_pcBase);
             MQTTClientSubscribe(g_pcScratchTopic);
         }
@@ -672,7 +672,7 @@ MQTTAppPostConnect(int iStep)
     }
     else if(iStep == iCvSub)
     {
-        usnprintf(g_pcScratchTopic, sizeof(g_pcScratchTopic),
+        PalSnprintf(g_pcScratchTopic, sizeof(g_pcScratchTopic),
                   "%s/cover/+/set", g_pcBase);
         MQTTClientSubscribe(g_pcScratchTopic);
     }
