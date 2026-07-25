@@ -19,19 +19,14 @@
 #include <stdbool.h>
 #include <stdint.h>
 #include <string.h>
-#include "inc/hw_memmap.h"
-#include "inc/hw_types.h"
-#include "driverlib/gpio.h"
-#include "driverlib/rom.h"
-#include "driverlib/rom_map.h"
-#include "driverlib/sysctl.h"
+#include "pal_gpio.h"
 #include "board_pins.h"
 #include "relay_chain.h"
 
 //
 // Half-clock / setup delay (see din_chain.c for the rationale).
 //
-#define RELAY_DELAY()       MAP_SysCtlDelay(30)
+#define RELAY_DELAY()       PalGpioBitDelay()
 
 //
 // Number of cascaded DRV8860 devices and the desired relay state, one bit per
@@ -60,13 +55,13 @@ RelayChainShift(void)
 
         for(ui8Bit = 0x80u; ui8Bit != 0u; ui8Bit >>= 1)
         {
-            MAP_GPIOPinWrite(OUTPUT_SSI_TX_PORT, OUTPUT_SSI_TX_PIN,
+            PalGpioWrite(OUTPUT_SSI_TX_PORT, OUTPUT_SSI_TX_PIN,
                              (ui8Byte & ui8Bit) ? OUTPUT_SSI_TX_PIN : 0);
             RELAY_DELAY();
-            MAP_GPIOPinWrite(OUTPUT_SSI_CLK_PORT, OUTPUT_SSI_CLK_PIN,
+            PalGpioWrite(OUTPUT_SSI_CLK_PORT, OUTPUT_SSI_CLK_PIN,
                              OUTPUT_SSI_CLK_PIN);                    // CLK high
             RELAY_DELAY();
-            MAP_GPIOPinWrite(OUTPUT_SSI_CLK_PORT, OUTPUT_SSI_CLK_PIN, 0);
+            PalGpioWrite(OUTPUT_SSI_CLK_PORT, OUTPUT_SSI_CLK_PIN, 0);
             RELAY_DELAY();
         }
     }
@@ -74,9 +69,9 @@ RelayChainShift(void)
     //
     // Latch the shift register to the outputs.
     //
-    MAP_GPIOPinWrite(OUTPUT_LATCH_PORT, OUTPUT_LATCH_PIN, OUTPUT_LATCH_PIN);
+    PalGpioWrite(OUTPUT_LATCH_PORT, OUTPUT_LATCH_PIN, OUTPUT_LATCH_PIN);
     RELAY_DELAY();
-    MAP_GPIOPinWrite(OUTPUT_LATCH_PORT, OUTPUT_LATCH_PIN, 0);
+    PalGpioWrite(OUTPUT_LATCH_PORT, OUTPUT_LATCH_PIN, 0);
     RELAY_DELAY();
 }
 
@@ -91,43 +86,32 @@ RelayChainInit(uint8_t ui8Devices)
     //
     // Enable the GPIO ports used by the chain.
     //
-    MAP_SysCtlPeripheralEnable(OUTPUT_SSI_CLK_PERIPH);      // GPIOB (CLK, LATCH)
-    MAP_SysCtlPeripheralEnable(OUTPUT_SSI_E_PERIPH);        // GPIOE (DIN, DOUT)
-    MAP_SysCtlPeripheralEnable(OUTPUT_ENABLE_PERIPH);       // GPIOH (EN, nFAULT)
-    while(!MAP_SysCtlPeripheralReady(OUTPUT_SSI_CLK_PERIPH))
-    {
-    }
-    while(!MAP_SysCtlPeripheralReady(OUTPUT_SSI_E_PERIPH))
-    {
-    }
-    while(!MAP_SysCtlPeripheralReady(OUTPUT_ENABLE_PERIPH))
-    {
-    }
+    PalGpioEnablePort(OUTPUT_SSI_CLK_PERIPH);      // GPIOB (CLK, LATCH)
+    PalGpioEnablePort(OUTPUT_SSI_E_PERIPH);        // GPIOE (DIN, DOUT)
+    PalGpioEnablePort(OUTPUT_ENABLE_PERIPH);       // GPIOH (EN, nFAULT)
 
     //
     // CLK, DIN, LATCH and ENABLE are outputs; DOUT and nFAULT are inputs.
     //
-    MAP_GPIOPinTypeGPIOOutput(OUTPUT_SSI_CLK_PORT, OUTPUT_SSI_CLK_PIN);
-    MAP_GPIOPinTypeGPIOOutput(OUTPUT_SSI_TX_PORT, OUTPUT_SSI_TX_PIN);
-    MAP_GPIOPinTypeGPIOOutput(OUTPUT_LATCH_PORT, OUTPUT_LATCH_PIN);
-    MAP_GPIOPinTypeGPIOOutput(OUTPUT_ENABLE_PORT, OUTPUT_ENABLE_PIN);
-    MAP_GPIOPinTypeGPIOInput(OUTPUT_SSI_RX_PORT, OUTPUT_SSI_RX_PIN);
+    PalGpioConfigOutput(OUTPUT_SSI_CLK_PORT, OUTPUT_SSI_CLK_PIN);
+    PalGpioConfigOutput(OUTPUT_SSI_TX_PORT, OUTPUT_SSI_TX_PIN);
+    PalGpioConfigOutput(OUTPUT_LATCH_PORT, OUTPUT_LATCH_PIN);
+    PalGpioConfigOutput(OUTPUT_ENABLE_PORT, OUTPUT_ENABLE_PIN);
+    PalGpioConfigInput(OUTPUT_SSI_RX_PORT, OUTPUT_SSI_RX_PIN);
 
     //
     // nFAULT is open-drain on the device; enable a pull-up so it reads high
     // when no fault is present.
     //
-    MAP_GPIOPinTypeGPIOInput(OUTPUT_NFAULT_PORT, OUTPUT_NFAULT_PIN);
-    MAP_GPIOPadConfigSet(OUTPUT_NFAULT_PORT, OUTPUT_NFAULT_PIN,
-                         GPIO_STRENGTH_2MA, GPIO_PIN_TYPE_STD_WPU);
+    PalGpioConfigInputPullup(OUTPUT_NFAULT_PORT, OUTPUT_NFAULT_PIN);
 
     //
     // Idle the control lines and disable outputs while we set up.
     //
-    MAP_GPIOPinWrite(OUTPUT_SSI_CLK_PORT, OUTPUT_SSI_CLK_PIN, 0);
-    MAP_GPIOPinWrite(OUTPUT_SSI_TX_PORT, OUTPUT_SSI_TX_PIN, 0);
-    MAP_GPIOPinWrite(OUTPUT_LATCH_PORT, OUTPUT_LATCH_PIN, 0);
-    MAP_GPIOPinWrite(OUTPUT_ENABLE_PORT, OUTPUT_ENABLE_PIN, 0);
+    PalGpioWrite(OUTPUT_SSI_CLK_PORT, OUTPUT_SSI_CLK_PIN, 0);
+    PalGpioWrite(OUTPUT_SSI_TX_PORT, OUTPUT_SSI_TX_PIN, 0);
+    PalGpioWrite(OUTPUT_LATCH_PORT, OUTPUT_LATCH_PIN, 0);
+    PalGpioWrite(OUTPUT_ENABLE_PORT, OUTPUT_ENABLE_PIN, 0);
 
     g_ui8Devices = (ui8Devices > RELAY_MAX_DEVICES) ? RELAY_MAX_DEVICES
                                                     : ui8Devices;
@@ -138,7 +122,7 @@ RelayChainInit(uint8_t ui8Devices)
     // register from now on.
     //
     RelayChainShift();
-    MAP_GPIOPinWrite(OUTPUT_ENABLE_PORT, OUTPUT_ENABLE_PIN, OUTPUT_ENABLE_PIN);
+    PalGpioWrite(OUTPUT_ENABLE_PORT, OUTPUT_ENABLE_PIN, OUTPUT_ENABLE_PIN);
 }
 
 //*****************************************************************************
@@ -220,5 +204,5 @@ RelayChainAllOff(void)
 bool
 RelayChainFault(void)
 {
-    return(MAP_GPIOPinRead(OUTPUT_NFAULT_PORT, OUTPUT_NFAULT_PIN) == 0);
+    return(PalGpioRead(OUTPUT_NFAULT_PORT, OUTPUT_NFAULT_PIN) == 0);
 }

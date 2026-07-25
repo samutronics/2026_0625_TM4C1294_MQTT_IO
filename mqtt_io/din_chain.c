@@ -17,12 +17,7 @@
 #include <stdbool.h>
 #include <stdint.h>
 #include <string.h>
-#include "inc/hw_memmap.h"
-#include "inc/hw_types.h"
-#include "driverlib/gpio.h"
-#include "driverlib/rom.h"
-#include "driverlib/rom_map.h"
-#include "driverlib/sysctl.h"
+#include "pal_gpio.h"
 #include "board_pins.h"
 #include "din_chain.h"
 
@@ -31,7 +26,7 @@
 // is well under a microsecond - comfortably within the SN65HVS882 timing while
 // staying slow enough to tolerate the isolator and cabling.
 //
-#define DIN_DELAY()         MAP_SysCtlDelay(30)
+#define DIN_DELAY()         PalGpioBitDelay()
 
 //
 // Number of cascaded SN65HVS882 devices currently configured.
@@ -47,9 +42,9 @@ static uint8_t g_ui8Devices;
 static void
 DINChainIdle(void)
 {
-    MAP_GPIOPinWrite(INPUT_SSI_CLK_PORT, INPUT_SSI_CLK_PIN, 0);
-    MAP_GPIOPinWrite(INPUT_SSI_FSS_PORT, INPUT_SSI_FSS_PIN, INPUT_SSI_FSS_PIN);
-    MAP_GPIOPinWrite(INPUT_LATCH_PORT, INPUT_LATCH_PIN, INPUT_LATCH_PIN);
+    PalGpioWrite(INPUT_SSI_CLK_PORT, INPUT_SSI_CLK_PIN, 0);
+    PalGpioWrite(INPUT_SSI_FSS_PORT, INPUT_SSI_FSS_PIN, INPUT_SSI_FSS_PIN);
+    PalGpioWrite(INPUT_LATCH_PORT, INPUT_LATCH_PIN, INPUT_LATCH_PIN);
 }
 
 //*****************************************************************************
@@ -63,22 +58,16 @@ DINChainInit(uint8_t ui8Devices)
     //
     // Enable the GPIO ports (idempotent - PA0/PA1 stay owned by UART0).
     //
-    MAP_SysCtlPeripheralEnable(INPUT_SSI_GPIO_PERIPH);
-    MAP_SysCtlPeripheralEnable(INPUT_LATCH_PERIPH);
-    while(!MAP_SysCtlPeripheralReady(INPUT_SSI_GPIO_PERIPH))
-    {
-    }
-    while(!MAP_SysCtlPeripheralReady(INPUT_LATCH_PERIPH))
-    {
-    }
+    PalGpioEnablePort(INPUT_SSI_GPIO_PERIPH);
+    PalGpioEnablePort(INPUT_LATCH_PERIPH);
 
     //
     // CLK, CE and LD are outputs; SOP is an input.
     //
-    MAP_GPIOPinTypeGPIOOutput(INPUT_SSI_CLK_PORT, INPUT_SSI_CLK_PIN);
-    MAP_GPIOPinTypeGPIOOutput(INPUT_SSI_FSS_PORT, INPUT_SSI_FSS_PIN);
-    MAP_GPIOPinTypeGPIOOutput(INPUT_LATCH_PORT, INPUT_LATCH_PIN);
-    MAP_GPIOPinTypeGPIOInput(INPUT_SSI_RX_PORT, INPUT_SSI_RX_PIN);
+    PalGpioConfigOutput(INPUT_SSI_CLK_PORT, INPUT_SSI_CLK_PIN);
+    PalGpioConfigOutput(INPUT_SSI_FSS_PORT, INPUT_SSI_FSS_PIN);
+    PalGpioConfigOutput(INPUT_LATCH_PORT, INPUT_LATCH_PIN);
+    PalGpioConfigInput(INPUT_SSI_RX_PORT, INPUT_SSI_RX_PIN);
 
     DINChainIdle();
     DINChainSetDevices(ui8Devices);
@@ -129,13 +118,13 @@ DINChainRead(uint8_t *pui8Buf, uint8_t ui8BufLen)
     //
     // Latch the parallel inputs, then enable the serial output.
     //
-    MAP_GPIOPinWrite(INPUT_SSI_FSS_PORT, INPUT_SSI_FSS_PIN, INPUT_SSI_FSS_PIN);
-    MAP_GPIOPinWrite(INPUT_LATCH_PORT, INPUT_LATCH_PIN, 0);          // LD low
+    PalGpioWrite(INPUT_SSI_FSS_PORT, INPUT_SSI_FSS_PIN, INPUT_SSI_FSS_PIN);
+    PalGpioWrite(INPUT_LATCH_PORT, INPUT_LATCH_PIN, 0);          // LD low
     DIN_DELAY();
-    MAP_GPIOPinWrite(INPUT_LATCH_PORT, INPUT_LATCH_PIN,
+    PalGpioWrite(INPUT_LATCH_PORT, INPUT_LATCH_PIN,
                      INPUT_LATCH_PIN);                               // LD high
     DIN_DELAY();
-    MAP_GPIOPinWrite(INPUT_SSI_FSS_PORT, INPUT_SSI_FSS_PIN, 0);      // CE low
+    PalGpioWrite(INPUT_SSI_FSS_PORT, INPUT_SSI_FSS_PIN, 0);      // CE low
     DIN_DELAY();
 
     //
@@ -143,22 +132,22 @@ DINChainRead(uint8_t *pui8Buf, uint8_t ui8BufLen)
     //
     for(ui16I = 0; ui16I < ui16Bits; ui16I++)
     {
-        if(MAP_GPIOPinRead(INPUT_SSI_RX_PORT, INPUT_SSI_RX_PIN))
+        if(PalGpioRead(INPUT_SSI_RX_PORT, INPUT_SSI_RX_PIN))
         {
             pui8Buf[ui16I >> 3] |= (uint8_t)(0x80u >> (ui16I & 7u));
         }
 
-        MAP_GPIOPinWrite(INPUT_SSI_CLK_PORT, INPUT_SSI_CLK_PIN,
+        PalGpioWrite(INPUT_SSI_CLK_PORT, INPUT_SSI_CLK_PIN,
                          INPUT_SSI_CLK_PIN);                         // CLK high
         DIN_DELAY();
-        MAP_GPIOPinWrite(INPUT_SSI_CLK_PORT, INPUT_SSI_CLK_PIN, 0);  // CLK low
+        PalGpioWrite(INPUT_SSI_CLK_PORT, INPUT_SSI_CLK_PIN, 0);  // CLK low
         DIN_DELAY();
     }
 
     //
     // Disable the serial output again.
     //
-    MAP_GPIOPinWrite(INPUT_SSI_FSS_PORT, INPUT_SSI_FSS_PIN, INPUT_SSI_FSS_PIN);
+    PalGpioWrite(INPUT_SSI_FSS_PORT, INPUT_SSI_FSS_PIN, INPUT_SSI_FSS_PIN);
 
     return(g_ui8Devices);
 }
