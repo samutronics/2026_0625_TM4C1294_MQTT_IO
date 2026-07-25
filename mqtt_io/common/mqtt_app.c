@@ -19,7 +19,7 @@
 #include <stdint.h>
 #include <string.h>
 #include "utils/ustdlib.h"
-#include "utils/uartstdio.h"
+#include "pal_log.h"
 #include "config.h"
 #include "relay_chain.h"
 #include "din_chain.h"
@@ -449,7 +449,7 @@ MQTTAppMsgCB(const char *pcTopic, uint16_t ui16TopicLen,
         bOn = (ui16PayloadLen >= 2) && (pui8Payload[0] == 'O') &&
               (pui8Payload[1] == 'N');
         OutputCtrlCommand(iRelay, bOn ? OUT_CMD_ON : OUT_CMD_OFF);
-        UARTprintf("MQTT: relay %d -> %s\n", iRelay, bOn ? "ON" : "OFF");
+        PalLog("MQTT: relay %d -> %s\n", iRelay, bOn ? "ON" : "OFF");
         return;
     }
 
@@ -468,7 +468,7 @@ MQTTAppMsgCB(const char *pcTopic, uint16_t ui16TopicLen,
             default:  return;
         }
         OutputCtrlShutter(iShutter, eCmd);
-        UARTprintf("MQTT: cover %d cmd %d\n", iShutter, (int)eCmd);
+        PalLog("MQTT: cover %d cmd %d\n", iShutter, (int)eCmd);
         return;
     }
 
@@ -505,7 +505,7 @@ MQTTAppMsgCB(const char *pcTopic, uint16_t ui16TopicLen,
         {
             return;   // reject durations > 1 hour
         }
-        UARTprintf("MQTT: relay %d pulse %u ms\n", iRelay, ui32Ms);
+        PalLog("MQTT: relay %d pulse %u ms\n", iRelay, ui32Ms);
         RelayPulseStart(iRelay, ui32Ms);
         return;
     }
@@ -554,7 +554,7 @@ MQTTAppStart(void)
 
     if(!ConfigHasBroker())
     {
-        UARTprintf("MQTT: no broker configured; idle.\n");
+        PalLog("MQTT: no broker configured; idle.\n");
         return;
     }
 
@@ -568,7 +568,7 @@ MQTTAppStart(void)
     g_bWasConnected = false;
     g_iPubStep = 0;
 
-    UARTprintf("MQTT: connecting to %s:%d as '%s'...\n", psCfg->pcHost,
+    PalLog("MQTT: connecting to %s:%d as '%s'...\n", psCfg->pcHost,
                psCfg->ui16Port, psCfg->pcClientID);
 
     MQTTClientStart(psCfg->pcHost, psCfg->ui16Port, psCfg->pcClientID,
@@ -633,7 +633,7 @@ MQTTAppPostConnect(int iStep)
                       "%s/relay/+/pulse", g_pcBase);
             MQTTClientSubscribe(g_pcScratchTopic);
         }
-        UARTprintf("MQTT: %d relays published (HA discovery).\n", iRelays);
+        PalLog("MQTT: %d relays published (HA discovery).\n", iRelays);
     }
     else if(iStep <= (iInBase + iInputs))
     {
@@ -654,7 +654,7 @@ MQTTAppPostConnect(int iStep)
         }
         if(iInput == (iInputs - 1))
         {
-            UARTprintf("MQTT: %d inputs published (HA discovery).\n", iInputs);
+            PalLog("MQTT: %d inputs published (HA discovery).\n", iInputs);
         }
     }
     else if(iStep <= (iCvBase + iShut))

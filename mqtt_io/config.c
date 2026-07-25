@@ -7,7 +7,7 @@
 #include <stdbool.h>
 #include <stdint.h>
 #include <string.h>
-#include "utils/uartstdio.h"
+#include "pal_log.h"
 #include "pal_storage.h"
 #include "config.h"
 #include "ota.h"
@@ -137,7 +137,7 @@ ConfigInit(void)
     //
     if(!PalStorageInit())
     {
-        UARTprintf("Storage init failed; using default config.\n");
+        PalLog("Storage init failed; using default config.\n");
         ConfigSetDefaults(&g_sConfig);
         return;
     }
@@ -154,12 +154,12 @@ ConfigInit(void)
                           sizeof(tMQTTConfig) - sizeof(uint32_t));
     if((g_sConfig.ui32Magic != CFG_MAGIC) || (g_sConfig.ui32Crc != ui32Crc))
     {
-        UARTprintf("No valid config in EEPROM; applying defaults.\n");
+        PalLog("No valid config in EEPROM; applying defaults.\n");
         ConfigSetDefaults(&g_sConfig);
     }
     else
     {
-        UARTprintf("Loaded MQTT config: broker '%s:%d'\n",
+        PalLog("Loaded MQTT config: broker '%s:%d'\n",
                    g_sConfig.pcHost, g_sConfig.ui16Port);
     }
 
@@ -184,7 +184,7 @@ ConfigInit(void)
     {
         memset(&g_sIOSettings, 0, sizeof(tIOSettings));
         g_sIOSettings.ui32Magic = CFG_IO_MAGIC;
-        UARTprintf("No I/O settings in EEPROM; all inputs default to switch.\n");
+        PalLog("No I/O settings in EEPROM; all inputs default to switch.\n");
     }
 
     //
@@ -216,7 +216,7 @@ ConfigInit(void)
                 g_sBindings.ui8Output[iIdx]  = BIND_OUTPUT_NONE;
             }
         }
-        UARTprintf("No binding config in EEPROM; defaults: On Change, output=None.\n");
+        PalLog("No binding config in EEPROM; defaults: On Change, output=None.\n");
     }
 
     //
@@ -234,7 +234,7 @@ ConfigInit(void)
         strncpy(g_sNTPConfig.pcServer, "pool.ntp.org",
                 CFG_NTP_SERVER_LEN - 1);
         g_sNTPConfig.i8TzOffset = 0;
-        UARTprintf("No NTP config in EEPROM; using pool.ntp.org UTC+0.\n");
+        PalLog("No NTP config in EEPROM; using pool.ntp.org UTC+0.\n");
     }
 
     //
@@ -255,7 +255,7 @@ ConfigInit(void)
         // PalStorageRead() will return on the next boot.  Without this, unwritten
         // name slots retain 0xFF (or stale bytes), causing a CRC mismatch.
         ConfigNamesSave();
-        UARTprintf("No names config in EEPROM; using generated labels.\n");
+        PalLog("No names config in EEPROM; using generated labels.\n");
     }
 
     //
@@ -278,7 +278,7 @@ ConfigInit(void)
         {
             ConfigOutputSetDefaults();
             ConfigOutputSave();
-            UARTprintf("No output config in EEPROM; all outputs default to Standard.\n");
+            PalLog("No output config in EEPROM; all outputs default to Standard.\n");
         }
     }
 
@@ -295,7 +295,7 @@ ConfigInit(void)
     {
         ConfigRoomSetDefaults();
         ConfigRoomSave();
-        UARTprintf("No room config in EEPROM; all outputs/shutters unassigned.\n");
+        PalLog("No room config in EEPROM; all outputs/shutters unassigned.\n");
     }
 }
 
@@ -352,7 +352,7 @@ ConfigOutputMigrateV1(void)
         g_sOutCfg.ui32ShTravelMs[i] = sV1.ui32ShTravelMs[i];
     }
     ConfigOutputSave();
-    UARTprintf("Output config migrated from v1 (16 shutters, names blank).\n");
+    PalLog("Output config migrated from v1 (16 shutters, names blank).\n");
     return(true);
 }
 
@@ -453,11 +453,11 @@ ConfigSave(void)
                            sizeof(tMQTTConfig));
     if(ui32Rc != 0)
     {
-        UARTprintf("EEPROM write failed (0x%x).\n", ui32Rc);
+        PalLog("EEPROM write failed (0x%x).\n", ui32Rc);
         return(false);
     }
 
-    UARTprintf("MQTT config saved to EEPROM.\n");
+    PalLog("MQTT config saved to EEPROM.\n");
     return(true);
 }
 
@@ -523,11 +523,11 @@ ConfigIOSave(void)
                            sizeof(tIOSettings));
     if(ui32Rc != 0)
     {
-        UARTprintf("EEPROM write failed (IO settings, 0x%x).\n", ui32Rc);
+        PalLog("EEPROM write failed (IO settings, 0x%x).\n", ui32Rc);
         return(false);
     }
 
-    UARTprintf("I/O settings saved to EEPROM.\n");
+    PalLog("I/O settings saved to EEPROM.\n");
     return(true);
 }
 
@@ -602,11 +602,11 @@ ConfigBindingSave(void)
                            sizeof(tIOBindings));
     if(ui32Rc != 0)
     {
-        UARTprintf("EEPROM write failed (bindings, 0x%x).\n", ui32Rc);
+        PalLog("EEPROM write failed (bindings, 0x%x).\n", ui32Rc);
         return(false);
     }
 
-    UARTprintf("Binding table saved to EEPROM.\n");
+    PalLog("Binding table saved to EEPROM.\n");
     return(true);
 }
 
@@ -631,7 +631,7 @@ ConfigOtaSetPending(uint32_t ui32Size)
     uint32_t aui32Rec[2] = { OTA_EEPROM_MAGIC, ui32Size };
     if(PalStorageWrite(aui32Rec, CFG_OTA_EEPROM_ADDR, sizeof(aui32Rec)) != 0)
     {
-        UARTprintf("EEPROM write failed (OTA pending flag).\n");
+        PalLog("EEPROM write failed (OTA pending flag).\n");
     }
 }
 
@@ -641,7 +641,7 @@ ConfigOtaClearPending(void)
     uint32_t aui32Rec[2] = { 0u, 0u };
     if(PalStorageWrite(aui32Rec, CFG_OTA_EEPROM_ADDR, sizeof(aui32Rec)) != 0)
     {
-        UARTprintf("EEPROM write failed (OTA clear flag).\n");
+        PalLog("EEPROM write failed (OTA clear flag).\n");
     }
 }
 
@@ -668,12 +668,12 @@ ConfigFactoryReset(void)
     ui32Rc |= PalStorageWrite(&ui32Zero, CFG_ROOMCFG_ADDR,     4);   // tRoomConfig
     if(ui32Rc != 0)
     {
-        UARTprintf("Config: factory reset had EEPROM write error(s) (0x%x).\n",
+        PalLog("Config: factory reset had EEPROM write error(s) (0x%x).\n",
                    ui32Rc);
     }
     else
     {
-        UARTprintf("Config: EEPROM factory reset complete.\n");
+        PalLog("Config: EEPROM factory reset complete.\n");
     }
 }
 
@@ -854,7 +854,7 @@ ConfigOutputSave(void)
     iCleared = ConfigShutterDedup();
     if(iCleared != 0)
     {
-        UARTprintf("Config: cleared %d shutter(s) sharing a relay.\n", iCleared);
+        PalLog("Config: cleared %d shutter(s) sharing a relay.\n", iCleared);
     }
 
     g_sOutCfg.ui32Magic = CFG_OUTCFG_MAGIC;
@@ -864,10 +864,10 @@ ConfigOutputSave(void)
                            sizeof(tOutputConfig));
     if(ui32Rc != 0)
     {
-        UARTprintf("EEPROM write failed (output config, 0x%x).\n", ui32Rc);
+        PalLog("EEPROM write failed (output config, 0x%x).\n", ui32Rc);
         return(false);
     }
-    UARTprintf("Output config saved to EEPROM.\n");
+    PalLog("Output config saved to EEPROM.\n");
     return(true);
 }
 
@@ -942,10 +942,10 @@ ConfigRoomSave(void)
                            sizeof(tRoomConfig));
     if(ui32Rc != 0)
     {
-        UARTprintf("EEPROM write failed (room config, 0x%x).\n", ui32Rc);
+        PalLog("EEPROM write failed (room config, 0x%x).\n", ui32Rc);
         return(false);
     }
-    UARTprintf("Room config saved to EEPROM.\n");
+    PalLog("Room config saved to EEPROM.\n");
     return(true);
 }
 
@@ -1042,7 +1042,7 @@ ConfigNameSet(bool bInput, int iIdx, const char *pcName)
                   CFG_IO_NAMES_ADDR + sizeof(tIONames) - sizeof(uint32_t), 4u);
     if(ui32Rc != 0)
     {
-        UARTprintf("EEPROM write failed (name %d, 0x%x).\n", iIdx, ui32Rc);
+        PalLog("EEPROM write failed (name %d, 0x%x).\n", iIdx, ui32Rc);
     }
 }
 
@@ -1069,9 +1069,9 @@ ConfigNtpSave(void)
                            sizeof(tNTPConfig));
     if(ui32Rc != 0)
     {
-        UARTprintf("EEPROM write failed (NTP config, 0x%x).\n", ui32Rc);
+        PalLog("EEPROM write failed (NTP config, 0x%x).\n", ui32Rc);
         return(false);
     }
-    UARTprintf("NTP config saved to EEPROM.\n");
+    PalLog("NTP config saved to EEPROM.\n");
     return(true);
 }

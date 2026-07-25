@@ -24,7 +24,7 @@
 #include <stdbool.h>
 #include <stdint.h>
 #include <string.h>
-#include "utils/uartstdio.h"
+#include "pal_log.h"
 #include "input_events.h"
 
 //
@@ -100,7 +100,7 @@ IENeedsDouble(int iInput)
 static void
 IEFire(int iInput, const char *pcEvt)
 {
-    UARTprintf("InputEvents: in%d %s\n", iInput, pcEvt);
+    PalLog("InputEvents: in%d %s\n", iInput, pcEvt);
     if(g_pfnCallback)
     {
         g_pfnCallback(iInput, pcEvt);

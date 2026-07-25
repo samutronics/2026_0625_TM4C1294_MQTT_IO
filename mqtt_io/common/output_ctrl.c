@@ -13,7 +13,7 @@
 #include <stdbool.h>
 #include <stdint.h>
 #include <string.h>
-#include "utils/uartstdio.h"
+#include "pal_log.h"
 #include "config.h"
 #include "relay_chain.h"
 #include "relay_pulse.h"

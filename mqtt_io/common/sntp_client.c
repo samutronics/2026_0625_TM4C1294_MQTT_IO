@@ -17,7 +17,7 @@
 #include "lwip/dns.h"
 #include "lwip/pbuf.h"
 #include "lwip/ip_addr.h"
-#include "utils/uartstdio.h"
+#include "pal_log.h"
 #include "utils/ustdlib.h"
 #include "config.h"
 #include "sntp_client.h"
@@ -86,7 +86,7 @@ SntpRecvCB(void *arg, struct udp_pcb *pcb, struct pbuf *p,
 
         if(ui32Secs < NTP_EPOCH_DELTA)
         {
-            UARTprintf("SNTP: bogus timestamp, retrying.\n");
+            PalLog("SNTP: bogus timestamp, retrying.\n");
             g_eSntpState  = SNTP_DNS_PENDING;
             g_ui32Elapsed = 0;
             return;
@@ -97,7 +97,7 @@ SntpRecvCB(void *arg, struct udp_pcb *pcb, struct pbuf *p,
         g_bSynced         = true;
         g_eSntpState      = SNTP_SYNCED;
         g_ui32Elapsed     = 0;
-        UARTprintf("SNTP: synced, Unix=%u\n", g_ui32UnixBase);
+        PalLog("SNTP: synced, Unix=%u\n", g_ui32UnixBase);
     }
     else
     {
@@ -115,7 +115,7 @@ SntpDnsCB(const char *pcName, ip_addr_t *pAddr, void *pArg)
 
     if(pAddr == NULL)
     {
-        UARTprintf("SNTP: DNS failed for %s, retrying.\n", pcName);
+        PalLog("SNTP: DNS failed for %s, retrying.\n", pcName);
         g_eSntpState  = SNTP_IDLE;   // will retry after SNTP_RETRY_MS
         g_ui32Elapsed = 0;
         return;
@@ -147,7 +147,7 @@ SntpSendRequest(void)
 
     udp_sendto(g_pSntpPcb, p, &g_sSntpAddr, NTP_PORT);
     pbuf_free(p);
-    UARTprintf("SNTP: request sent to server.\n");
+    PalLog("SNTP: request sent to server.\n");
 }
 
 //*****************************************************************************
@@ -226,7 +226,7 @@ SntpTick(uint32_t ui32ElapsedMs)
             //
             if(g_ui32Elapsed >= 5000u)   // 5 s timeout
             {
-                UARTprintf("SNTP: no reply, retrying DNS.\n");
+                PalLog("SNTP: no reply, retrying DNS.\n");
                 g_eSntpState  = SNTP_IDLE;
                 g_ui32Elapsed = 0;
             }
@@ -239,7 +239,7 @@ SntpTick(uint32_t ui32ElapsedMs)
             if(g_ui32Elapsed >= SNTP_RESYNC_MS)
             {
                 g_ui32Elapsed = 0;
-                UARTprintf("SNTP: re-syncing.\n");
+                PalLog("SNTP: re-syncing.\n");
                 SntpInit();
             }
             break;
