@@ -40,8 +40,6 @@
 #include "utils/locator.h"
 #include "utils/lwiplib.h"
 #include "third_party/lwip-1.4.1/src/include/lwip/netif.h"
-#include "third_party/lwip-1.4.1/src/include/lwip/dhcp.h"
-#include "third_party/lwip-1.4.1/src/include/netif/etharp.h"
 #include "utils/uartstdio.h"
 #include "utils/ustdlib.h"
 #include "httpserver_raw/httpd.h"
@@ -2121,98 +2119,6 @@ DisplayIPAddress(uint32_t ui32Addr)
 
 //*****************************************************************************
 //
-// Gateway-reachability watchdog.
-//
-// The TivaWare port only (re)starts DHCP on an Ethernet *link* transition
-// (lwIPLinkDetect).  When the board sits behind a switch, swapping the router
-// leaves the board's link up, so no transition occurs and the board clings to
-// its now-invalid lease until the DHCP timers eventually rebind -- which is why
-// it took a reboot to get an address on the new network.
-//
-// This watchdog closes that gap.  While we hold a bound DHCP lease it ARPs the
-// default gateway once per round; the ARP cache is flushed at the end of each
-// round so a lingering stale entry cannot mask a dead gateway (a live gateway
-// re-populates the entry before the next round).  If the gateway stays silent
-// for GW_WD_MISS_LIMIT consecutive rounds the network almost certainly changed
-// underneath us, so we drop the stale lease and start a fresh DHCP DISCOVER.
-// If the gateway answers (same network) nothing happens.
-//
-// Runs from lwIPHostTimerHandler (100 ms, lwIP context under NO_SYS), so every
-// lwIP call here shares the stack's own timer context.
-//
-//*****************************************************************************
-#define GW_WD_ROUND_TICKS       150     // 150 x 100 ms = 15 s per probe round
-#define GW_WD_MISS_LIMIT        3       // rediscover after ~3 silent rounds
-
-static void
-NetGatewayWatchdog(void)
-{
-    static uint32_t ui32Tick = 0;
-    static uint32_t ui32Miss = 0;
-    struct netif *psNetif;
-    struct eth_addr *psEthRet;
-    ip_addr_t *psIpRet;
-
-    //
-    // One probe round every GW_WD_ROUND_TICKS host-timer calls.
-    //
-    if(++ui32Tick < GW_WD_ROUND_TICKS)
-    {
-        return;
-    }
-    ui32Tick = 0;
-
-    //
-    // Only act on a genuinely bound DHCP lease that has a gateway.  While an
-    // address is still being acquired the link/DHCP path is in charge.
-    //
-    psNetif = netif_default;
-    if((psNetif == NULL) || (psNetif->dhcp == NULL) ||
-       (psNetif->dhcp->state != DHCP_BOUND) || (psNetif->gw.addr == 0))
-    {
-        ui32Miss = 0;
-        return;
-    }
-
-    //
-    // Evaluate this round's probe: a stable ARP entry for the gateway means it
-    // answered (the cache was flushed after the previous request, so a hit is
-    // necessarily fresh).
-    //
-    if(etharp_find_addr(psNetif, &psNetif->gw, &psEthRet, &psIpRet) >= 0)
-    {
-        ui32Miss = 0;
-    }
-    else
-    {
-        ui32Miss++;
-        UARTprintf("GW watchdog: gateway silent (%u/%u)\n", ui32Miss,
-                   (uint32_t)GW_WD_MISS_LIMIT);
-        if(ui32Miss >= GW_WD_MISS_LIMIT)
-        {
-            //
-            // The network changed under us -- release the stale lease and kick
-            // off a fresh DHCP DISCOVER to get a valid address.
-            //
-            ui32Miss = 0;
-            UARTprintf("GW watchdog: gateway unreachable, restarting DHCP.\n");
-            dhcp_release(psNetif);
-            dhcp_start(psNetif);
-            return;
-        }
-    }
-
-    //
-    // Arm the next round: flush the ARP cache (so a stale gateway entry can't
-    // hide a later failure), then ARP the gateway.  A live gateway replies well
-    // before the next round; a dead one leaves the entry empty.
-    //
-    etharp_cleanup_netif(psNetif);
-    etharp_request(psNetif, &psNetif->gw);
-}
-
-//*****************************************************************************
-//
 // Required by lwIP library to support any host-related timer functions.
 //
 //*****************************************************************************
@@ -2282,12 +2188,6 @@ lwIPHostTimerHandler(void)
         // Do nothing and keep waiting.
         //
     }
-
-    //
-    // Recover a lost DHCP lease when the network changes without an Ethernet
-    // link transition (e.g. router swapped while behind a switch).
-    //
-    NetGatewayWatchdog();
 }
 
 //*****************************************************************************
