@@ -7,11 +7,8 @@
 #include <stdbool.h>
 #include <stdint.h>
 #include <string.h>
-#include "inc/hw_memmap.h"
-#include "inc/hw_types.h"
-#include "driverlib/eeprom.h"
-#include "driverlib/sysctl.h"
 #include "utils/uartstdio.h"
+#include "pal_storage.h"
 #include "config.h"
 #include "ota.h"
 
@@ -56,7 +53,7 @@ _Static_assert(CFG_ROOMCFG_ADDR + sizeof(tRoomConfig) <= CFG_EEPROM_SIZE,
                "tRoomConfig overflows the end of EEPROM");
 //
 // Targeted per-name EEPROM writes (ConfigNameSet) require the name stride and the
-// names payload base to be 4-byte aligned, or EEPROMProgram faults/corrupts.
+// names payload base to be 4-byte aligned, or PalStorageWrite faults/corrupts.
 //
 _Static_assert(CFG_NAME_LEN % 4u == 0u,
                "CFG_NAME_LEN must be a multiple of 4 for targeted name writes");
@@ -136,15 +133,11 @@ ConfigInit(void)
     uint32_t ui32Crc;
 
     //
-    // Enable and initialise the EEPROM peripheral.
+    // Ready the persistent store (on-chip EEPROM on the TM4C).
     //
-    SysCtlPeripheralEnable(SYSCTL_PERIPH_EEPROM0);
-    while(!SysCtlPeripheralReady(SYSCTL_PERIPH_EEPROM0))
+    if(!PalStorageInit())
     {
-    }
-    if(EEPROMInit() != EEPROM_INIT_OK)
-    {
-        UARTprintf("EEPROM init failed; using default config.\n");
+        UARTprintf("Storage init failed; using default config.\n");
         ConfigSetDefaults(&g_sConfig);
         return;
     }
@@ -152,7 +145,7 @@ ConfigInit(void)
     //
     // Read the stored record.
     //
-    EEPROMRead((uint32_t *)&g_sConfig, CFG_EEPROM_ADDR, sizeof(tMQTTConfig));
+    PalStorageRead((uint32_t *)&g_sConfig, CFG_EEPROM_ADDR, sizeof(tMQTTConfig));
 
     //
     // Validate the magic marker and CRC.
@@ -182,7 +175,7 @@ ConfigInit(void)
     // Load the I/O settings record (per-input type) from its own EEPROM block.
     // A missing or corrupt record silently defaults to all-switches (all zeros).
     //
-    EEPROMRead((uint32_t *)&g_sIOSettings, CFG_IO_EEPROM_ADDR,
+    PalStorageRead((uint32_t *)&g_sIOSettings, CFG_IO_EEPROM_ADDR,
                sizeof(tIOSettings));
     ui32Crc = ConfigCRC32((const uint8_t *)&g_sIOSettings,
                           sizeof(tIOSettings) - sizeof(uint32_t));
@@ -198,7 +191,7 @@ ConfigInit(void)
     // Load the binding table (per-input → relay action map).
     // On invalid record default to all slots disabled (all zeros).
     //
-    EEPROMRead((uint32_t *)&g_sBindings, CFG_IO_BINDINGS_ADDR,
+    PalStorageRead((uint32_t *)&g_sBindings, CFG_IO_BINDINGS_ADDR,
                sizeof(tIOBindings));
     ui32Crc = ConfigCRC32((const uint8_t *)&g_sBindings,
                           sizeof(tIOBindings) - sizeof(uint32_t));
@@ -229,7 +222,7 @@ ConfigInit(void)
     //
     // Load NTP configuration.  Default: pool.ntp.org, TZ offset 0.
     //
-    EEPROMRead((uint32_t *)&g_sNTPConfig, CFG_NTP_EEPROM_ADDR,
+    PalStorageRead((uint32_t *)&g_sNTPConfig, CFG_NTP_EEPROM_ADDR,
                sizeof(tNTPConfig));
     ui32Crc = ConfigCRC32((const uint8_t *)&g_sNTPConfig,
                           sizeof(tNTPConfig) - sizeof(uint32_t));
@@ -248,7 +241,7 @@ ConfigInit(void)
     // Load channel names record.  On invalid or missing record all names
     // default to empty strings (channels use generated labels In01/Out01).
     //
-    EEPROMRead((uint32_t *)&g_sIONames, CFG_IO_NAMES_ADDR,
+    PalStorageRead((uint32_t *)&g_sIONames, CFG_IO_NAMES_ADDR,
                sizeof(tIONames));
     ui32Crc = ConfigCRC32((const uint8_t *)&g_sIONames,
                           sizeof(tIONames) - sizeof(uint32_t));
@@ -259,7 +252,7 @@ ConfigInit(void)
         g_sIONames.ui32Magic = CFG_IO_NAMES_MAGIC;
         // Write the zeroed defaults to EEPROM immediately so that subsequent
         // targeted ConfigNameSet() writes produce a CRC that matches what
-        // EEPROMRead() will return on the next boot.  Without this, unwritten
+        // PalStorageRead() will return on the next boot.  Without this, unwritten
         // name slots retain 0xFF (or stale bytes), causing a CRC mismatch.
         ConfigNamesSave();
         UARTprintf("No names config in EEPROM; using generated labels.\n");
@@ -270,7 +263,7 @@ ConfigInit(void)
     // On invalid or missing record apply defaults (all Standard, 1000 ms, no
     // shutters) and write them back so the CRC matches on the next boot.
     //
-    EEPROMRead((uint32_t *)&g_sOutCfg, CFG_OUTCFG_ADDR, sizeof(tOutputConfig));
+    PalStorageRead((uint32_t *)&g_sOutCfg, CFG_OUTCFG_ADDR, sizeof(tOutputConfig));
     ui32Crc = ConfigCRC32((const uint8_t *)&g_sOutCfg,
                           sizeof(tOutputConfig) - sizeof(uint32_t));
     if((g_sOutCfg.ui32Magic != CFG_OUTCFG_MAGIC) ||
@@ -294,7 +287,7 @@ ConfigInit(void)
     // disturbs any other config).  Missing or invalid -> everything unassigned,
     // written back so the CRC matches on the next boot.
     //
-    EEPROMRead((uint32_t *)&g_sRoomCfg, CFG_ROOMCFG_ADDR, sizeof(tRoomConfig));
+    PalStorageRead((uint32_t *)&g_sRoomCfg, CFG_ROOMCFG_ADDR, sizeof(tRoomConfig));
     ui32Crc = ConfigCRC32((const uint8_t *)&g_sRoomCfg,
                           sizeof(tRoomConfig) - sizeof(uint32_t));
     if((g_sRoomCfg.ui32Magic != CFG_ROOMCFG_MAGIC) ||
@@ -333,7 +326,7 @@ ConfigOutputMigrateV1(void)
     uint32_t        ui32Crc;
     int             i;
 
-    EEPROMRead((uint32_t *)&sV1, CFG_OUTCFG_ADDR, sizeof(tOutputConfigV1));
+    PalStorageRead((uint32_t *)&sV1, CFG_OUTCFG_ADDR, sizeof(tOutputConfigV1));
     ui32Crc = ConfigCRC32((const uint8_t *)&sV1,
                           sizeof(tOutputConfigV1) - sizeof(uint32_t));
     if((sV1.ui32Magic != CFG_OUTCFG_MAGIC) || (sV1.ui32Crc != ui32Crc))
@@ -456,7 +449,7 @@ ConfigSave(void)
     g_sConfig.ui32Crc = ConfigCRC32((const uint8_t *)&g_sConfig,
                                     sizeof(tMQTTConfig) - sizeof(uint32_t));
 
-    ui32Rc = EEPROMProgram((uint32_t *)&g_sConfig, CFG_EEPROM_ADDR,
+    ui32Rc = PalStorageWrite((uint32_t *)&g_sConfig, CFG_EEPROM_ADDR,
                            sizeof(tMQTTConfig));
     if(ui32Rc != 0)
     {
@@ -526,7 +519,7 @@ ConfigIOSave(void)
     g_sIOSettings.ui32Crc = ConfigCRC32((const uint8_t *)&g_sIOSettings,
                                         sizeof(tIOSettings) - sizeof(uint32_t));
 
-    ui32Rc = EEPROMProgram((uint32_t *)&g_sIOSettings, CFG_IO_EEPROM_ADDR,
+    ui32Rc = PalStorageWrite((uint32_t *)&g_sIOSettings, CFG_IO_EEPROM_ADDR,
                            sizeof(tIOSettings));
     if(ui32Rc != 0)
     {
@@ -605,7 +598,7 @@ ConfigBindingSave(void)
     g_sBindings.ui32Crc = ConfigCRC32((const uint8_t *)&g_sBindings,
                                       sizeof(tIOBindings) - sizeof(uint32_t));
 
-    ui32Rc = EEPROMProgram((uint32_t *)&g_sBindings, CFG_IO_BINDINGS_ADDR,
+    ui32Rc = PalStorageWrite((uint32_t *)&g_sBindings, CFG_IO_BINDINGS_ADDR,
                            sizeof(tIOBindings));
     if(ui32Rc != 0)
     {
@@ -628,7 +621,7 @@ bool
 ConfigOtaIsPending(void)
 {
     uint32_t ui32Magic;
-    EEPROMRead(&ui32Magic, CFG_OTA_EEPROM_ADDR, sizeof(uint32_t));
+    PalStorageRead(&ui32Magic, CFG_OTA_EEPROM_ADDR, sizeof(uint32_t));
     return(ui32Magic == OTA_EEPROM_MAGIC);
 }
 
@@ -636,7 +629,7 @@ void
 ConfigOtaSetPending(uint32_t ui32Size)
 {
     uint32_t aui32Rec[2] = { OTA_EEPROM_MAGIC, ui32Size };
-    if(EEPROMProgram(aui32Rec, CFG_OTA_EEPROM_ADDR, sizeof(aui32Rec)) != 0)
+    if(PalStorageWrite(aui32Rec, CFG_OTA_EEPROM_ADDR, sizeof(aui32Rec)) != 0)
     {
         UARTprintf("EEPROM write failed (OTA pending flag).\n");
     }
@@ -646,7 +639,7 @@ void
 ConfigOtaClearPending(void)
 {
     uint32_t aui32Rec[2] = { 0u, 0u };
-    if(EEPROMProgram(aui32Rec, CFG_OTA_EEPROM_ADDR, sizeof(aui32Rec)) != 0)
+    if(PalStorageWrite(aui32Rec, CFG_OTA_EEPROM_ADDR, sizeof(aui32Rec)) != 0)
     {
         UARTprintf("EEPROM write failed (OTA clear flag).\n");
     }
@@ -665,14 +658,14 @@ ConfigFactoryReset(void)
 {
     uint32_t ui32Zero = 0u;
     uint32_t ui32Rc   = 0u;
-    ui32Rc |= EEPROMProgram(&ui32Zero, CFG_EEPROM_ADDR,      4);   // tMQTTConfig
-    ui32Rc |= EEPROMProgram(&ui32Zero, CFG_IO_EEPROM_ADDR,   4);   // tIOSettings
-    ui32Rc |= EEPROMProgram(&ui32Zero, CFG_IO_BINDINGS_ADDR, 4);   // tIOBindings
-    ui32Rc |= EEPROMProgram(&ui32Zero, CFG_OTA_EEPROM_ADDR,  4);   // OTA flag
-    ui32Rc |= EEPROMProgram(&ui32Zero, CFG_NTP_EEPROM_ADDR,  4);   // tNTPConfig
-    ui32Rc |= EEPROMProgram(&ui32Zero, CFG_IO_NAMES_ADDR,    4);   // tIONames
-    ui32Rc |= EEPROMProgram(&ui32Zero, CFG_OUTCFG_ADDR,      4);   // tOutputConfig
-    ui32Rc |= EEPROMProgram(&ui32Zero, CFG_ROOMCFG_ADDR,     4);   // tRoomConfig
+    ui32Rc |= PalStorageWrite(&ui32Zero, CFG_EEPROM_ADDR,      4);   // tMQTTConfig
+    ui32Rc |= PalStorageWrite(&ui32Zero, CFG_IO_EEPROM_ADDR,   4);   // tIOSettings
+    ui32Rc |= PalStorageWrite(&ui32Zero, CFG_IO_BINDINGS_ADDR, 4);   // tIOBindings
+    ui32Rc |= PalStorageWrite(&ui32Zero, CFG_OTA_EEPROM_ADDR,  4);   // OTA flag
+    ui32Rc |= PalStorageWrite(&ui32Zero, CFG_NTP_EEPROM_ADDR,  4);   // tNTPConfig
+    ui32Rc |= PalStorageWrite(&ui32Zero, CFG_IO_NAMES_ADDR,    4);   // tIONames
+    ui32Rc |= PalStorageWrite(&ui32Zero, CFG_OUTCFG_ADDR,      4);   // tOutputConfig
+    ui32Rc |= PalStorageWrite(&ui32Zero, CFG_ROOMCFG_ADDR,     4);   // tRoomConfig
     if(ui32Rc != 0)
     {
         UARTprintf("Config: factory reset had EEPROM write error(s) (0x%x).\n",
@@ -867,7 +860,7 @@ ConfigOutputSave(void)
     g_sOutCfg.ui32Magic = CFG_OUTCFG_MAGIC;
     g_sOutCfg.ui32Crc   = ConfigCRC32((const uint8_t *)&g_sOutCfg,
                                       sizeof(tOutputConfig) - sizeof(uint32_t));
-    ui32Rc = EEPROMProgram((uint32_t *)&g_sOutCfg, CFG_OUTCFG_ADDR,
+    ui32Rc = PalStorageWrite((uint32_t *)&g_sOutCfg, CFG_OUTCFG_ADDR,
                            sizeof(tOutputConfig));
     if(ui32Rc != 0)
     {
@@ -945,7 +938,7 @@ ConfigRoomSave(void)
     g_sRoomCfg.ui32Magic = CFG_ROOMCFG_MAGIC;
     g_sRoomCfg.ui32Crc   = ConfigCRC32((const uint8_t *)&g_sRoomCfg,
                                        sizeof(tRoomConfig) - sizeof(uint32_t));
-    ui32Rc = EEPROMProgram((uint32_t *)&g_sRoomCfg, CFG_ROOMCFG_ADDR,
+    ui32Rc = PalStorageWrite((uint32_t *)&g_sRoomCfg, CFG_ROOMCFG_ADDR,
                            sizeof(tRoomConfig));
     if(ui32Rc != 0)
     {
@@ -1040,12 +1033,12 @@ ConfigNameSet(bool bInput, int iIdx, const char *pcName)
     // The CRC is written LAST: if power is lost before it lands, the record fails
     // CRC on next boot and self-heals to blank names (rather than trusting stale
     // data).  All three writes are checked so a hardware failure is at least logged.
-    ui32Rc  = EEPROMProgram(&g_sIONames.ui32Magic, CFG_IO_NAMES_ADDR, 4u);
-    ui32Rc |= EEPROMProgram((uint32_t *)(uintptr_t)pcDst, ui32Addr, CFG_NAME_LEN);
+    ui32Rc  = PalStorageWrite(&g_sIONames.ui32Magic, CFG_IO_NAMES_ADDR, 4u);
+    ui32Rc |= PalStorageWrite((uint32_t *)(uintptr_t)pcDst, ui32Addr, CFG_NAME_LEN);
 
     g_sIONames.ui32Crc = ConfigCRC32((const uint8_t *)&g_sIONames,
                                       sizeof(tIONames) - sizeof(uint32_t));
-    ui32Rc |= EEPROMProgram(&g_sIONames.ui32Crc,
+    ui32Rc |= PalStorageWrite(&g_sIONames.ui32Crc,
                   CFG_IO_NAMES_ADDR + sizeof(tIONames) - sizeof(uint32_t), 4u);
     if(ui32Rc != 0)
     {
@@ -1060,7 +1053,7 @@ ConfigNamesSave(void)
     g_sIONames.ui32Magic = CFG_IO_NAMES_MAGIC;
     g_sIONames.ui32Crc   = ConfigCRC32((const uint8_t *)&g_sIONames,
                                         sizeof(tIONames) - sizeof(uint32_t));
-    ui32Rc = EEPROMProgram((uint32_t *)&g_sIONames, CFG_IO_NAMES_ADDR,
+    ui32Rc = PalStorageWrite((uint32_t *)&g_sIONames, CFG_IO_NAMES_ADDR,
                            sizeof(tIONames));
     return(ui32Rc == 0);
 }
@@ -1072,7 +1065,7 @@ ConfigNtpSave(void)
     g_sNTPConfig.ui32Magic = CFG_NTP_MAGIC;
     g_sNTPConfig.ui32Crc   = ConfigCRC32((const uint8_t *)&g_sNTPConfig,
                                           sizeof(tNTPConfig) - sizeof(uint32_t));
-    ui32Rc = EEPROMProgram((uint32_t *)&g_sNTPConfig, CFG_NTP_EEPROM_ADDR,
+    ui32Rc = PalStorageWrite((uint32_t *)&g_sNTPConfig, CFG_NTP_EEPROM_ADDR,
                            sizeof(tNTPConfig));
     if(ui32Rc != 0)
     {
