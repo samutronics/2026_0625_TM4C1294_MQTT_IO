@@ -46,3 +46,7 @@ serial_logs/
 #     NOT part of this repo — to be relocated under platform/cc35x1 or removed later) ---
 /ble_wifi_provisioning_LP_EM_CC35X1_freertos_ticlang/
 /cc35x1_spike/
+
+# --- CC35x1 CCS project (imported from platform/cc35x1/mqtt_io_cc35x1.projectspec;
+#     the projectspec is tracked, the generated managed-build project dir is not) ---
+/mqtt_io_cc35x1/

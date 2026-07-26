@@ -1,0 +1,137 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+    mqtt_io_cc35x1.projectspec
+
+    CC35x1 (LP-EM-CC35X1 / CC3551E) build of the MQTT-IO gateway firmware.
+
+    Checkpoint A: a full network_terminal clone (known-good SDK baseline) plus
+    ONE linked external source file (platform/cc35x1/pal_str.c) and the repo
+    include paths, to prove:
+      1. the SDK baseline compiles + links from this out-of-tree projectspec, and
+      2. the <file action="link"> mechanism pulls our repo-root sources into a
+         managed build without copying them (monorepo stays single-source).
+
+    All network_terminal source files are referenced by ABSOLUTE SDK paths because
+    this projectspec lives at repo:/platform/cc35x1/ (not the SDK example dir), so
+    the example's original "../../" relative paths would not resolve.
+
+    Later checkpoints strip the demo/CLI/iperf/nimble/socket files and link the
+    portable layer (mqtt_io/common + mqtt_io/pal + platform/cc35x1).
+-->
+<projectSpec>
+    <applicability>
+        <when>
+            <context
+                deviceFamily="ARM"
+                deviceId="Cortex M.CC35X1E"
+            />
+        </when>
+    </applicability>
+
+    <project
+        title="MQTT-IO gateway (CC35x1)"
+        name="mqtt_io_cc35x1"
+        configurations="Debug"
+        toolChain="TICLANG"
+        connection="TIXDS110_Connection.xml"
+        device="Cortex M.CC35X1E"
+        ignoreDefaultDeviceSettings="true"
+        ignoreDefaultCCSSettings="false"
+        products="com.ti.SIMPLELINK_WIFI_SDK;com.ti.SIMPLELINK_WIFI_TOOLBOX;sysconfig"
+        compilerBuildOptions="
+            -I${PROJECT_ROOT}
+            -I${PROJECT_ROOT}/${ConfigName}
+            -IC:/Users/tomik/Workspaces/Workspace2026_0625_TM4C1294_MQTT_IO/mqtt_io
+            -IC:/Users/tomik/Workspaces/Workspace2026_0625_TM4C1294_MQTT_IO/mqtt_io/common
+            -IC:/Users/tomik/Workspaces/Workspace2026_0625_TM4C1294_MQTT_IO/mqtt_io/pal
+            -IC:/Users/tomik/Workspaces/Workspace2026_0625_TM4C1294_MQTT_IO/platform/cc35x1
+            -DSNTP_SUPPORT
+            -DMBEDTLS_CONFIG_FILE=\&quot;config-hsm.h\&quot;
+            -DNVOCMP_SPS_USE_CBC
+            -DMBEDTLS_PSA_CRYPTO_CONFIG_FILE=\&quot;config-psa-crypto-hsm.h\&quot;
+            -Ofast
+            -DCC35XX
+            -DDeviceFamily_CC35XX
+            -DNVOCMP_POSIX_MUTEX
+            -I${COM_TI_SIMPLELINK_WIFI_SDK_INSTALL_DIR}/source
+            -I${COM_TI_SIMPLELINK_WIFI_SDK_INSTALL_DIR}/source/third_party/mbedtls/include
+            -I${COM_TI_SIMPLELINK_WIFI_SDK_INSTALL_DIR}/source/third_party/mbedtls/ti/configs
+            -I${COM_TI_SIMPLELINK_WIFI_SDK_INSTALL_DIR}/source/third_party/mbedtls/ti/port
+            -I${COM_TI_SIMPLELINK_WIFI_SDK_INSTALL_DIR}/kernel/freertos
+            -I${COM_TI_SIMPLELINK_WIFI_SDK_INSTALL_DIR}/source/ti/posix/ticlang
+            -I${COM_TI_SIMPLELINK_WIFI_SDK_INSTALL_DIR}/source/third_party/freertos/include
+            -I${COM_TI_SIMPLELINK_WIFI_SDK_INSTALL_DIR}/source/third_party/freertos/portable/GCC/ARM_CM33_NTZ/non_secure
+            -I${COM_TI_SIMPLELINK_WIFI_SDK_INSTALL_DIR}/source/ti/net/ble_interface/inc_adapt
+            -I${COM_TI_SIMPLELINK_WIFI_SDK_INSTALL_DIR}/source/ti/net/ble_interface/inc_common
+            -I${COM_TI_SIMPLELINK_WIFI_SDK_INSTALL_DIR}/source/ti/drivers/net/wifi/wifi_platform/cc35xx/inc_common
+            -I${COM_TI_SIMPLELINK_WIFI_SDK_INSTALL_DIR}/source/ti/net/wifi_stack/inc_common
+            -I${COM_TI_SIMPLELINK_WIFI_SDK_INSTALL_DIR}/source/ti/drivers/net/wifi/wifi_host_driver/inc_common
+            -I${COM_TI_SIMPLELINK_WIFI_SDK_INSTALL_DIR}/source/ti/drivers/net/wifi/wifi_host_driver/inc_adapt
+            -I${COM_TI_SIMPLELINK_WIFI_SDK_INSTALL_DIR}/source/third_party/lwip/lwip-stack/src/include
+            -I${COM_TI_SIMPLELINK_WIFI_SDK_INSTALL_DIR}/source/third_party/lwip/ti_config/lwip-port/osi/include
+            -I${COM_TI_SIMPLELINK_WIFI_SDK_INSTALL_DIR}/source/third_party/lwip/lwip-contrib
+            -I${COM_TI_SIMPLELINK_WIFI_SDK_INSTALL_DIR}/source/third_party/nimble/ti_config/nimble-port/include
+            -I${COM_TI_SIMPLELINK_WIFI_SDK_INSTALL_DIR}/source/third_party/nimble/ti_config/nimble-port/porting/npl/osi/include
+            -I${COM_TI_SIMPLELINK_WIFI_SDK_INSTALL_DIR}/source/third_party/nimble/nimble-src/nimble/include
+            -I${COM_TI_SIMPLELINK_WIFI_SDK_INSTALL_DIR}/source/third_party/nimble/nimble-src/nimble/host/include
+            -I${COM_TI_SIMPLELINK_WIFI_SDK_INSTALL_DIR}/source/third_party/nimble/nimble-src/nimble/host/services/gap/include
+            -I${COM_TI_SIMPLELINK_WIFI_SDK_INSTALL_DIR}/source/third_party/nimble/nimble-src/nimble/host/services/gatt/include
+            -I${COM_TI_SIMPLELINK_WIFI_SDK_INSTALL_DIR}/source/third_party/nimble/nimble-src/nimble/host/services/dis/include
+            -I${COM_TI_SIMPLELINK_WIFI_SDK_INSTALL_DIR}/source/third_party/nimble/nimble-src/nimble/host/util/include
+            -I${COM_TI_SIMPLELINK_WIFI_SDK_INSTALL_DIR}/source/third_party/nimble/nimble-src/nimble/transport/include
+            -I${COM_TI_SIMPLELINK_WIFI_SDK_INSTALL_DIR}/source/third_party/nimble/nimble-src/porting/nimble/include
+            -gdwarf-3
+            -mcpu=cortex-m33
+            -mfloat-abi=hard
+            -mfpu=fpv5-sp-d16
+            -Wall
+        "
+        linkerBuildOptions="
+            -L${COM_TI_SIMPLELINK_WIFI_SDK_INSTALL_DIR}/source
+            -Wl,-l${COM_TI_SIMPLELINK_WIFI_SDK_INSTALL_DIR}/source/third_party/lwip/lib/ticlang/lwip.a
+            -Wl,-l${COM_TI_SIMPLELINK_WIFI_SDK_INSTALL_DIR}/source/third_party/hostap/lib/ticlang/hostap.a
+            -Wl,-l${COM_TI_SIMPLELINK_WIFI_SDK_INSTALL_DIR}/source/third_party/nimble/lib/ticlang/nimble.a
+            -Wl,-l${COM_TI_SIMPLELINK_WIFI_SDK_INSTALL_DIR}/source/ti/net/wifi_stack/lib/ticlang/wifi_stack.a
+            -Wl,-l${COM_TI_SIMPLELINK_WIFI_SDK_INSTALL_DIR}/source/ti/net/ble_interface/lib/ticlang/ble_interface.a
+            -Wl,-l${COM_TI_SIMPLELINK_WIFI_SDK_INSTALL_DIR}/source/ti/drivers/net/wifi/wifi_host_driver/lib/ticlang/wifi_host_driver.a
+            -Wl,-l${COM_TI_SIMPLELINK_WIFI_SDK_INSTALL_DIR}/source/ti/drivers/net/wifi/wifi_platform/cc35xx/lib/ticlang/wifi_platform_cc35xx.a
+            -Wl,-l${COM_TI_SIMPLELINK_WIFI_SDK_INSTALL_DIR}/source/ti/utils/FWU/lib/ticlang/FWU.a
+            -Wl,--reread_libs
+            -L${PROJECT_BUILD_DIR}/syscfg
+            -lti_utils_build_linker.cmd.genlibs
+            -Wl,--rom_model
+            -Wl,--warn_sections
+            -L${CG_TOOL_ROOT}/lib
+            -llibc.a
+        "
+        sysConfigBuildOptions="
+            --product ${COM_TI_SIMPLELINK_WIFI_SDK_INSTALL_DIR}/.metadata/product.json
+            --product ${COM_TI_SIMPLELINK_WIFI_TOOLBOX_INSTALL_DIR}/.metadata/product.json
+            --compiler ticlang
+        "
+        description="MQTT-IO gateway firmware ported to LP-EM-CC35X1 (CC3551E)">
+
+        <property name="launch.loadSymbolsOnly" value="true"/>
+        <property name="buildProfile" value="release"/>
+        <property name="isHybrid" value="true"/>
+
+        <!-- ================================================================
+             Minimal boot baseline from network_terminal (absolute SDK paths).
+             Only the three files needed to boot FreeRTOS: C startup + SysConfig
+             + linker script. All CLI/demo/socket/nimble sources are intentionally
+             omitted (they pull in BSD-socket scaffolding the port does not use);
+             mainThread() is supplied by our own linked main.c below.
+             ================================================================ -->
+        <file path="C:/ti/simplelink_wifi_sdk_10_10_01_08/examples/rtos/LP_EM_CC35X1/demos/network_terminal/freertos/main_freertos.c" openOnCreation="false" excludeFromBuild="false" action="copy"/>
+        <file path="C:/ti/simplelink_wifi_sdk_10_10_01_08/examples/rtos/LP_EM_CC35X1/demos/network_terminal/freertos/network_terminal.syscfg" openOnCreation="false" excludeFromBuild="false" action="copy"/>
+        <file path="C:/ti/simplelink_wifi_sdk_10_10_01_08/examples/rtos/LP_EM_CC35X1/demos/network_terminal/freertos/ticlang/linker.cmd" openOnCreation="false" excludeFromBuild="false" action="copy"/>
+
+        <!-- ================================================================
+             Repo sources referenced in place (NOT copied) via action="link" -
+             the monorepo stays single-source. main.c provides mainThread();
+             pal_str.c is the libc-only link-mechanism probe.
+             ================================================================ -->
+        <file path="C:/Users/tomik/Workspaces/Workspace2026_0625_TM4C1294_MQTT_IO/platform/cc35x1/main.c" openOnCreation="false" excludeFromBuild="false" action="link"/>
+        <file path="C:/Users/tomik/Workspaces/Workspace2026_0625_TM4C1294_MQTT_IO/platform/cc35x1/pal_str.c" openOnCreation="false" excludeFromBuild="false" action="link"/>
+    </project>
+</projectSpec>
