@@ -15,8 +15,9 @@
 
 #include <stdint.h>
 #include <string.h>
-#include "utils/lwiplib.h"
 #include "lwip/netif.h"
+#include "lwip/udp.h"
+#include "lwip/pbuf.h"
 #include "config.h"
 #include "netbiosns.h"
 
