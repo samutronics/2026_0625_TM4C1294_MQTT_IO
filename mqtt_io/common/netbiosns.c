@@ -18,6 +18,7 @@
 #include "lwip/netif.h"
 #include "lwip/udp.h"
 #include "lwip/pbuf.h"
+#include "lwip_compat.h"
 #include "config.h"
 #include "netbiosns.h"
 
@@ -123,7 +124,7 @@ NbNameMatches(const uint8_t *pui8Raw)
 //*****************************************************************************
 static void
 NbReceive(void *arg, struct udp_pcb *pcb, struct pbuf *p,
-          struct ip_addr *addr, u16_t port)
+          PAL_LWIP_CADDR *addr, u16_t port)
 {
     uint8_t *d;
     uint8_t pui8Raw[NBNS_NAME_LEN];

@@ -17,6 +17,7 @@
 #include "lwip/dns.h"
 #include "lwip/pbuf.h"
 #include "lwip/ip_addr.h"
+#include "lwip_compat.h"
 #include "pal_log.h"
 #include "pal_str.h"
 #include "config.h"
@@ -62,7 +63,7 @@ static void SntpSendRequest(void);
 //*****************************************************************************
 static void
 SntpRecvCB(void *arg, struct udp_pcb *pcb, struct pbuf *p,
-            ip_addr_t *addr, u16_t port)
+            PAL_LWIP_CADDR *addr, u16_t port)
 {
     (void)arg; (void)pcb; (void)addr; (void)port;
 
@@ -109,7 +110,7 @@ SntpRecvCB(void *arg, struct udp_pcb *pcb, struct pbuf *p,
 // DNS found callback.
 //*****************************************************************************
 static void
-SntpDnsCB(const char *pcName, ip_addr_t *pAddr, void *pArg)
+SntpDnsCB(const char *pcName, PAL_LWIP_CADDR *pAddr, void *pArg)
 {
     (void)pcName; (void)pArg;
 
