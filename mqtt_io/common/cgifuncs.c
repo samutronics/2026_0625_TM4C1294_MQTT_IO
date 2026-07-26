@@ -24,7 +24,6 @@
 #include <stdbool.h>
 #include <stdint.h>
 #include <string.h>
-#include "inc/hw_types.h"
 #include "pal_str.h"
 #include "cgifuncs.h"
 
