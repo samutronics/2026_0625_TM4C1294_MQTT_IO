@@ -1,6 +1,11 @@
 //*****************************************************************************
 //
-// mqtt_client.c - Minimal MQTT 3.1.1 client over the lwIP 1.4.1 raw TCP API.
+// mqtt_client.c - Minimal MQTT 3.1.1 client over the lwIP raw TCP API.
+//
+// Portable across both stacks the firmware targets: lwIP 1.4.1 (TM4C, NO_SYS)
+// and lwIP 2.1.x (CC35x1, RTOS).  Platform specifics are behind PAL seams - the
+// critical section (pal_irq) and logging (pal_log) - and the lwip_compat header
+// reconciles the dns/udp callback const-ness that changed between lwIP versions.
 //
 //*****************************************************************************
 
@@ -12,10 +17,9 @@
 #include "lwip/dns.h"
 #include "lwip/ip_addr.h"
 #include "lwip/err.h"
-#include "driverlib/interrupt.h"
-#include "driverlib/rom.h"
-#include "driverlib/rom_map.h"
-#include "utils/uartstdio.h"
+#include "lwip_compat.h"        // PAL_LWIP_CADDR (dns/udp const-ness across lwIP versions)
+#include "pal_irq.h"            // PalIrqLock / PalIrqUnlock (critical section)
+#include "pal_log.h"            // PalLog (portable console/diagnostic logging)
 #include "mqtt_client.h"
 
 //*****************************************************************************
@@ -93,30 +97,30 @@ static err_t MQTTRecvCB(void *pvArg, struct tcp_pcb *psPcb, struct pbuf *psBuf,
                         err_t eErr);
 static void  MQTTErrCB(void *pvArg, err_t eErr);
 static err_t MQTTPollCB(void *pvArg, struct tcp_pcb *psPcb);
-static void  MQTTDNSFoundCB(const char *pcName, ip_addr_t *psIP, void *pvArg);
+static void  MQTTDNSFoundCB(const char *pcName, PAL_LWIP_CADDR *psIP,
+                            void *pvArg);
 static void  MQTTTryConnect(void);
 static int   MQTTSendConnect(void);
 
 //*****************************************************************************
 //
-// Critical-section helpers.  lwIP processing happens in the Ethernet/SysTick
-// interrupts; masking interrupts makes a sequence of raw-API calls from the
-// main loop atomic with respect to that processing.
+// Critical-section helpers.  lwIP processing happens elsewhere (an Ethernet/
+// SysTick interrupt on the TM4C, the tcpip_thread on the CC35x1); a short
+// critical section makes a sequence of raw-API calls from the application
+// context atomic with respect to it.  The mechanism is platform-specific and
+// lives behind the pal_irq seam.
 //
 //*****************************************************************************
-static inline bool
+static inline uintptr_t
 MQTTLock(void)
 {
-    return(MAP_IntMasterDisable());
+    return(PalIrqLock());
 }
 
 static inline void
-MQTTUnlock(bool bWasMasked)
+MQTTUnlock(uintptr_t uiKey)
 {
-    if(!bWasMasked)
-    {
-        MAP_IntMasterEnable();
-    }
+    PalIrqUnlock(uiKey);
 }
 
 //*****************************************************************************
@@ -300,7 +304,7 @@ void
 MQTTClientStart(const char *pcHost, uint16_t ui16Port, const char *pcClientID,
                 const char *pcUser, const char *pcPass)
 {
-    bool bMasked = MQTTLock();
+    uintptr_t bMasked = MQTTLock();
 
     //
     // Drop any existing connection first.
@@ -343,7 +347,7 @@ MQTTClientStart(const char *pcHost, uint16_t ui16Port, const char *pcClientID,
 void
 MQTTClientStop(void)
 {
-    bool bMasked = MQTTLock();
+    uintptr_t bMasked = MQTTLock();
 
     g_sCli.bEnabled = false;
     if(g_sCli.psPcb)
@@ -400,7 +404,7 @@ MQTTTryConnect(void)
     }
     else if(eErr != ERR_INPROGRESS)
     {
-        UARTprintf("MQTT: DNS lookup of '%s' failed.\n", g_sCli.pcHost);
+        PalLog("MQTT: DNS lookup of '%s' failed.\n", g_sCli.pcHost);
         g_sCli.eState = MQTT_CLI_IDLE;
         g_sCli.ui32ReconnectMs = MQTT_RECONNECT_MS;
     }
@@ -412,7 +416,7 @@ MQTTTryConnect(void)
 //
 //*****************************************************************************
 static void
-MQTTDNSFoundCB(const char *pcName, ip_addr_t *psIP, void *pvArg)
+MQTTDNSFoundCB(const char *pcName, PAL_LWIP_CADDR *psIP, void *pvArg)
 {
     err_t eErr;
     (void)pcName;
@@ -420,7 +424,7 @@ MQTTDNSFoundCB(const char *pcName, ip_addr_t *psIP, void *pvArg)
 
     if(psIP == NULL)
     {
-        UARTprintf("MQTT: DNS resolution failed.\n");
+        PalLog("MQTT: DNS resolution failed.\n");
         g_sCli.eState = MQTT_CLI_IDLE;
         g_sCli.ui32ReconnectMs = MQTT_RECONNECT_MS;
         return;
@@ -506,11 +510,11 @@ MQTTHandlePacket(const uint8_t *pui8Pkt, uint16_t ui16TotLen,
             if((ui32RemLen >= 2) && (pui8Body[1] == 0))
             {
                 g_sCli.eState = MQTT_CLI_READY;
-                UARTprintf("MQTT: connected to broker.\n");
+                PalLog("MQTT: connected to broker.\n");
             }
             else
             {
-                UARTprintf("MQTT: CONNECT refused (rc=%d).\n",
+                PalLog("MQTT: CONNECT refused (rc=%d).\n",
                            (ui32RemLen >= 2) ? pui8Body[1] : -1);
                 if(g_sCli.psPcb)
                 {
@@ -692,7 +696,7 @@ MQTTErrCB(void *pvArg, err_t eErr)
     g_sCli.psPcb = NULL;
     g_sCli.eState = MQTT_CLI_IDLE;
     g_sCli.ui32ReconnectMs = MQTT_RECONNECT_MS;
-    UARTprintf("MQTT: connection error (%d).\n", eErr);
+    PalLog("MQTT: connection error (%d).\n", eErr);
 }
 
 //*****************************************************************************
@@ -718,7 +722,7 @@ MQTTClientPublish(const char *pcTopic, const uint8_t *pui8Payload,
                   uint16_t ui16Len, uint8_t ui8Retain)
 {
     uint16_t ui16Pos, ui16Rem, ui16Hdr, ui16TopicLen;
-    bool bMasked;
+    uintptr_t bMasked;
     int iRc;
 
     if(g_sCli.eState != MQTT_CLI_READY)
@@ -761,7 +765,7 @@ int
 MQTTClientSubscribe(const char *pcTopic)
 {
     uint16_t ui16Pos, ui16Rem, ui16Hdr, ui16TopicLen;
-    bool bMasked;
+    uintptr_t bMasked;
     int iRc;
 
     if(g_sCli.eState != MQTT_CLI_READY)
@@ -812,7 +816,7 @@ MQTTSendPing(void)
 void
 MQTTClientTick(uint32_t ui32ElapsedMs)
 {
-    bool bMasked = MQTTLock();
+    uintptr_t bMasked = MQTTLock();
 
     switch(g_sCli.eState)
     {
@@ -857,7 +861,7 @@ MQTTClientTick(uint32_t ui32ElapsedMs)
                 g_sCli.ui32PingWaitMs += ui32ElapsedMs;
                 if(g_sCli.ui32PingWaitMs > (MQTT_KEEPALIVE_S * 1000))
                 {
-                    UARTprintf("MQTT: keep-alive timeout.\n");
+                    PalLog("MQTT: keep-alive timeout.\n");
                     if(g_sCli.psPcb)
                     {
                         tcp_abort(g_sCli.psPcb);

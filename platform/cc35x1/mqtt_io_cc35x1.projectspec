@@ -170,5 +170,25 @@
         <!-- Portable common/ modules (no external stack deps in this subset). -->
         <file path="C:/Users/tomik/Workspaces/Workspace2026_0625_TM4C1294_MQTT_IO/mqtt_io/common/cgifuncs.c" openOnCreation="false" excludeFromBuild="false" action="link"/>
         <file path="C:/Users/tomik/Workspaces/Workspace2026_0625_TM4C1294_MQTT_IO/mqtt_io/common/input_events.c" openOnCreation="false" excludeFromBuild="false" action="link"/>
+
+        <!-- ================================================================
+             Checkpoint B2: config + storage + the MQTT/network cluster.
+
+             mqtt_client.c is now single-source (raw lwIP TCP behind the pal_irq
+             critical-section seam + PalLog); pal_irq.c is this board's seam
+             backend (HwiP).  config.c persists via pal_storage.c over NVOCMP.
+             netbiosns/sntp are raw lwIP UDP.  None of these #include board_pins.h,
+             so they link in place with no adjacency hazard.  Threading correctness
+             (raw-API calls marshalled onto tcpip_thread) is deferred to B3.
+             ================================================================ -->
+        <file path="C:/Users/tomik/Workspaces/Workspace2026_0625_TM4C1294_MQTT_IO/platform/cc35x1/pal_irq.c" openOnCreation="false" excludeFromBuild="false" action="link"/>
+        <file path="C:/Users/tomik/Workspaces/Workspace2026_0625_TM4C1294_MQTT_IO/platform/cc35x1/pal_storage.c" openOnCreation="false" excludeFromBuild="false" action="link"/>
+        <file path="C:/Users/tomik/Workspaces/Workspace2026_0625_TM4C1294_MQTT_IO/mqtt_io/config.c" openOnCreation="false" excludeFromBuild="false" action="link"/>
+        <file path="C:/Users/tomik/Workspaces/Workspace2026_0625_TM4C1294_MQTT_IO/mqtt_io/mqtt_client.c" openOnCreation="false" excludeFromBuild="false" action="link"/>
+        <file path="C:/Users/tomik/Workspaces/Workspace2026_0625_TM4C1294_MQTT_IO/mqtt_io/common/mqtt_app.c" openOnCreation="false" excludeFromBuild="false" action="link"/>
+        <file path="C:/Users/tomik/Workspaces/Workspace2026_0625_TM4C1294_MQTT_IO/mqtt_io/common/relay_pulse.c" openOnCreation="false" excludeFromBuild="false" action="link"/>
+        <file path="C:/Users/tomik/Workspaces/Workspace2026_0625_TM4C1294_MQTT_IO/mqtt_io/common/output_ctrl.c" openOnCreation="false" excludeFromBuild="false" action="link"/>
+        <file path="C:/Users/tomik/Workspaces/Workspace2026_0625_TM4C1294_MQTT_IO/mqtt_io/common/netbiosns.c" openOnCreation="false" excludeFromBuild="false" action="link"/>
+        <file path="C:/Users/tomik/Workspaces/Workspace2026_0625_TM4C1294_MQTT_IO/mqtt_io/common/sntp_client.c" openOnCreation="false" excludeFromBuild="false" action="link"/>
     </project>
 </projectSpec>
