@@ -35,13 +35,16 @@
 
 static UART2_Handle g_sLogUart = NULL;
 
-void
-PalLog(const char *pcFormat, ...)
+//
+// Shared formatter/emitter for PalLog() and Report(): lazily open the
+// backchannel UART, vsnprintf into a bounded buffer, and push one write.
+//
+static void
+LogVList(const char *pcFormat, va_list vaArgP)
 {
-    char    pcBuf[PAL_LOG_BUF_LEN];
-    va_list vaArgP;
-    int     iLen;
-    size_t  szWritten;
+    char   pcBuf[PAL_LOG_BUF_LEN];
+    int    iLen;
+    size_t szWritten;
 
     //
     // Open the backchannel UART on first use.
@@ -59,9 +62,7 @@ PalLog(const char *pcFormat, ...)
         }
     }
 
-    va_start(vaArgP, pcFormat);
     iLen = vsnprintf(pcBuf, sizeof(pcBuf), pcFormat, vaArgP);
-    va_end(vaArgP);
 
     if(iLen <= 0)
     {
@@ -77,4 +78,30 @@ PalLog(const char *pcFormat, ...)
     }
 
     UART2_write(g_sLogUart, pcBuf, (size_t)iLen, &szWritten);
+}
+
+void
+PalLog(const char *pcFormat, ...)
+{
+    va_list vaArgP;
+
+    va_start(vaArgP, pcFormat);
+    LogVList(pcFormat, vaArgP);
+    va_end(vaArgP);
+}
+
+//
+// Report() is the console-logging primitive the SDK's lwIP port and Wi-Fi
+// stack call through the LWIP_PLATFORM_DIAG/ASSERT macros (normally provided by
+// the demo's uart_term.c).  We back it with the same UART2 sink as PalLog
+// instead of pulling in uart_term.c, which would contend for the same UART.
+//
+void
+Report(const char *pcFormat, ...)
+{
+    va_list vaArgP;
+
+    va_start(vaArgP, pcFormat);
+    LogVList(pcFormat, vaArgP);
+    va_end(vaArgP);
 }

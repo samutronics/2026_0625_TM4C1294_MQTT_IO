@@ -46,6 +46,7 @@
         compilerBuildOptions="
             -I${PROJECT_ROOT}
             -I${PROJECT_ROOT}/${ConfigName}
+            -I${COM_TI_SIMPLELINK_WIFI_SDK_INSTALL_DIR}/source/third_party/lwip/ti_config/lwip-port/osi/include
             -IC:/Users/tomik/Workspaces/Workspace2026_0625_TM4C1294_MQTT_IO/platform/cc35x1
             -IC:/Users/tomik/Workspaces/Workspace2026_0625_TM4C1294_MQTT_IO/mqtt_io
             -IC:/Users/tomik/Workspaces/Workspace2026_0625_TM4C1294_MQTT_IO/mqtt_io/common
@@ -58,6 +59,9 @@
             -DCC35XX
             -DDeviceFamily_CC35XX
             -DNVOCMP_POSIX_MUTEX
+            -DLWIP_HTTPD=1
+            -DLWIP_HTTPD_CGI=1
+            -DLWIP_HTTPD_SSI=1
             -I${COM_TI_SIMPLELINK_WIFI_SDK_INSTALL_DIR}/source
             -I${COM_TI_SIMPLELINK_WIFI_SDK_INSTALL_DIR}/source/third_party/mbedtls/include
             -I${COM_TI_SIMPLELINK_WIFI_SDK_INSTALL_DIR}/source/third_party/mbedtls/ti/configs
@@ -73,6 +77,7 @@
             -I${COM_TI_SIMPLELINK_WIFI_SDK_INSTALL_DIR}/source/ti/drivers/net/wifi/wifi_host_driver/inc_common
             -I${COM_TI_SIMPLELINK_WIFI_SDK_INSTALL_DIR}/source/ti/drivers/net/wifi/wifi_host_driver/inc_adapt
             -I${COM_TI_SIMPLELINK_WIFI_SDK_INSTALL_DIR}/source/third_party/lwip/lwip-stack/src/include
+            -I${COM_TI_SIMPLELINK_WIFI_SDK_INSTALL_DIR}/source/third_party/lwip/lwip-stack/src/apps/http
             -I${COM_TI_SIMPLELINK_WIFI_SDK_INSTALL_DIR}/source/third_party/lwip/ti_config/lwip-port/osi/include
             -I${COM_TI_SIMPLELINK_WIFI_SDK_INSTALL_DIR}/source/third_party/lwip/lwip-contrib
             -I${COM_TI_SIMPLELINK_WIFI_SDK_INSTALL_DIR}/source/third_party/nimble/ti_config/nimble-port/include
@@ -130,6 +135,14 @@
         <file path="C:/ti/simplelink_wifi_sdk_10_10_01_08/examples/rtos/LP_EM_CC35X1/demos/network_terminal/freertos/main_freertos.c" openOnCreation="false" excludeFromBuild="false" action="copy"/>
         <file path="C:/Users/tomik/Workspaces/Workspace2026_0625_TM4C1294_MQTT_IO/platform/cc35x1/mqtt_io_cc35x1.syscfg" openOnCreation="false" excludeFromBuild="false" action="copy"/>
         <file path="C:/ti/simplelink_wifi_sdk_10_10_01_08/examples/rtos/LP_EM_CC35X1/demos/network_terminal/freertos/ticlang/linker.cmd" openOnCreation="false" excludeFromBuild="false" action="copy"/>
+
+        <!-- OS-interface adaptation (osi_*): the SDK's lwIP NO_SYS=0 port
+             (sys_arch.c inside lwip.a) and Wi-Fi stack call the "osi" kernel
+             wrapper, implemented in the demo adaptation layer's osi_dpl.c.  It is
+             foundational infrastructure (DPL + FreeRTOS shims), not app logic, so
+             it is copied from the SDK like main_freertos.c.  Its Report() console
+             sink is provided by platform/cc35x1/pal_log.c. -->
+        <file path="C:/ti/simplelink_wifi_sdk_10_10_01_08/examples/rtos/LP_EM_CC35X1/demos/network_terminal/adaptation/osi_dpl.c" openOnCreation="false" excludeFromBuild="false" action="copy"/>
 
         <!-- ================================================================
              Repo sources referenced in place (NOT copied) via action="link" -
@@ -190,5 +203,27 @@
         <file path="C:/Users/tomik/Workspaces/Workspace2026_0625_TM4C1294_MQTT_IO/mqtt_io/common/output_ctrl.c" openOnCreation="false" excludeFromBuild="false" action="link"/>
         <file path="C:/Users/tomik/Workspaces/Workspace2026_0625_TM4C1294_MQTT_IO/mqtt_io/common/netbiosns.c" openOnCreation="false" excludeFromBuild="false" action="link"/>
         <file path="C:/Users/tomik/Workspaces/Workspace2026_0625_TM4C1294_MQTT_IO/mqtt_io/common/sntp_client.c" openOnCreation="false" excludeFromBuild="false" action="link"/>
+
+        <!-- ================================================================
+             Checkpoint B3: the lwIP apps/httpd web server.
+
+             httpd.c + fs.c are COPIED from the SDK (LWIP_HTTPD/CGI/SSI enabled
+             via the -D flags above; the SDK's prebuilt lwip.a is built with
+             httpd off, so no duplicate symbols).  fs.c does
+             `#include HTTPD_FSDATA_FILE` (= "fsdata.c"), resolved from its own
+             (project-root) directory - so fsdata.c is a project-root COPY with
+             excludeFromBuild=true: it is #included into fs.c, never compiled as
+             its own translation unit (its non-static file__* arrays would
+             otherwise double-define).  fsdata.c is generated from mqtt_io/fs/ by
+             platform/cc35x1/tools/makefsdata.py.
+
+             The CGI/SSI *handler* layer (enet_io.c's ~13 CGI + 28 SSI handlers,
+             which mix portable config/relay/input logic with TM4C-only OTA and
+             LED-animation code) is a later slice - httpd here serves the static
+             fs/ image; dynamic handlers + POST land with their PAL seam next.
+             ================================================================ -->
+        <file path="C:/ti/simplelink_wifi_sdk_10_10_01_08/source/third_party/lwip/lwip-stack/src/apps/http/httpd.c" openOnCreation="false" excludeFromBuild="false" action="copy"/>
+        <file path="C:/ti/simplelink_wifi_sdk_10_10_01_08/source/third_party/lwip/lwip-stack/src/apps/http/fs.c" openOnCreation="false" excludeFromBuild="false" action="copy"/>
+        <file path="C:/Users/tomik/Workspaces/Workspace2026_0625_TM4C1294_MQTT_IO/platform/cc35x1/fsdata.c" openOnCreation="false" excludeFromBuild="true" action="copy"/>
     </project>
 </projectSpec>
