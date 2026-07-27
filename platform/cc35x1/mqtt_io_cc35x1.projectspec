@@ -63,6 +63,7 @@
             -DLWIP_HTTPD_CGI=1
             -DLWIP_HTTPD_SSI=1
             -I${COM_TI_SIMPLELINK_WIFI_SDK_INSTALL_DIR}/source
+            -I${COM_TI_SIMPLELINK_WIFI_SDK_INSTALL_DIR}/source/ti/common/nv
             -I${COM_TI_SIMPLELINK_WIFI_SDK_INSTALL_DIR}/source/third_party/mbedtls/include
             -I${COM_TI_SIMPLELINK_WIFI_SDK_INSTALL_DIR}/source/third_party/mbedtls/ti/configs
             -I${COM_TI_SIMPLELINK_WIFI_SDK_INSTALL_DIR}/source/third_party/mbedtls/ti/port
@@ -144,6 +145,14 @@
              sink is provided by platform/cc35x1/pal_log.c. -->
         <file path="C:/ti/simplelink_wifi_sdk_10_10_01_08/examples/rtos/LP_EM_CC35X1/demos/network_terminal/adaptation/osi_dpl.c" openOnCreation="false" excludeFromBuild="false" action="copy"/>
 
+        <!-- osi_filesystem.c implements the osi_f* file API the Wi-Fi stack
+             (wifi_stack.a) calls, backed by NVOCMP; nvocmp_cc35xx.c is the NV
+             driver providing NVOCMP_loadApiPtrs (used both by osi_filesystem.c
+             and by our pal_storage.c).  Copied from the SDK demo adaptation. -->
+        <file path="C:/ti/simplelink_wifi_sdk_10_10_01_08/examples/rtos/LP_EM_CC35X1/demos/network_terminal/adaptation/osi_filesystem.c" openOnCreation="false" excludeFromBuild="false" action="copy"/>
+        <file path="C:/ti/simplelink_wifi_sdk_10_10_01_08/examples/rtos/LP_EM_CC35X1/demos/network_terminal/nvocmp_cc35xx.c" openOnCreation="false" excludeFromBuild="false" action="copy"/>
+        <file path="C:/ti/simplelink_wifi_sdk_10_10_01_08/source/ti/common/nv/crc.c" openOnCreation="false" excludeFromBuild="false" action="copy"/>
+
         <!-- ================================================================
              Repo sources referenced in place (NOT copied) via action="link" -
              the monorepo stays single-source.
@@ -159,6 +168,7 @@
              ================================================================ -->
         <!-- Platform (CC35x1) - entry seam + PAL backends. -->
         <file path="C:/Users/tomik/Workspaces/Workspace2026_0625_TM4C1294_MQTT_IO/platform/cc35x1/main.c" openOnCreation="false" excludeFromBuild="false" action="link"/>
+        <file path="C:/Users/tomik/Workspaces/Workspace2026_0625_TM4C1294_MQTT_IO/platform/cc35x1/net_wifi.c" openOnCreation="false" excludeFromBuild="false" action="link"/>
         <file path="C:/Users/tomik/Workspaces/Workspace2026_0625_TM4C1294_MQTT_IO/platform/cc35x1/pal_gpio.c" openOnCreation="false" excludeFromBuild="false" action="link"/>
         <file path="C:/Users/tomik/Workspaces/Workspace2026_0625_TM4C1294_MQTT_IO/platform/cc35x1/pal_log.c" openOnCreation="false" excludeFromBuild="false" action="link"/>
         <file path="C:/Users/tomik/Workspaces/Workspace2026_0625_TM4C1294_MQTT_IO/platform/cc35x1/pal_str.c" openOnCreation="false" excludeFromBuild="false" action="link"/>

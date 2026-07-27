@@ -4,42 +4,72 @@
 //
 // main_freertos.c (from the SDK) owns C startup: it runs Board_init(), creates
 // one detached pthread running mainThread(), and starts the FreeRTOS scheduler.
-// This file provides that mainThread() seam.
+// This file provides that mainThread() seam - the CC35x1 analogue of the TM4C
+// enet_io.c main(): bring up Wi-Fi STA -> lwIP -> DHCP, load config, start the
+// web/name/time services and the field-I/O chains, init MQTT, then run the
+// periodic ~10 ms application tick.
 //
-// Checkpoint B3 (in progress): first bring up the lwIP TCP/IP thread and the
-// apps/httpd web server, proving the httpd.c/fs.c/fsdata.c + lwipopts machinery
-// compiles AND links against the SDK.  The full init+tick seam (Wi-Fi STA
-// bring-up via platform/cc35x1/net_wifi.c, ConfigInit -> DIN/Relay chain init
-// -> MQTT client -> NetBIOS/SNTP, then a ~10 ms tick) lands in the next slice.
+// Threading (NO_SYS=0, LWIP_TCPIP_CORE_LOCKING=1): raw lwIP entry points must be
+// called with the core lock held.  The one-shot inits (httpd_init, NetbiosnsInit,
+// SntpInit) and the net-touching tick calls (SntpTick, MQTTAppTick) are wrapped
+// in LOCK_TCPIP_CORE()/UNLOCK_TCPIP_CORE() here.  (mqtt_client.c also brackets
+// its own critical sections with the pal_irq seam; fully marshalling the MQTT
+// raw-API onto tcpip_thread is the deferred threading-hardening step.)
 //
-// Under NO_SYS=0 with LWIP_TCPIP_CORE_LOCKING=1 the lwIP raw API must be entered
-// with the core lock held; httpd_init() is therefore wrapped in
-// LOCK_TCPIP_CORE()/UNLOCK_TCPIP_CORE().
+// Deferred to the next slice (shared with the httpd CGI/SSI handler port): the
+// input/relay scan + binding glue that lives in the TM4C enet_io.c main
+// (DINChainScan, RelayFaultScan, ApplyBindings, the click-event callback).
+// Extracting those from enet_io.c into common/ gives both platforms the full
+// field-I/O behaviour; here the tick runs the already-portable timers.
 //
 //*****************************************************************************
 
-#include <stddef.h>
+#include <stdbool.h>
+#include <stdint.h>
 
-/* RTOS header files */
+/* RTOS */
 #include <FreeRTOS.h>
 #include <task.h>
 
 /* lwIP */
 #include "lwip/opt.h"
-#include "lwip/sys.h"
 #include "lwip/tcpip.h"
 #include "lwip/apps/httpd.h"
 
-//*****************************************************************************
+/* Platform */
+#include "net_wifi.h"
+#include "pal_log.h"
+
+/* Portable application layer (shared with the TM4C build) */
+#include "config.h"
+#include "din_chain.h"
+#include "relay_chain.h"
+#include "mqtt_app.h"
+#include "output_ctrl.h"
+#include "relay_pulse.h"
+#include "input_events.h"
+#include "netbiosns.h"
+#include "sntp_client.h"
+
 //
-// tcpip_init_done - signalled by the tcpip_thread once it is up.
+// Bench Wi-Fi credentials.  Placeholders for the compile/link milestone; the
+// real SSID/passphrase are set for on-desk flashing (provisioning/config-backed
+// credentials are a later step - the shared config carries the MQTT broker, not
+// Wi-Fi, since the TM4C is wired for Ethernet).
 //
-//*****************************************************************************
-static void
-tcpip_init_done(void *pvArg)
-{
-    sys_sem_signal((sys_sem_t *)pvArg);
-}
+#define WIFI_SSID       "CHANGEME"
+#define WIFI_PASS       "CHANGEME"
+
+//
+// Application tick period (matches the TM4C SYSTICKMS = 1000/SYSTICKHZ).
+//
+#define SYSTICKMS       10U
+
+//
+// Bounded wait for the first DHCP-assigned IP before continuing bring-up.
+//
+#define IP_WAIT_MS      30000U
+#define IP_POLL_MS      100U
 
 //*****************************************************************************
 //
@@ -49,30 +79,102 @@ tcpip_init_done(void *pvArg)
 void *
 mainThread(void *pvArg0)
 {
-    sys_sem_t sInitSem;
+    uint8_t  pui8MAC[6];
+    uint32_t ui32Waited;
+    bool     bMQTTStarted = false;
 
     (void)pvArg0;
 
     //
-    // Start the lwIP TCP/IP thread and block until it has initialised.
+    // Bring up the lwIP TCP/IP thread.
     //
-    sys_sem_new(&sInitSem, 0);
-    tcpip_init(tcpip_init_done, &sInitSem);
-    sys_sem_wait(&sInitSem);
-    sys_sem_free(&sInitSem);
+    NetWifiInit();
 
     //
-    // Bring up the HTTP server (raw lwIP call -> hold the core lock).
+    // Load persistent configuration (NVS/NVOCMP via pal_storage).
+    //
+    ConfigInit();
+
+    //
+    // Start Wi-Fi and connect to the AP as a station; DHCP starts on link-up.
+    //
+    NetWifiConnect(WIFI_SSID, WIFI_PASS);
+
+    //
+    // Wait (bounded) for the DHCP lease so services that want an IP come up
+    // cleanly; bring-up continues regardless so a missing AP does not wedge us.
+    //
+    for(ui32Waited = 0;
+        !NetWifiIsIpAcquired() && (ui32Waited < IP_WAIT_MS);
+        ui32Waited += IP_POLL_MS)
+    {
+        vTaskDelay(pdMS_TO_TICKS(IP_POLL_MS));
+    }
+
+    //
+    // MAC seeds the Home Assistant device id (mirrors the TM4C USER0/1 MAC).
+    //
+    NetWifiGetMac(pui8MAC);
+
+    //
+    // Web server, NetBIOS name responder, and SNTP client (all raw lwIP -> hold
+    // the core lock).  CGI/SSI handler registration is deferred to the handler
+    // port; httpd here serves the static fs/ image.
     //
     LOCK_TCPIP_CORE();
     httpd_init();
+    NetbiosnsInit();
+    SntpInit();
     UNLOCK_TCPIP_CORE();
 
     //
-    // B3 slice 2 replaces this idle loop with the real ~10 ms application tick.
+    // Field-I/O chains: relays power up off with outputs enabled.
     //
-    for (;;)
+    DINChainInit(ConfigGetDinDevices());
+    RelayChainInit(ConfigGetRelayDevices());
+    OutputCtrlReload();
+    PalLog("io: %u input dev, %u relay dev\n",
+           ConfigGetDinDevices(), ConfigGetRelayDevices());
+
+    //
+    // MQTT client subsystem; start publishing once we have an IP.
+    //
+    MQTTAppInit(pui8MAC);
+    if(NetWifiIsIpAcquired())
     {
-        vTaskDelay(pdMS_TO_TICKS(1000));
+        MQTTAppStart();
+        bMQTTStarted = true;
+    }
+
+    //
+    // Periodic application tick.
+    //
+    for(;;)
+    {
+        vTaskDelay(pdMS_TO_TICKS(SYSTICKMS));
+
+        //
+        // Apply a deferred MQTT start once DHCP completes after boot.
+        //
+        if(!bMQTTStarted && NetWifiIsIpAcquired())
+        {
+            MQTTAppStart();
+            bMQTTStarted = true;
+        }
+
+        //
+        // Pure-logic / GPIO timers (no lwIP) run outside the core lock.
+        //
+        InputEventsTick(SYSTICKMS);
+        RelayPulseTick(SYSTICKMS);
+        OutputCtrlTick(SYSTICKMS);
+
+        //
+        // Net-touching timers (SNTP UDP, MQTT keep-alive/reconnect) under lock.
+        //
+        LOCK_TCPIP_CORE();
+        SntpTick(SYSTICKMS);
+        MQTTAppTick(SYSTICKMS);
+        UNLOCK_TCPIP_CORE();
     }
 }
