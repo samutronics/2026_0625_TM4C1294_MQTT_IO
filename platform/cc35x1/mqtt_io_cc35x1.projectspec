@@ -4,19 +4,24 @@
 
     CC35x1 (LP-EM-CC35X1 / CC3551E) build of the MQTT-IO gateway firmware.
 
-    Checkpoint A: a full network_terminal clone (known-good SDK baseline) plus
-    ONE linked external source file (platform/cc35x1/pal_str.c) and the repo
-    include paths, to prove:
-      1. the SDK baseline compiles + links from this out-of-tree projectspec, and
-      2. the <file action="link"> mechanism pulls our repo-root sources into a
-         managed build without copying them (monorepo stays single-source).
+    Baseline: the three network_terminal infrastructure files (C startup +
+    linker script), COPIED from the SDK by absolute path (this projectspec lives
+    at repo:/platform/cc35x1/, not the SDK example dir, so the example's original
+    "../../" relative paths would not resolve).  The SDK's demo/CLI/iperf/nimble/
+    socket sources are intentionally omitted - the port uses the lwIP raw API,
+    not the BSD-socket scaffolding those files pull in.
 
-    All network_terminal source files are referenced by ABSOLUTE SDK paths because
-    this projectspec lives at repo:/platform/cc35x1/ (not the SDK example dir), so
-    the example's original "../../" relative paths would not resolve.
+    Everything else is our own source: the SysConfig file and PAL/board files
+    from platform/cc35x1/, and the TivaWare-free portable layer from mqtt_io/
+    (common/ + root), linked in place via <file action="link"> so the monorepo
+    stays single-source (the same mqtt_io/ files the TM4C managed build compiles).
 
-    Later checkpoints strip the demo/CLI/iperf/nimble/socket files and link the
-    portable layer (mqtt_io/common + mqtt_io/pal + platform/cc35x1).
+    Include order note: platform/cc35x1 precedes mqtt_io on the -I list so this
+    board's board_pins.h wins over the TM4C1294 board_pins.h of the same name.
+
+    Checkpoint progression (see the linked-files block below): B1 = portable core
+    + PAL + board_pins link; B2 = config/pal_storage + mqtt/net cluster;
+    B3 = httpd/fs/CGI + the real init+tick body.
 -->
 <projectSpec>
     <applicability>
@@ -41,10 +46,10 @@
         compilerBuildOptions="
             -I${PROJECT_ROOT}
             -I${PROJECT_ROOT}/${ConfigName}
+            -IC:/Users/tomik/Workspaces/Workspace2026_0625_TM4C1294_MQTT_IO/platform/cc35x1
             -IC:/Users/tomik/Workspaces/Workspace2026_0625_TM4C1294_MQTT_IO/mqtt_io
             -IC:/Users/tomik/Workspaces/Workspace2026_0625_TM4C1294_MQTT_IO/mqtt_io/common
             -IC:/Users/tomik/Workspaces/Workspace2026_0625_TM4C1294_MQTT_IO/mqtt_io/pal
-            -IC:/Users/tomik/Workspaces/Workspace2026_0625_TM4C1294_MQTT_IO/platform/cc35x1
             -DSNTP_SUPPORT
             -DMBEDTLS_CONFIG_FILE=\&quot;config-hsm.h\&quot;
             -DNVOCMP_SPS_USE_CBC
@@ -123,15 +128,47 @@
              mainThread() is supplied by our own linked main.c below.
              ================================================================ -->
         <file path="C:/ti/simplelink_wifi_sdk_10_10_01_08/examples/rtos/LP_EM_CC35X1/demos/network_terminal/freertos/main_freertos.c" openOnCreation="false" excludeFromBuild="false" action="copy"/>
-        <file path="C:/ti/simplelink_wifi_sdk_10_10_01_08/examples/rtos/LP_EM_CC35X1/demos/network_terminal/freertos/network_terminal.syscfg" openOnCreation="false" excludeFromBuild="false" action="copy"/>
+        <file path="C:/Users/tomik/Workspaces/Workspace2026_0625_TM4C1294_MQTT_IO/platform/cc35x1/mqtt_io_cc35x1.syscfg" openOnCreation="false" excludeFromBuild="false" action="copy"/>
         <file path="C:/ti/simplelink_wifi_sdk_10_10_01_08/examples/rtos/LP_EM_CC35X1/demos/network_terminal/freertos/ticlang/linker.cmd" openOnCreation="false" excludeFromBuild="false" action="copy"/>
 
         <!-- ================================================================
              Repo sources referenced in place (NOT copied) via action="link" -
-             the monorepo stays single-source. main.c provides mainThread();
-             pal_str.c is the libc-only link-mechanism probe.
+             the monorepo stays single-source.
+
+             Checkpoint B1: the zero-edit portable core plus the CC35x1 PAL
+             backends and this board's pin map, proving common/ + pal +
+             platform/cc35x1 compile AND link against the SDK.  main.c provides
+             the mainThread() seam (still an idle stub until B3).
+
+             B2 adds config/pal_storage (NVOCMP) and the mqtt/net cluster; B3
+             adds httpd/fs/CGI and the real init+tick body.  Files under mqtt_io/
+             are the SAME sources the TM4C managed build compiles.
              ================================================================ -->
+        <!-- Platform (CC35x1) - entry seam + PAL backends. -->
         <file path="C:/Users/tomik/Workspaces/Workspace2026_0625_TM4C1294_MQTT_IO/platform/cc35x1/main.c" openOnCreation="false" excludeFromBuild="false" action="link"/>
+        <file path="C:/Users/tomik/Workspaces/Workspace2026_0625_TM4C1294_MQTT_IO/platform/cc35x1/pal_gpio.c" openOnCreation="false" excludeFromBuild="false" action="link"/>
+        <file path="C:/Users/tomik/Workspaces/Workspace2026_0625_TM4C1294_MQTT_IO/platform/cc35x1/pal_log.c" openOnCreation="false" excludeFromBuild="false" action="link"/>
         <file path="C:/Users/tomik/Workspaces/Workspace2026_0625_TM4C1294_MQTT_IO/platform/cc35x1/pal_str.c" openOnCreation="false" excludeFromBuild="false" action="link"/>
+
+        <!-- Portable core (mqtt_io/ root) - TivaWare-free, shared with the TM4C build. -->
+        <file path="C:/Users/tomik/Workspaces/Workspace2026_0625_TM4C1294_MQTT_IO/mqtt_io/buildinfo.c" openOnCreation="false" excludeFromBuild="false" action="link"/>
+
+        <!-- din_chain.c / relay_chain.c are COPIED, not linked, on purpose.  They
+             #include "board_pins.h", and a quote-include is resolved FIRST from the
+             including file's own directory.  Linked in place they sit in mqtt_io/
+             next to the TM4C1294 board_pins.h and would pull it in (TivaWare, wrong
+             board).  Copied into the project root they have no adjacent board_pins.h,
+             so the include falls through to the -I list and picks this board's
+             platform/cc35x1/board_pins.h.  The tracked mqtt_io/*.c stay the single
+             source of truth; the project copy is a gitignored, re-imported artifact.
+             (A cleaner long-term fix is to relocate board_pins.h out of mqtt_io/
+             root into each platform dir, but that modifies the shipped TM4C project's
+             include paths - deferred.) -->
+        <file path="C:/Users/tomik/Workspaces/Workspace2026_0625_TM4C1294_MQTT_IO/mqtt_io/din_chain.c" openOnCreation="false" excludeFromBuild="false" action="copy"/>
+        <file path="C:/Users/tomik/Workspaces/Workspace2026_0625_TM4C1294_MQTT_IO/mqtt_io/relay_chain.c" openOnCreation="false" excludeFromBuild="false" action="copy"/>
+
+        <!-- Portable common/ modules (no external stack deps in this subset). -->
+        <file path="C:/Users/tomik/Workspaces/Workspace2026_0625_TM4C1294_MQTT_IO/mqtt_io/common/cgifuncs.c" openOnCreation="false" excludeFromBuild="false" action="link"/>
+        <file path="C:/Users/tomik/Workspaces/Workspace2026_0625_TM4C1294_MQTT_IO/mqtt_io/common/input_events.c" openOnCreation="false" excludeFromBuild="false" action="link"/>
     </project>
 </projectSpec>
