@@ -30,6 +30,7 @@
 #include "netif/ethernet.h"
 
 #include "wlan_if.h"
+#include "errors.h"      // WLAN_RET_OPER_IN_PROGRESS
 
 #include "pal_log.h"
 #include "net_wifi.h"
@@ -48,6 +49,18 @@
 static struct netif g_sStaIf;
 static struct dhcp  g_sStaDhcp;
 static volatile int g_iIpAcquired;
+
+//
+// Connection diagnostics (intentionally non-static so they can be read over the
+// debugger while the serial backchannel is unavailable): event counters plus
+// the reason/initiator of the most recent disconnect.  ReasonCode is the
+// 802.11 reason (e.g. 4 = inactivity, 15 = 4-way-handshake timeout); Initiator
+// is non-zero when the station (us) initiated the disconnect vs the AP.
+//
+volatile int g_iNetConnects;
+volatile int g_iNetDisconnects;
+volatile int g_iLastDiscReason;
+volatile int g_iLastDiscInitiator;
 
 //
 // tcpip_thread-only TX staging buffer: linkoutput is always called on the
@@ -250,6 +263,7 @@ WlanStackEventHandler(WlanEvent_t *psEvent)
                 PalLog("net: connect failed\n");
                 break;
             }
+            g_iNetConnects++;
             PalLog("net: connected to AP\n");
 
             //
@@ -264,7 +278,12 @@ WlanStackEventHandler(WlanEvent_t *psEvent)
 
         case WLAN_EVENT_DISCONNECT:
         {
-            PalLog("net: disconnected\n");
+            g_iNetDisconnects++;
+            g_iLastDiscReason = (int)psEvent->Data.Disconnect.ReasonCode;
+            g_iLastDiscInitiator =
+                (int)psEvent->Data.Disconnect.IsStaIsDiscnctInitiator;
+            PalLog("net: disconnected (reason %d, initiator %d)\n",
+                   g_iLastDiscReason, g_iLastDiscInitiator);
             LOCK_TCPIP_CORE();
             netif_set_link_down(&g_sStaIf);
             netif_set_down(&g_sStaIf);
@@ -279,15 +298,57 @@ WlanStackEventHandler(WlanEvent_t *psEvent)
 
 //*****************************************************************************
 //
-// NetWifiConnect - add the STA netif, start the NWP, and issue the connect.
+// net_issue_connect - (re)issue the Wlan_Connect association request.  Split out
+// so the one-time NWP/role setup in NetWifiConnect is not repeated on a retry.
+//
+//*****************************************************************************
+static int
+net_issue_connect(const char *pcSsid, const char *pcPass)
+{
+    int  iPassLen;
+    char cSecType;
+    int  iRet;
+
+    iPassLen = (pcPass != NULL) ? (int)strlen(pcPass) : 0;
+
+    //
+    // Security type must match the AP's advertised AKM (see the SDK CME AKM
+    // table, cme.c):
+    //   WLAN_SEC_TYPE_WPA_WPA2 (2)  -> WPA_KEY_MGMT_PSK        (standard WPA2-PSK)
+    //   WLAN_SEC_TYPE_WPA2_PLUS(11) -> WPA_KEY_MGMT_PSK_SHA256 (PMF/802.11w only)
+    // A plain WPA2-PSK(AES) router advertises only PSK, so WPA2_PLUS - which
+    // negotiates *only* PSK-SHA256 - mismatches the AP's AKM and the 4-way
+    // handshake is deauthed (CME SUPPLICANT_MANAGED_STATE -> PEER_DISCONNECT,
+    // 802.11 reason 15).  Plain WPA_WPA2 matches a standard WPA2-PSK AP.  (For a
+    // WPA2/WPA3-mixed or WPA3-only AP use WLAN_SEC_TYPE_WPA2_WPA3 or
+    // WLAN_SEC_TYPE_WPA3.)
+    //
+    cSecType = (iPassLen > 0) ? WLAN_SEC_TYPE_WPA_WPA2 : WLAN_SEC_TYPE_OPEN;
+
+    iRet = Wlan_Connect((const signed char *)pcSsid, (int)strlen(pcSsid), NULL,
+                        cSecType, pcPass, (char)iPassLen, 0);
+    if(iRet < 0)
+    {
+        PalLog("net: Wlan_Connect failed (%d)\n", iRet);
+        return -1;
+    }
+
+    PalLog("net: connecting to %s (sec %d)\n", pcSsid, (int)cSecType);
+    return 0;
+}
+
+//*****************************************************************************
+//
+// NetWifiConnect - add the STA netif, start the NWP, and issue the first
+// connect.  Performs the one-time setup, then the initial association.
 //
 //*****************************************************************************
 int
 NetWifiConnect(const char *pcSsid, const char *pcPass)
 {
-    ip4_addr_t sZero;
-    int        iPassLen;
-    char       cSecType;
+    ip4_addr_t     sZero;
+    RoleUpStaCmd_t sRoleUp;
+    int            iRet;
 
     //
     // Register the STA interface with a zeroed address (DHCP fills it in).
@@ -302,23 +363,101 @@ NetWifiConnect(const char *pcSsid, const char *pcPass)
     //
     // Start the network processor with our event handler.
     //
+    // NOTE: a JTAG reload resets the M33 but NOT the Wi-Fi network processor, so
+    // across reflashes without a USB power-cycle the NWP can retain stale
+    // supplicant/PMF state that makes the WPA2 4-way handshake time out (802.11
+    // reason 15).  A calling Wlan_Stop() here to force-clean it made the driver
+    // transport layer assert on an already-wedged NWP, so the correct recovery
+    // is a physical power-cycle rather than a software stop/start.
+    //
     if(Wlan_Start(WlanStackEventHandler) != 0)
     {
         PalLog("net: Wlan_Start failed\n");
         return -1;
     }
 
-    iPassLen = (pcPass != NULL) ? (int)strlen(pcPass) : 0;
-    cSecType = (iPassLen > 0) ? WLAN_SEC_TYPE_WPA_WPA2 : WLAN_SEC_TYPE_OPEN;
-
-    if(Wlan_Connect((const signed char *)pcSsid, (int)strlen(pcSsid), NULL,
-                    cSecType, pcPass, (char)iPassLen, 0) < 0)
+    //
+    // We drive a single explicit connection (NetWifiConnect below), so disable
+    // the NWP's automatic connection manager and wipe any stored profiles.
+    // Otherwise a leftover profile + auto/fast-connect policy (this board was
+    // used with the SDK provisioning demos, which persist both in NVS) spawns a
+    // second, competing connection owner: our Wlan_Connect takes the STA flow
+    // as CME_STA_WLAN_CONNECT_USER, the background fast-connect then requests
+    // ownership too, and the CME rejects the transition and tears the link down
+    // ("New User owner request" / disconnect).  Clearing them here leaves our
+    // explicit connect as the sole owner.
+    //
     {
-        PalLog("net: Wlan_Connect failed\n");
+        WlanPolicySetGet_t sPolicy;
+        int                iRc;
+
+        memset(&sPolicy, 0, sizeof(sPolicy)); // auto=0, fast=0, fastPersistant=0
+        while((iRc = Wlan_Set(WLAN_SET_CONNECTION_POLICY, &sPolicy)) ==
+              WLAN_RET_OPER_IN_PROGRESS)
+        {
+        }
+        if(iRc != 0)
+        {
+            PalLog("net: disable conn policy failed (%d)\n", iRc);
+        }
+
+        // 0xFF == WLAN_DEL_ALL_PROFILES (internal SDK constant).
+        Wlan_ProfileDel(0xFF);
+    }
+
+    //
+    // Keep the radio always active.  Phone hotspots (and many APs) aggressively
+    // deauth a station that drops into Wi-Fi power save, which shows up as
+    // "associate, get DHCP, then drop a few seconds later".  ALWAYS_ACTIVE
+    // trades power for a stable link - correct for a mains-powered gateway.
+    //
+    {
+        uint32_t ui32PwrMgmt = (uint32_t)POWER_MANAGEMENT_ALWAYS_ACTIVE_MODE;
+        int      iRc;
+
+        while((iRc = Wlan_Set(WLAN_SET_POWER_MANAGEMENT, &ui32PwrMgmt)) ==
+              WLAN_RET_OPER_IN_PROGRESS)
+        {
+        }
+        if(iRc != 0)
+        {
+            PalLog("net: set power mgmt failed (%d)\n", iRc);
+        }
+    }
+
+    //
+    // Activate the STA role on the NWP.  This blocking call is what actually
+    // brings the station interface up on the network processor; without it
+    // Wlan_Connect has no active role and never associates (no
+    // WLAN_EVENT_CONNECT).  "00" selects the worldwide regulatory domain,
+    // matching the SDK demos.
+    //
+    memset(&sRoleUp, 0, sizeof(sRoleUp));
+    sRoleUp.countryDomain[0] = '0';
+    sRoleUp.countryDomain[1] = '0';
+    iRet = Wlan_RoleUp(WLAN_ROLE_STA, &sRoleUp, WLAN_WAIT_FOREVER);
+    if(iRet < 0)
+    {
+        PalLog("net: Wlan_RoleUp failed (%d)\n", iRet);
         return -1;
     }
 
-    return 0;
+    //
+    // Issue the first association; NetWifiReconnect re-issues it on retry.
+    //
+    return net_issue_connect(pcSsid, pcPass);
+}
+
+//*****************************************************************************
+//
+// NetWifiReconnect - re-issue the association without re-initialising the NWP
+// or STA role.  Used by the connect-retry loop when DHCP does not complete.
+//
+//*****************************************************************************
+int
+NetWifiReconnect(const char *pcSsid, const char *pcPass)
+{
+    return net_issue_connect(pcSsid, pcPass);
 }
 
 //*****************************************************************************

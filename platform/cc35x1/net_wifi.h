@@ -29,6 +29,13 @@ void NetWifiInit(void);
 int NetWifiConnect(const char *pcSsid, const char *pcPass);
 
 //
+// Re-issue the association (no NWP/role re-init) after a failed/dropped connect.
+// NetWifiConnect() must have been called once first.  Returns 0 if the connect
+// request was issued.
+//
+int NetWifiReconnect(const char *pcSsid, const char *pcPass);
+
+//
 // Non-zero once DHCP has assigned the STA interface an IPv4 address.
 //
 int NetWifiIsIpAcquired(void);

@@ -36,6 +36,15 @@ Thumbs.db
 # --- Serial capture logs ---
 serial_logs/
 
+# --- CC35x1 local Wi-Fi credentials (real SSID/pass never committed; create
+#     from platform/cc35x1/wifi_credentials.example.h) ---
+/platform/cc35x1/wifi_credentials.h
+
+# --- CC35x1 flash-tool transient output (flash.sh is tracked; its logs are not) ---
+/platform/cc35x1/tools/*.log
+/platform/cc35x1/tools/*.log.sign
+/platform/cc35x1/tools/last_programming_report.txt
+
 # --- Theia/CCS transient session config ---
 .theia/
 

@@ -39,6 +39,7 @@
 /* Platform */
 #include "net_wifi.h"
 #include "pal_log.h"
+#include "wifi_credentials.h"   /* local, git-ignored: WIFI_SSID / WIFI_PASS */
 
 /* Portable application layer (shared with the TM4C build) */
 #include "config.h"
@@ -52,13 +53,15 @@
 #include "sntp_client.h"
 
 //
-// Bench Wi-Fi credentials.  Placeholders for the compile/link milestone; the
-// real SSID/passphrase are set for on-desk flashing (provisioning/config-backed
-// credentials are a later step - the shared config carries the MQTT broker, not
-// Wi-Fi, since the TM4C is wired for Ethernet).
+// Wi-Fi station credentials (WIFI_SSID / WIFI_PASS) come from the local,
+// git-ignored wifi_credentials.h - create it from wifi_credentials.example.h so
+// real credentials are never committed.  (Provisioning/config-backed credentials
+// are a later step; the shared config carries the MQTT broker, not Wi-Fi, since
+// the TM4C build is wired for Ethernet.)
 //
-#define WIFI_SSID       "CHANGEME"
-#define WIFI_PASS       "CHANGEME"
+#if !defined(WIFI_SSID) || !defined(WIFI_PASS)
+#error "Create platform/cc35x1/wifi_credentials.h from wifi_credentials.example.h"
+#endif
 
 //
 // Application tick period (matches the TM4C SYSTICKMS = 1000/SYSTICKHZ).
@@ -66,10 +69,14 @@
 #define SYSTICKMS       10U
 
 //
-// Bounded wait for the first DHCP-assigned IP before continuing bring-up.
+// Wi-Fi association retry policy.  A single Wlan_Connect can be deauthed
+// mid-handshake, so we retry a few times during bring-up and then keep retrying
+// in the background from the tick loop until DHCP completes.
 //
-#define IP_WAIT_MS      30000U
-#define IP_POLL_MS      100U
+#define IP_POLL_MS          100U    // DHCP-acquired poll granularity
+#define WIFI_ATTEMPT_MS   12000U    // per-attempt wait for a DHCP lease
+#define WIFI_MAX_ATTEMPTS     3U    // association attempts during bring-up
+#define WIFI_RETRY_MS     15000U    // background reconnect interval (no IP yet)
 
 //*****************************************************************************
 //
@@ -81,6 +88,7 @@ mainThread(void *pvArg0)
 {
     uint8_t  pui8MAC[6];
     uint32_t ui32Waited;
+    uint32_t ui32RetryMs = 0;
     bool     bMQTTStarted = false;
 
     (void)pvArg0;
@@ -101,14 +109,29 @@ mainThread(void *pvArg0)
     NetWifiConnect(WIFI_SSID, WIFI_PASS);
 
     //
-    // Wait (bounded) for the DHCP lease so services that want an IP come up
-    // cleanly; bring-up continues regardless so a missing AP does not wedge us.
+    // Wait for the DHCP lease, re-issuing the association up to WIFI_MAX_ATTEMPTS
+    // times if it does not complete.  Bring-up continues regardless so a missing
+    // AP does not wedge the gateway; the tick loop keeps retrying afterwards.
     //
-    for(ui32Waited = 0;
-        !NetWifiIsIpAcquired() && (ui32Waited < IP_WAIT_MS);
-        ui32Waited += IP_POLL_MS)
     {
-        vTaskDelay(pdMS_TO_TICKS(IP_POLL_MS));
+        uint32_t ui32Attempt;
+
+        for(ui32Attempt = 1U; ui32Attempt <= WIFI_MAX_ATTEMPTS; ui32Attempt++)
+        {
+            for(ui32Waited = 0;
+                !NetWifiIsIpAcquired() && (ui32Waited < WIFI_ATTEMPT_MS);
+                ui32Waited += IP_POLL_MS)
+            {
+                vTaskDelay(pdMS_TO_TICKS(IP_POLL_MS));
+            }
+            if(NetWifiIsIpAcquired())
+            {
+                break;
+            }
+            PalLog("net: no IP after attempt %u/%u, reconnecting\n",
+                   (unsigned)ui32Attempt, (unsigned)WIFI_MAX_ATTEMPTS);
+            NetWifiReconnect(WIFI_SSID, WIFI_PASS);
+        }
     }
 
     //
@@ -160,6 +183,21 @@ mainThread(void *pvArg0)
         {
             MQTTAppStart();
             bMQTTStarted = true;
+        }
+
+        //
+        // Keep retrying the Wi-Fi association in the background while we have no
+        // IP, so a late/briefly-absent AP eventually connects; each retry also
+        // emits a serial diagnostic (net: connecting... / disconnected reason N).
+        //
+        if(!NetWifiIsIpAcquired())
+        {
+            ui32RetryMs += SYSTICKMS;
+            if(ui32RetryMs >= WIFI_RETRY_MS)
+            {
+                ui32RetryMs = 0;
+                NetWifiReconnect(WIFI_SSID, WIFI_PASS);
+            }
         }
 
         //
