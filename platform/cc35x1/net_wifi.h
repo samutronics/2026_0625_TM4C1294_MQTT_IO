@@ -45,4 +45,23 @@ int NetWifiIsIpAcquired(void);
 //
 void NetWifiGetMac(uint8_t *pui8Mac);
 
+//
+// Copy the current STA IPv4 address as a dotted-decimal string into pcBuf
+// (needs room for "255.255.255.255" + NUL, i.e. >= 16 bytes).  Writes "0.0.0.0"
+// when no lease is held.  Safe to call from the app task (reentrant ntoa).
+//
+void NetWifiGetIp(char *pcBuf, int iLen);
+
+//
+// Connection diagnostics maintained by the Wlan event handler: cumulative
+// connect/disconnect counts and the 802.11 reason/initiator of the most recent
+// disconnect (reason 15 = 4-way-handshake timeout; initiator != 0 = we dropped
+// it).  Exposed so the periodic heartbeat log can surface link churn over the
+// serial backchannel.
+//
+extern volatile int g_iNetConnects;
+extern volatile int g_iNetDisconnects;
+extern volatile int g_iLastDiscReason;
+extern volatile int g_iLastDiscInitiator;
+
 #endif // NET_WIFI_H

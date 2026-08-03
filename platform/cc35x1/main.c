@@ -78,6 +78,14 @@
 #define WIFI_MAX_ATTEMPTS     3U    // association attempts during bring-up
 #define WIFI_RETRY_MS     15000U    // background reconnect interval (no IP yet)
 
+//
+// Periodic liveness heartbeat.  The app otherwise logs only on state changes,
+// so the serial backchannel goes quiet after boot and looks dead.  A heartbeat
+// every HEARTBEAT_MS proves the tick is running and surfaces link state (IP,
+// MQTT, connect/disconnect churn + last 802.11 disconnect reason) live.
+//
+#define HEARTBEAT_MS      10000U
+
 //*****************************************************************************
 //
 // mainThread - application task entry (invoked by main_freertos.c).
@@ -89,6 +97,8 @@ mainThread(void *pvArg0)
     uint8_t  pui8MAC[6];
     uint32_t ui32Waited;
     uint32_t ui32RetryMs = 0;
+    uint32_t ui32UptimeMs = 0;
+    uint32_t ui32HeartbeatMs = 0;
     bool     bMQTTStarted = false;
 
     (void)pvArg0;
@@ -175,6 +185,26 @@ mainThread(void *pvArg0)
     for(;;)
     {
         vTaskDelay(pdMS_TO_TICKS(SYSTICKMS));
+        ui32UptimeMs += SYSTICKMS;
+
+        //
+        // Periodic liveness heartbeat over the serial backchannel: uptime, the
+        // current IP (0.0.0.0 until DHCP completes), whether MQTT has started,
+        // and the Wi-Fi connect/disconnect churn + last 802.11 disconnect reason
+        // (reason 15 = handshake timeout).  This is the reliable "is it alive?"
+        // signal since every other log is edge-triggered.
+        //
+        ui32HeartbeatMs += SYSTICKMS;
+        if(ui32HeartbeatMs >= HEARTBEAT_MS)
+        {
+            char pcIp[16];
+
+            ui32HeartbeatMs = 0;
+            NetWifiGetIp(pcIp, (int)sizeof(pcIp));
+            PalLog("hb: up %us ip %s mqtt %d conn %d disc %d rsn %d\n",
+                   (unsigned)(ui32UptimeMs / 1000U), pcIp, (int)bMQTTStarted,
+                   g_iNetConnects, g_iNetDisconnects, g_iLastDiscReason);
+        }
 
         //
         // Apply a deferred MQTT start once DHCP completes after boot.

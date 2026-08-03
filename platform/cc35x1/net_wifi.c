@@ -481,3 +481,19 @@ NetWifiGetMac(uint8_t *pui8Mac)
     Wlan_Get(WLAN_GET_MACADDRESS, (void *)&sMac);
     memcpy(pui8Mac, sMac.pMacAddress, 6);
 }
+
+void
+NetWifiGetIp(char *pcBuf, int iLen)
+{
+    if((pcBuf == NULL) || (iLen <= 0))
+    {
+        return;
+    }
+
+    //
+    // netif_ip4_addr reads a single 32-bit field; ip4addr_ntoa_r formats into
+    // the caller's buffer (the plain ip4addr_ntoa uses a shared static buffer
+    // and is not reentrant, so avoid it here).  Reads 0.0.0.0 before a lease.
+    //
+    ip4addr_ntoa_r(netif_ip4_addr(&g_sStaIf), pcBuf, iLen);
+}
