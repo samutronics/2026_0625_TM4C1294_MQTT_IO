@@ -16,11 +16,10 @@
 // its own critical sections with the pal_irq seam; fully marshalling the MQTT
 // raw-API onto tcpip_thread is the deferred threading-hardening step.)
 //
-// Deferred to the next slice (shared with the httpd CGI/SSI handler port): the
-// input/relay scan + binding glue that lives in the TM4C enet_io.c main
-// (DINChainScan, RelayFaultScan, ApplyBindings, the click-event callback).
-// Extracting those from enet_io.c into common/ gives both platforms the full
-// field-I/O behaviour; here the tick runs the already-portable timers.
+// The input/relay scan + binding glue (DINChainScan, RelayFaultScan,
+// ApplyBindings, the click-event callback) now lives in the shared
+// common/io_scan.c; this tick drives it through IOScanInit()/IOScanTick(),
+// giving both platforms identical field-I/O behaviour.
 //
 //*****************************************************************************
 
@@ -49,6 +48,7 @@
 #include "output_ctrl.h"
 #include "relay_pulse.h"
 #include "input_events.h"
+#include "io_scan.h"
 #include "netbiosns.h"
 #include "sntp_client.h"
 #include "webui.h"
@@ -183,6 +183,11 @@ mainThread(void *pvArg0)
     }
 
     //
+    // Wire the input-scan / binding engine to the click detector.
+    //
+    IOScanInit();
+
+    //
     // Periodic application tick.
     //
     for(;;)
@@ -278,6 +283,13 @@ mainThread(void *pvArg0)
         //
         // Pure-logic / GPIO timers (no lwIP) run outside the core lock.
         //
+        // Poll the input chain and relay fault line: publish changes over MQTT,
+        // run bindings, log transitions.  Bit-bangs GPIO only (no lwIP), so it
+        // stays outside the core lock alongside the other GPIO timers.  (The
+        // relay-actuation CGI handlers bit-bang the same chains on tcpip_thread;
+        // that cross-thread GPIO race is the deferred concurrency-hardening step.)
+        //
+        IOScanTick();
         InputEventsTick(SYSTICKMS);
         RelayPulseTick(SYSTICKMS);
         OutputCtrlTick(SYSTICKMS);
