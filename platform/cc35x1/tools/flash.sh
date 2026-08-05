@@ -64,8 +64,13 @@ echo "  ok ($(ls -la --time-style=+%H:%M "$BUILD_DIR/toolbox/primary_vendor_imag
 [ -f "$TOOL_SETTINGS" ] || { echo "error: $TOOL_SETTINGS missing after re-sign." >&2; exit 3; }
 
 # --- Stage 2: program via the toolbox 'programmer' ---------------------------
-SN="$("$XDSDFU" -e 2>/dev/null | grep -i 'Serial Num' | head -1 | sed 's/.*:[[:space:]]*//' | tr -d '[:space:]')"
-[ -n "$SN" ] || { echo "error: no XDS110 probe found (xdsdfu -e). Replug the USB cable." >&2; exit 2; }
+# Probe identity is gated by preflight.sh: it asserts exactly ONE XDS110 and that
+# its SN matches the pinned CC35x1 bench probe (CC35_PROBE_SN). This is what makes
+# the M4/M33 mix-up impossible on the flash path -- the TM4C's ICDI probe never
+# even enumerates here, and a stray second XDS110 hard-fails instead of guessing.
+source "$HERE/preflight.sh"
+SN="$(cc35_probe_sn)" || exit $?
+cc35_check_out_fresh || true   # stale-.out is a warning, not a flash blocker
 
 echo "probe SN: $SN"
 echo "settings: $TOOL_SETTINGS"
