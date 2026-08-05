@@ -51,6 +51,8 @@
 #include "input_events.h"
 #include "netbiosns.h"
 #include "sntp_client.h"
+#include "webui.h"
+#include "pal_sys.h"
 
 //
 // Wi-Fi station credentials (WIFI_SSID / WIFI_PASS) come from the local,
@@ -156,6 +158,7 @@ mainThread(void *pvArg0)
     //
     LOCK_TCPIP_CORE();
     httpd_init();
+    WebUIRegister();          // SSI + CGI handlers (shared with the TM4C build)
     NetbiosnsInit();
     SntpInit();
     UNLOCK_TCPIP_CORE();
@@ -188,6 +191,11 @@ mainThread(void *pvArg0)
         ui32UptimeMs += SYSTICKMS;
 
         //
+        // Keep the web UI's "ipaddr" SSI tag current (0.0.0.0 before DHCP).
+        //
+        g_ui32IPAddress = NetWifiGetIp4();
+
+        //
         // Periodic liveness heartbeat over the serial backchannel: uptime, the
         // current IP (0.0.0.0 until DHCP completes), whether MQTT has started,
         // and the Wi-Fi connect/disconnect churn + last 802.11 disconnect reason
@@ -213,6 +221,43 @@ mainThread(void *pvArg0)
         {
             MQTTAppStart();
             bMQTTStarted = true;
+        }
+
+        //
+        // Service web-UI requests raised by the CGI handlers (which run on the
+        // tcpip_thread and only set a flag).
+        //
+        if(WebUIResetPending())
+        {
+            //
+            // Let the /reboot.cgi (or factory-reset) HTTP response flush, then
+            // reset.  PalReboot does not return.
+            //
+            vTaskDelay(pdMS_TO_TICKS(300));
+            PalReboot();
+        }
+
+        if(WebUIMqttApplyPending())
+        {
+            //
+            // A web config change.  Re-apply device counts / output modes (only
+            // re-init the relay chain when its count actually changed, so an
+            // unrelated save does not switch relays off), then (re)connect MQTT
+            // with the new broker settings.  Mirrors the TM4C apply path.
+            //
+            DINChainSetDevices(ConfigGetDinDevices());
+            if(RelayChainGetDevices() != ConfigGetRelayDevices())
+            {
+                RelayChainSetDevices(ConfigGetRelayDevices());
+            }
+            OutputCtrlReload();
+            MQTTAppStart();
+            bMQTTStarted = true;
+        }
+
+        if(WebUIMqttRepublishPending())
+        {
+            MQTTAppRepublish();
         }
 
         //

@@ -497,3 +497,13 @@ NetWifiGetIp(char *pcBuf, int iLen)
     //
     ip4addr_ntoa_r(netif_ip4_addr(&g_sStaIf), pcBuf, iLen);
 }
+
+uint32_t
+NetWifiGetIp4(void)
+{
+    //
+    // Raw IPv4 address word (lwIP network order; 0 before a lease).  Feeds the
+    // shared web UI's "ipaddr" SSI tag via g_ui32IPAddress.
+    //
+    return(netif_ip4_addr(&g_sStaIf)->addr);
+}

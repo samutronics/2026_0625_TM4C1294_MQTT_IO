@@ -53,6 +53,12 @@ void NetWifiGetMac(uint8_t *pui8Mac);
 void NetWifiGetIp(char *pcBuf, int iLen);
 
 //
+// Raw current STA IPv4 address as a 32-bit word (lwIP network order; 0 before a
+// lease).  Feeds the web UI's "ipaddr" SSI tag (g_ui32IPAddress).
+//
+uint32_t NetWifiGetIp4(void);
+
+//
 // Connection diagnostics maintained by the Wlan event handler: cumulative
 // connect/disconnect counts and the 802.11 reason/initiator of the most recent
 // disconnect (reason 15 = 4-way-handshake timeout; initiator != 0 = we dropped

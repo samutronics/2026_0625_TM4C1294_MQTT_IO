@@ -235,5 +235,21 @@
         <file path="C:/ti/simplelink_wifi_sdk_10_10_01_08/source/third_party/lwip/lwip-stack/src/apps/http/httpd.c" openOnCreation="false" excludeFromBuild="false" action="copy"/>
         <file path="C:/ti/simplelink_wifi_sdk_10_10_01_08/source/third_party/lwip/lwip-stack/src/apps/http/fs.c" openOnCreation="false" excludeFromBuild="false" action="copy"/>
         <file path="C:/Users/tomik/Workspaces/Workspace2026_0625_TM4C1294_MQTT_IO/platform/cc35x1/fsdata.c" openOnCreation="false" excludeFromBuild="true" action="copy"/>
+
+        <!-- ================================================================
+             Checkpoint B4: the config web UI handler layer.
+
+             webui.c is the shared SSI + CGI handler module extracted from the
+             TM4C enet_io.c (single-source): it maps TivaWare ustdlib/UARTStdio
+             onto the PAL via three #defines and casts the legacy int32_t/char*
+             handler prototypes into the lwIP typedefs.  It includes din_chain.h
+             (not board_pins.h), so it links in place with no adjacency hazard.
+             pal_sys.c provides PalReboot (Cortex-M33 SYSRESETREQ) for the
+             reboot / factory-reset flow; webui_platform.c stubs the OTA chunk
+             CGI (/fwchunk.cgi - OTA on CC35x1 is PSA FWU, deferred).
+             ================================================================ -->
+        <file path="C:/Users/tomik/Workspaces/Workspace2026_0625_TM4C1294_MQTT_IO/mqtt_io/common/webui.c" openOnCreation="false" excludeFromBuild="false" action="link"/>
+        <file path="C:/Users/tomik/Workspaces/Workspace2026_0625_TM4C1294_MQTT_IO/platform/cc35x1/pal_sys.c" openOnCreation="false" excludeFromBuild="false" action="link"/>
+        <file path="C:/Users/tomik/Workspaces/Workspace2026_0625_TM4C1294_MQTT_IO/platform/cc35x1/webui_platform.c" openOnCreation="false" excludeFromBuild="false" action="link"/>
     </project>
 </projectSpec>

@@ -1,0 +1,1561 @@
+//*****************************************************************************
+//
+// webui.c - config web UI: SSI + CGI handlers for the field-I/O gateway pages.
+//
+// These handlers and their SSI/CGI tables were extracted verbatim from the TM4C
+// enet_io.c so both the TM4C (TivaWare lwIP 1.4.1) and CC35x1 (SimpleLink SDK
+// lwIP 2.1.3) builds serve identical pages from one source.  The two httpd
+// versions share the tCGIHandler/tSSIHandler typedefs, so the bodies are
+// unchanged; the only portability shims are the three #defines below mapping
+// TivaWare's ustdlib/UARTStdio calls onto the PAL (identical signatures), and
+// the platform seams declared in webui.h (OTA chunk handler, the reset/MQTT
+// request flags, g_ui32IPAddress and the live input snapshot).
+//
+//*****************************************************************************
+
+#include <stdbool.h>
+#include <stdint.h>
+#include <string.h>
+
+#ifdef CC35XX
+#include "lwip/apps/httpd.h"
+#else
+#include "httpserver_raw/httpd.h"
+#endif
+
+#include "config.h"
+#include "cgifuncs.h"
+#include "mqtt_app.h"
+#include "din_chain.h"
+#include "relay_chain.h"
+#include "input_events.h"
+#include "relay_pulse.h"
+#include "output_ctrl.h"
+#include "sntp_client.h"
+#include "buildinfo.h"
+#include "pal_log.h"
+#include "pal_str.h"
+#include "webui.h"
+
+//
+// Map the TivaWare formatting/log calls in the moved bodies onto the PAL
+// (identical signatures), so this module is single-source across platforms.
+//
+#define UARTprintf   PalLog
+#define usnprintf    PalSnprintf
+#define ustrtoul     PalStrToUl
+#define ustrncpy     strncpy       // TivaWare ustrncpy == C strncpy (copy n, NUL-pad)
+#define ustrlen      strlen        // TivaWare ustrlen  == C strlen
+
+// ---- SSI tag indices (enet_io.c) ----
+#define SSI_INDEX_HOST      0
+#define SSI_INDEX_PORT      1
+#define SSI_INDEX_CLIENT    2
+#define SSI_INDEX_USER      3
+#define SSI_INDEX_TOPIC     4
+#define SSI_INDEX_AUTH      5
+#define SSI_INDEX_STATUS    6
+#define SSI_INDEX_IP        7
+#define SSI_INDEX_DIN       8
+#define SSI_INDEX_RELAY     9
+#define SSI_INDEX_IOTYPES   10
+#define SSI_INDEX_IOBINDS   11
+#define SSI_INDEX_FWVER     12
+#define SSI_INDEX_NTPTIME   13
+#define SSI_INDEX_NTPSVR    14
+#define SSI_INDEX_NTPTZ     15
+#define SSI_INDEX_MQPASS    16
+#define SSI_INDEX_INNAMES   17
+#define SSI_INDEX_OUTNAMES  18
+#define SSI_INDEX_INSTATES  19
+#define SSI_INDEX_OUTSTATES 20
+#define SSI_INDEX_OUTMODES  21
+#define SSI_INDEX_OUTTMO    22
+#define SSI_INDEX_SHUTTERS  23
+#define SSI_INDEX_SHNAMES   24
+#define SSI_INDEX_RMNAMES   25
+#define SSI_INDEX_OUTROOMS  26
+#define SSI_INDEX_SHROOMS   27
+
+static const char *g_pcConfigSSITags[] =
+{
+    "mqhost",        // SSI_INDEX_HOST
+    "mqport",        // SSI_INDEX_PORT
+    "mqclient",      // SSI_INDEX_CLIENT
+    "mquser",        // SSI_INDEX_USER
+    "mqtopic",       // SSI_INDEX_TOPIC
+    "mqauth",        // SSI_INDEX_AUTH
+    "mqstatus",      // SSI_INDEX_STATUS
+    "ipaddr",        // SSI_INDEX_IP
+    "mqdin",         // SSI_INDEX_DIN
+    "mqrelay",       // SSI_INDEX_RELAY
+    "iotypes",       // SSI_INDEX_IOTYPES
+    "iobinds",       // SSI_INDEX_IOBINDS
+    "fwver",         // SSI_INDEX_FWVER  — build timestamp YYYYMMDDHHMM
+    "ntptime",       // SSI_INDEX_NTPTIME — current time HH:MM:SS
+    "ntpsvr",        // SSI_INDEX_NTPSVR  — NTP server hostname
+    "ntptz",         // SSI_INDEX_NTPTZ   — UTC offset (signed integer)
+    "mqpass",        // SSI_INDEX_MQPASS  — MQTT password (for backup page)
+    "innames",       // SSI_INDEX_INNAMES  — packed input names (12 B each, up to 64)
+    "outnames",      // SSI_INDEX_OUTNAMES — packed output names (12 B each, up to 64)
+    "instates",      // SSI_INDEX_INSTATES  — live input states as hex bytes
+    "outstats",      // SSI_INDEX_OUTSTATES — live relay states as hex bytes (8-char limit)
+    "outmodes",      // SSI_INDEX_OUTMODES  — per-output mode hex (1 char each, up to 16)
+    "outtmo",        // SSI_INDEX_OUTTMO    — timed durations, comma list (up to 16)
+    "shutters",      // SSI_INDEX_SHUTTERS  — packed "up:down:travel;" list
+    "shnames",       // SSI_INDEX_SHNAMES   — packed shutter names (12 B each, up to 32)
+    "rmnames",       // SSI_INDEX_RMNAMES   — packed room names (12 B each, 16 rooms)
+    "outrooms",      // SSI_INDEX_OUTROOMS  — room index per output (comma list)
+    "shrooms"        // SSI_INDEX_SHROOMS   — room index per defined shutter (comma list)
+};
+
+//*****************************************************************************
+//
+// The number of individual SSI tags that the HTTPD server can expect to
+// find in our configuration pages.
+//
+//*****************************************************************************
+#define NUM_CONFIG_SSI_TAGS     (sizeof(g_pcConfigSSITags) / sizeof (char *))
+
+// ---- CGI handler prototypes (OTA handler is the platform seam) ----
+static char *MQTTConfigCGIHandler(int32_t iIndex, int32_t i32NumParams,
+                                  char *pcParam[], char *pcValue[]);
+static char *IOConfigCGIHandler(int32_t iIndex, int32_t i32NumParams,
+                                char *pcParam[], char *pcValue[]);
+static char *FactoryResetCGIHandler(int32_t iIndex, int32_t i32NumParams,
+                                    char *pcParam[], char *pcValue[]);
+static char *NtpCfgCGIHandler(int32_t iIndex, int32_t i32NumParams,
+                               char *pcParam[], char *pcValue[]);
+static char *CfgRestoreCGIHandler(int32_t iIndex, int32_t i32NumParams,
+                                  char *pcParam[], char *pcValue[]);
+static char *RelayPulseCGIHandler(int32_t iIndex, int32_t i32NumParams,
+                                  char *pcParam[], char *pcValue[]);
+static char *RebootCGIHandler(int32_t iIndex, int32_t i32NumParams,
+                               char *pcParam[], char *pcValue[]);
+static char *NameSetCGIHandler(int32_t iIndex, int32_t i32NumParams,
+                                char *pcParam[], char *pcValue[]);
+static char *OutCfgCGIHandler(int32_t iIndex, int32_t i32NumParams,
+                               char *pcParam[], char *pcValue[]);
+static char *CoverCGIHandler(int32_t iIndex, int32_t i32NumParams,
+                              char *pcParam[], char *pcValue[]);
+static char *RelaySetCGIHandler(int32_t iIndex, int32_t i32NumParams,
+                                 char *pcParam[], char *pcValue[]);
+static char *RoomCfgCGIHandler(int32_t iIndex, int32_t i32NumParams,
+                                char *pcParam[], char *pcValue[]);
+
+//*****************************************************************************
+//
+// Prototype for the main handler used to process server-side-includes for the
+// application's web-based configuration screens.
+//
+//*****************************************************************************
+static int32_t SSIHandler(int32_t iIndex, char *pcInsert, int32_t iInsertLen);
+
+#define CGI_INDEX_MQTTCFG       0
+#define CGI_INDEX_IOCFG         1
+#define CGI_INDEX_FWCHUNK       2
+#define CGI_INDEX_FACTORYRESET  3
+#define CGI_INDEX_NTPCFG        4
+#define CGI_INDEX_CFGRESTORE    5
+#define CGI_INDEX_RELAYPULSE    6
+#define CGI_INDEX_REBOOT        7
+#define CGI_INDEX_NAMESET       8
+#define CGI_INDEX_OUTCFG        9
+#define CGI_INDEX_COVER         10
+#define CGI_INDEX_RELAYSET      11
+#define CGI_INDEX_ROOMCFG       12
+
+static const tCGI g_psConfigCGIURIs[] =
+{
+    { "/mqttcfg.cgi",   (tCGIHandler)MQTTConfigCGIHandler }, // CGI_INDEX_MQTTCFG
+    { "/iocfg.cgi",    (tCGIHandler)IOConfigCGIHandler   }, // CGI_INDEX_IOCFG
+    { "/fwchunk.cgi",      (tCGIHandler)WebPlatformOtaChunkCGI }, // CGI_INDEX_FWCHUNK (platform seam)
+    { "/factoryreset.cgi",  (tCGIHandler)FactoryResetCGIHandler  }, // CGI_INDEX_FACTORYRESET
+    { "/ntpcfg.cgi",       (tCGIHandler)NtpCfgCGIHandler        }, // CGI_INDEX_NTPCFG
+    { "/cfgrestore.cgi",   (tCGIHandler)CfgRestoreCGIHandler     }, // CGI_INDEX_CFGRESTORE
+    { "/relaypulse.cgi",  (tCGIHandler)RelayPulseCGIHandler     }, // CGI_INDEX_RELAYPULSE
+    { "/reboot.cgi",      (tCGIHandler)RebootCGIHandler         }, // CGI_INDEX_REBOOT
+    { "/nameset.cgi",     (tCGIHandler)NameSetCGIHandler        }, // CGI_INDEX_NAMESET
+    { "/outcfg.cgi",      (tCGIHandler)OutCfgCGIHandler         }, // CGI_INDEX_OUTCFG
+    { "/cover.cgi",       (tCGIHandler)CoverCGIHandler          }, // CGI_INDEX_COVER
+    { "/relayset.cgi",    (tCGIHandler)RelaySetCGIHandler       }, // CGI_INDEX_RELAYSET
+    { "/roomcfg.cgi",     (tCGIHandler)RoomCfgCGIHandler        }  // CGI_INDEX_ROOMCFG
+};
+
+//*****************************************************************************
+//
+// The number of individual CGI URIs that are configured for this system.
+//
+//*****************************************************************************
+#define NUM_CONFIG_CGI_URIS     (sizeof(g_psConfigCGIURIs) / sizeof(tCGI))
+
+#define DEFAULT_CGI_RESPONSE    "/index.shtml"
+#define IOCFG_CGI_RESPONSE      "/iocfg.shtml"
+#define CONTROL_CGI_RESPONSE    "/control.shtml"
+
+//*****************************************************************************
+//
+// The file sent back to the browser in cases where a parameter error is
+// detected by one of the CGI handlers.  This should only happen if someone
+// tries to access the CGI directly via the broswer command line and doesn't
+// enter all the required parameters alongside the URI.
+//
+//*****************************************************************************
+#define PARAM_ERROR_RESPONSE    "/perror.htm"
+
+#define JAVASCRIPT_HEADER                                                     \
+    "<script type='text/javascript' language='JavaScript'><!--\n"
+#define JAVASCRIPT_FOOTER                                                     \
+    "//--></script>\n"
+
+//*****************************************************************************
+//
+// Web -> main-loop request state, plus values the SSI handler renders that each
+// platform keeps current (the raw IPv4 word and the live input snapshot).
+//
+//*****************************************************************************
+uint32_t g_ui32IPAddress;
+uint8_t  g_pui8LiveInState[DIN_MAX_BYTES];
+
+static volatile bool g_bStartMQTT;
+static volatile bool g_bRepublishMQTT;
+static volatile bool g_bOTAReset;
+
+void WebUIRequestReset(void)         { g_bOTAReset = true; }
+bool WebUIResetPending(void)         { bool b = g_bOTAReset;     g_bOTAReset = false;     return(b); }
+void WebUIRequestMqttApply(void)     { g_bStartMQTT = true; }
+bool WebUIMqttApplyPending(void)     { bool b = g_bStartMQTT;    g_bStartMQTT = false;    return(b); }
+void WebUIRequestMqttRepublish(void) { g_bRepublishMQTT = true; }
+bool WebUIMqttRepublishPending(void) { bool b = g_bRepublishMQTT; g_bRepublishMQTT = false; return(b); }
+
+// ---- handlers block 1: GetStringParam, MQTTConfig, HexNibble, IOConfig ----
+//*****************************************************************************
+//
+// Helper: copy a (possibly URL-encoded) CGI parameter into a fixed buffer.
+//
+//*****************************************************************************
+static void
+GetStringParam(const char *pcName, char *pcParam[], char *pcValue[],
+               int32_t i32NumParams, char *pcDest, int32_t i32DestLen)
+{
+    int32_t i32Idx = FindCGIParameter(pcName, pcParam, i32NumParams);
+    if(i32Idx != -1)
+    {
+        DecodeFormString(pcValue[i32Idx], pcDest, i32DestLen);
+    }
+}
+
+//*****************************************************************************
+//
+// CGI handler for /mqttcfg.cgi.  Parses the configuration form, stores the
+// new settings in EEPROM and requests a reconnect.
+//
+//*****************************************************************************
+static char *
+MQTTConfigCGIHandler(int32_t iIndex, int32_t i32NumParams, char *pcParam[],
+                     char *pcValue[])
+{
+    tMQTTConfig *psCfg = ConfigGet();
+    int32_t i32Idx;
+
+    (void)iIndex;
+
+    //
+    // String fields.  Empty values are accepted (e.g. to clear the host).
+    //
+    psCfg->pcHost[0] = '\0';
+    GetStringParam("host", pcParam, pcValue, i32NumParams, psCfg->pcHost,
+                   CFG_HOST_LEN);
+    GetStringParam("client", pcParam, pcValue, i32NumParams, psCfg->pcClientID,
+                   CFG_CLIENTID_LEN);
+    GetStringParam("user", pcParam, pcValue, i32NumParams, psCfg->pcUser,
+                   CFG_USER_LEN);
+    GetStringParam("topic", pcParam, pcValue, i32NumParams, psCfg->pcTopicBase,
+                   CFG_TOPIC_LEN);
+
+    //
+    // Password: only overwrite the stored value when a non-empty value is
+    // submitted (the form never echoes the current password back).
+    //
+    i32Idx = FindCGIParameter("pass", pcParam, i32NumParams);
+    if((i32Idx != -1) && (pcValue[i32Idx][0] != '\0'))
+    {
+        DecodeFormString(pcValue[i32Idx], psCfg->pcPass, CFG_PASS_LEN);
+    }
+
+    //
+    // Port number.
+    //
+    i32Idx = FindCGIParameter("port", pcParam, i32NumParams);
+    if(i32Idx != -1)
+    {
+        uint32_t ui32Port = ustrtoul(pcValue[i32Idx], 0, 10);
+        psCfg->ui16Port = (ui32Port && (ui32Port <= 65535)) ?
+                          (uint16_t)ui32Port : 1883;
+    }
+
+    //
+    // Authentication checkbox (present in the form only when ticked).
+    //
+    psCfg->ui8UseAuth =
+        (FindCGIParameter("auth", pcParam, i32NumParams) != -1) ? 1 : 0;
+
+    //
+    // Persist and ask the main loop to apply the new settings.
+    //
+    ConfigSave();
+    g_bStartMQTT = true;
+
+    return(DEFAULT_CGI_RESPONSE);
+}
+
+//*****************************************************************************
+//
+// Convert one ASCII hex character to its 4-bit value.
+//
+//*****************************************************************************
+static uint8_t
+HexNibble(char c)
+{
+    if((c >= '0') && (c <= '9'))
+    {
+        return((uint8_t)(c - '0'));
+    }
+    if((c >= 'a') && (c <= 'f'))
+    {
+        return((uint8_t)(c - 'a' + 10));
+    }
+    if((c >= 'A') && (c <= 'F'))
+    {
+        return((uint8_t)(c - 'A' + 10));
+    }
+    return(0);
+}
+
+//*****************************************************************************
+//
+// CGI handler for /iocfg.cgi.  Parses device counts and per-input type
+// bitmask from the I/O configuration form, persists them to EEPROM and
+// triggers a re-publish of HA discovery topics.
+//
+//*****************************************************************************
+static char *
+IOConfigCGIHandler(int32_t iIndex, int32_t i32NumParams, char *pcParam[],
+                   char *pcValue[])
+{
+    int32_t i32Idx;
+
+    (void)iIndex;
+
+    //
+    // Device counts.
+    //
+    i32Idx = FindCGIParameter("din", pcParam, i32NumParams);
+    if(i32Idx != -1)
+    {
+        ConfigSetDinDevices((uint8_t)ustrtoul(pcValue[i32Idx], 0, 10));
+    }
+    i32Idx = FindCGIParameter("relay", pcParam, i32NumParams);
+    if(i32Idx != -1)
+    {
+        ConfigSetRelayDevices((uint8_t)ustrtoul(pcValue[i32Idx], 0, 10));
+    }
+
+    //
+    // Per-input type bitmask ("types" = hex string, 2 chars per byte of 8
+    // inputs; bit n of byte b = input b*8+n is pushbutton when set).
+    //
+    i32Idx = FindCGIParameter("types", pcParam, i32NumParams);
+    if(i32Idx != -1)
+    {
+        const char *pcT = pcValue[i32Idx];
+        int iByte = 0;
+        while((pcT[0] != '\0') && (pcT[1] != '\0') && (iByte < 15))
+        {
+            uint8_t ui8Val = (uint8_t)((HexNibble(pcT[0]) << 4) |
+                                       HexNibble(pcT[1]));
+            int iBit;
+            for(iBit = 0; iBit < 8; iBit++)
+            {
+                ConfigSetInputPushbutton(iByte * 8 + iBit,
+                                        (ui8Val & (1u << iBit)) != 0);
+            }
+            pcT += 2;
+            iByte++;
+        }
+    }
+
+    //
+    // Per-input binding table: "binds" = 3 hex chars per slot, 4 slots per
+    // input, for up to D*8 inputs.  12-bit encoding: output[6:0]|act[4:3]|trig[2:0].
+    // "000" = unused slot.  (Parsing also stops at the end of the sent string.)
+    //
+    i32Idx = FindCGIParameter("binds", pcParam, i32NumParams);
+    if(i32Idx != -1)
+    {
+        const char *pcB = pcValue[i32Idx];
+        int iLen = (int)strlen(pcB);
+        int iMaxIn = (int)ConfigGetDinDevices() * 8;
+        int iInput, iSlot, iPos = 0;
+        if(iMaxIn > CFG_MAX_INPUTS) { iMaxIn = CFG_MAX_INPUTS; }
+        for(iInput = 0; (iInput < iMaxIn) && ((iPos + 2) < iLen); iInput++)
+        {
+            for(iSlot = 0; (iSlot < CFG_BIND_SLOTS) &&
+                           ((iPos + 2) < iLen); iSlot++, iPos += 3)
+            {
+                uint16_t ui16V = (uint16_t)(((uint16_t)HexNibble(pcB[iPos]) << 8) |
+                                            ((uint16_t)HexNibble(pcB[iPos+1]) << 4) |
+                                             (uint16_t)HexNibble(pcB[iPos+2]));
+                uint8_t ui8TrigAct = (uint8_t)(ui16V & 0x1Fu);
+                uint8_t ui8Out     = (uint8_t)((ui16V >> 5) & 0x7Fu);
+                if((ui8TrigAct & 0x07u) == 0)
+                {
+                    ui8TrigAct = 0;
+                    ui8Out = BIND_OUTPUT_NONE;
+                }
+                ConfigBindingSet(iInput, iSlot, ui8TrigAct, ui8Out);
+            }
+        }
+    }
+
+    //
+    // Persist all three records and request chain + discovery update.
+    //
+    ConfigSave();
+    ConfigIOSave();
+    ConfigBindingSave();
+    g_bStartMQTT = true;
+    g_bRepublishMQTT = true;
+
+    return(IOCFG_CGI_RESPONSE);
+}
+
+
+// ---- handlers block 2: FactoryReset, Reboot, UrlDecodeParam, NameSet ----
+//*****************************************************************************
+//
+// FactoryResetCGIHandler - Web-triggered factory reset.
+//
+// Invalidates all EEPROM records, then schedules a system reset via the same
+// g_bOTAReset flag used by the OTA handler so the HTTP response is sent first.
+//
+//*****************************************************************************
+static char *
+FactoryResetCGIHandler(int32_t iIndex, int32_t i32NumParams,
+                       char *pcParam[], char *pcValue[])
+{
+    UARTprintf("Factory reset triggered via web UI.\n");
+    MQTTAppStop();
+    ConfigFactoryReset();
+    g_bOTAReset = true;
+    return("/factoryreset_ok.shtml");
+}
+
+//*****************************************************************************
+//
+// RebootCGIHandler - Graceful reboot from the web UI.
+//
+//*****************************************************************************
+static char *
+RebootCGIHandler(int32_t iIndex, int32_t i32NumParams,
+                 char *pcParam[], char *pcValue[])
+{
+    UARTprintf("Reboot triggered via web UI.\n");
+    MQTTAppStop();
+    g_bOTAReset = true;
+    return("/fwupdate_ok.shtml");
+}
+
+//*****************************************************************************
+//
+// UrlDecodeParam - decode a CGI parameter value that may contain + (space)
+// or %XX sequences produced by JS encodeURIComponent / form encoding.
+//
+//*****************************************************************************
+static void
+UrlDecodeParam(const char *pcIn, char *pcOut, int iMax)
+{
+    int iIn = 0, iOut = 0;
+    while(pcIn[iIn] && iOut < iMax - 1)
+    {
+        if(pcIn[iIn] == '+')
+        {
+            pcOut[iOut++] = ' ';
+            iIn++;
+        }
+        else if(pcIn[iIn] == '%' && pcIn[iIn + 1] && pcIn[iIn + 2])
+        {
+            pcOut[iOut++] = (char)((HexNibble(pcIn[iIn + 1]) << 4) |
+                                    HexNibble(pcIn[iIn + 2]));
+            iIn += 3;
+        }
+        else
+        {
+            pcOut[iOut++] = pcIn[iIn++];
+        }
+    }
+    pcOut[iOut] = '\0';
+}
+
+//*****************************************************************************
+//
+// NameSetCGIHandler - save a custom name for one input or output channel.
+//
+// URL: /nameset.cgi?type=in|out&idx=N&name=<URL-encoded string, max 11 chars>
+//
+//*****************************************************************************
+static char *
+NameSetCGIHandler(int32_t iIndex, int32_t i32NumParams,
+                  char *pcParam[], char *pcValue[])
+{
+    int32_t iTypeIdx, iIdxIdx, iNameIdx;
+    bool    bInput;
+    int     iIdx;
+    char    acName[CFG_NAME_LEN];
+
+    iTypeIdx = FindCGIParameter("type", pcParam, i32NumParams);
+    iIdxIdx  = FindCGIParameter("idx",  pcParam, i32NumParams);
+    iNameIdx = FindCGIParameter("name", pcParam, i32NumParams);
+
+    if(iTypeIdx < 0 || iIdxIdx < 0 || iNameIdx < 0)
+    {
+        return(IOCFG_CGI_RESPONSE);
+    }
+
+    bInput = (pcValue[iTypeIdx][0] == 'i');
+    iIdx   = (int)ustrtoul(pcValue[iIdxIdx], NULL, 10);
+    UrlDecodeParam(pcValue[iNameIdx], acName, CFG_NAME_LEN);
+    ConfigNameSet(bInput, iIdx, acName);
+    UARTprintf("Name: %s[%d] = \"%s\"\n", bInput ? "in" : "out", iIdx, acName);
+    return(IOCFG_CGI_RESPONSE);
+}
+
+
+// ---- handlers block 3: NtpCfg, CfgJson*, CfgRestore, RelayPulse, OutCfg, Cover, RelaySet, RoomCfg, SSIHandler ----
+//*****************************************************************************
+//
+// NtpCfgCGIHandler - Save NTP server + TZ offset then restart SNTP.
+//
+//*****************************************************************************
+static char *
+NtpCfgCGIHandler(int32_t iIndex, int32_t i32NumParams,
+                 char *pcParam[], char *pcValue[])
+{
+    int32_t iIdx;
+    char    acServer[CFG_NTP_SERVER_LEN];
+    int32_t i32Tz = 0;
+
+    iIdx = FindCGIParameter("ntp", pcParam, i32NumParams);
+    if(iIdx >= 0)
+    {
+        GetStringParam("ntp", pcParam, pcValue, i32NumParams,
+                       acServer, CFG_NTP_SERVER_LEN);
+        ConfigNtpSetServer(acServer);
+    }
+
+    iIdx = FindCGIParameter("tz", pcParam, i32NumParams);
+    if(iIdx >= 0)
+    {
+        i32Tz = (int32_t)ustrtoul(pcValue[iIdx], NULL, 10);
+        if(pcValue[iIdx][0] == '-') { i32Tz = -i32Tz; }
+        if(i32Tz < -12) { i32Tz = -12; }
+        if(i32Tz >  14) { i32Tz =  14; }
+        ConfigNtpSetTz((int8_t)i32Tz);
+    }
+
+    ConfigNtpSave();
+    SntpInit();
+    UARTprintf("NTP: config updated, re-syncing.\n");
+    return(DEFAULT_CGI_RESPONSE);
+}
+
+//*****************************************************************************
+//
+// CfgRestoreCGIHandler - Restore broker + NTP config from a JSON chunk stream.
+//
+// URL: /cfgrestore.cgi?seq=N&last=0|1&data=HEXHEX...
+//
+// Hex-decoded bytes accumulate in g_acCfgRestoreBuf.  On last=1 the buffer
+// is parsed as JSON and the broker + NTP EEPROM records are updated.
+//
+//*****************************************************************************
+#define CFG_RESTORE_BUF_SIZE 2048
+
+static char    g_acCfgRestoreBuf[CFG_RESTORE_BUF_SIZE];
+static uint32_t g_ui32CfgRestoreLen = 0;
+
+//
+// Minimal JSON value extractor using strstr.
+//
+// Skip JSON whitespace (space, tab, CR, LF).
+#define SKIP_WS(p) while(*(p)==' '||*(p)=='\t'||*(p)=='\r'||*(p)=='\n'){(p)++;}
+
+static bool
+CfgJsonGetStr(const char *pcJson, const char *pcKey,
+              char *pcVal, int iMax)
+{
+    char acSearch[48];
+    const char *p;
+    int i = 0;
+    // Search for "key": — no trailing quote so it matches both "k":"v" and "k": "v"
+    usnprintf(acSearch, sizeof(acSearch), "\"%s\":", pcKey);
+    p = strstr(pcJson, acSearch);
+    if(!p) { return(false); }
+    p += ustrlen(acSearch);
+    SKIP_WS(p);
+    if(*p != '"') { return(false); }
+    p++;  // skip opening quote
+    while(*p && *p != '"' && i < iMax - 1) { pcVal[i++] = *p++; }
+    pcVal[i] = '\0';
+    return(true);
+}
+
+static int32_t
+CfgJsonGetInt(const char *pcJson, const char *pcKey)
+{
+    char acSearch[48];
+    const char *p;
+    usnprintf(acSearch, sizeof(acSearch), "\"%s\":", pcKey);
+    p = strstr(pcJson, acSearch);
+    if(!p) { return(-1); }
+    p += ustrlen(acSearch);
+    SKIP_WS(p);
+    if(*p == '-') { return(-(int32_t)ustrtoul(p + 1, NULL, 10)); }
+    return((int32_t)ustrtoul(p, NULL, 10));
+}
+
+static char *
+CfgRestoreCGIHandler(int32_t iIndex, int32_t i32NumParams,
+                     char *pcParam[], char *pcValue[])
+{
+    int32_t iSeqIdx, iLastIdx, iDataIdx;
+    bool    bLast;
+    const char *pcData;
+    uint32_t ui32DataHexLen, i;
+
+    iSeqIdx  = FindCGIParameter("seq",  pcParam, i32NumParams);
+    iLastIdx = FindCGIParameter("last", pcParam, i32NumParams);
+    iDataIdx = FindCGIParameter("data", pcParam, i32NumParams);
+
+    if(iSeqIdx < 0 || iDataIdx < 0) { return(DEFAULT_CGI_RESPONSE); }
+
+    bLast  = (iLastIdx >= 0) && (pcValue[iLastIdx][0] == '1');
+    pcData = pcValue[iDataIdx];
+    ui32DataHexLen = ustrlen(pcData) & ~1u;
+
+    if(ustrtoul(pcValue[iSeqIdx], NULL, 10) == 0)
+    {
+        g_ui32CfgRestoreLen = 0;
+    }
+
+    for(i = 0; i < ui32DataHexLen && g_ui32CfgRestoreLen < CFG_RESTORE_BUF_SIZE - 1u; i += 2)
+    {
+        g_acCfgRestoreBuf[g_ui32CfgRestoreLen++] =
+            (char)((HexNibble(pcData[i]) << 4) | HexNibble(pcData[i + 1]));
+    }
+
+    if(!bLast) { return(DEFAULT_CGI_RESPONSE); }
+
+    g_acCfgRestoreBuf[g_ui32CfgRestoreLen] = '\0';
+    UARTprintf("CfgRestore: %u bytes JSON received.\n", g_ui32CfgRestoreLen);
+
+    //
+    // Parse and apply broker config.
+    //
+    {
+        tMQTTConfig *psCfg = ConfigGet();
+        char        acTmp[64];
+        int32_t     i32Val;
+
+        if(CfgJsonGetStr(g_acCfgRestoreBuf, "host", acTmp, CFG_HOST_LEN))
+        { ustrncpy(psCfg->pcHost, acTmp, CFG_HOST_LEN - 1); }
+        if(CfgJsonGetStr(g_acCfgRestoreBuf, "client", acTmp, CFG_CLIENTID_LEN))
+        { ustrncpy(psCfg->pcClientID, acTmp, CFG_CLIENTID_LEN - 1); }
+        if(CfgJsonGetStr(g_acCfgRestoreBuf, "user", acTmp, CFG_USER_LEN))
+        { ustrncpy(psCfg->pcUser, acTmp, CFG_USER_LEN - 1); }
+        if(CfgJsonGetStr(g_acCfgRestoreBuf, "pass", acTmp, CFG_PASS_LEN))
+        { ustrncpy(psCfg->pcPass, acTmp, CFG_PASS_LEN - 1); }
+        if(CfgJsonGetStr(g_acCfgRestoreBuf, "topic", acTmp, CFG_TOPIC_LEN))
+        { ustrncpy(psCfg->pcTopicBase, acTmp, CFG_TOPIC_LEN - 1); }
+        i32Val = CfgJsonGetInt(g_acCfgRestoreBuf, "port");
+        if(i32Val > 0 && i32Val <= 65535) { psCfg->ui16Port = (uint16_t)i32Val; }
+        i32Val = CfgJsonGetInt(g_acCfgRestoreBuf, "auth");
+        if(i32Val >= 0) { psCfg->ui8UseAuth = (uint8_t)(i32Val != 0); }
+        i32Val = CfgJsonGetInt(g_acCfgRestoreBuf, "din");
+        if(i32Val >= 0) { ConfigSetDinDevices((uint8_t)i32Val); }
+        i32Val = CfgJsonGetInt(g_acCfgRestoreBuf, "relay");
+        if(i32Val >= 0) { ConfigSetRelayDevices((uint8_t)i32Val); }
+        ConfigSave();
+    }
+
+    //
+    // Parse and apply NTP config.
+    //
+    {
+        char    acTmp[CFG_NTP_SERVER_LEN];
+        int32_t i32Val;
+        if(CfgJsonGetStr(g_acCfgRestoreBuf, "ntp", acTmp, CFG_NTP_SERVER_LEN))
+        { ConfigNtpSetServer(acTmp); }
+        i32Val = CfgJsonGetInt(g_acCfgRestoreBuf, "tz");
+        if(i32Val >= -12 && i32Val <= 14) { ConfigNtpSetTz((int8_t)i32Val); }
+        ConfigNtpSave();
+    }
+
+    //
+    // Restore per-input types (Switch / Pushbutton) from hex string.
+    // Format: 2 hex chars per SN65HVS882 device (1 bit per input channel).
+    //
+    {
+        char acTypes[64];
+        if(CfgJsonGetStr(g_acCfgRestoreBuf, "types", acTypes, sizeof(acTypes)))
+        {
+            const char *p = acTypes;
+            int b, bit;
+            for(b = 0; b < CFG_DIN_MAX_DEVICES && p[0] && p[1]; b++, p += 2)
+            {
+                uint8_t ui8Val = (uint8_t)((HexNibble(p[0]) << 4) |
+                                            HexNibble(p[1]));
+                for(bit = 0; bit < 8; bit++)
+                {
+                    ConfigSetInputPushbutton(b * 8 + bit,
+                                             (ui8Val >> bit) & 1 ? true : false);
+                }
+            }
+            ConfigIOSave();
+            UARTprintf("CfgRestore: input types restored.\n");
+        }
+    }
+
+    //
+    // Restore input-to-relay bindings from hex string.
+    // Format: 3 hex chars per slot, 4 slots per input, up to 16 inputs.
+    // Encoding: bits 11:5 = output, bits 4:3 = action, bits 2:0 = trigger.
+    //
+    {
+        char acBinds[256];
+        if(CfgJsonGetStr(g_acCfgRestoreBuf, "binds", acBinds, sizeof(acBinds)))
+        {
+            const char *p    = acBinds;
+            int         iLen = (int)ustrlen(acBinds);
+            int         iIn, iSlot;
+            int         iMaxIn = (int)ConfigGetDinDevices() * 8;
+            if(iMaxIn > 16) { iMaxIn = 16; }
+            for(iIn = 0; iIn < iMaxIn; iIn++)
+            {
+                for(iSlot = 0; iSlot < CFG_BIND_SLOTS; iSlot++)
+                {
+                    uint16_t v;
+                    uint8_t  ui8TrigAct, ui8Out;
+                    if((p - acBinds) + 3 > iLen) { goto done_binds; }
+                    v = (uint16_t)(((uint16_t)HexNibble(p[0]) << 8) |
+                                   ((uint16_t)HexNibble(p[1]) << 4) |
+                                    (uint16_t)HexNibble(p[2]));
+                    p += 3;
+                    //
+                    // Low 5 bits of v encode trig (2:0) and act (4:3),
+                    // matching the ui8TrigAct field layout in tIOBindings.
+                    //
+                    ui8TrigAct = (uint8_t)(v & 0x1Fu);
+                    ui8Out = ((v & 7u) == 0) ? BIND_OUTPUT_NONE
+                                              : (uint8_t)((v >> 5) & 0x7Fu);
+                    ConfigBindingSet(iIn, iSlot, ui8TrigAct, ui8Out);
+                }
+            }
+            done_binds:
+            ConfigBindingSave();
+            UARTprintf("CfgRestore: bindings restored.\n");
+        }
+    }
+
+    //
+    // Restore channel names from packed 12-char-per-slot strings.
+    // Trailing spaces are stripped; empty names are skipped (keep existing).
+    //
+    {
+        char acPacked[256];
+        int  iMax, i;
+
+        if(CfgJsonGetStr(g_acCfgRestoreBuf, "innames", acPacked, sizeof(acPacked)))
+        {
+            iMax = (int)ConfigGetDinDevices() * 8;
+            if(iMax > CFG_NAMES_MAX_INPUTS) { iMax = CFG_NAMES_MAX_INPUTS; }
+            for(i = 0; i < iMax && (i + 1) * CFG_NAME_LEN <= (int)ustrlen(acPacked); i++)
+            {
+                char acName[CFG_NAME_LEN];
+                int  k = CFG_NAME_LEN - 2;
+                memcpy(acName, acPacked + i * CFG_NAME_LEN, CFG_NAME_LEN - 1);
+                acName[CFG_NAME_LEN - 1] = '\0';
+                while(k >= 0 && acName[k] == ' ') { acName[k--] = '\0'; }
+                if(acName[0]) { ConfigNameSet(true, i, acName); }
+            }
+            UARTprintf("CfgRestore: input names restored.\n");
+        }
+
+        if(CfgJsonGetStr(g_acCfgRestoreBuf, "outnames", acPacked, sizeof(acPacked)))
+        {
+            iMax = (int)ConfigGetRelayDevices() * 8;
+            if(iMax > CFG_NAMES_MAX_OUTPUTS) { iMax = CFG_NAMES_MAX_OUTPUTS; }
+            for(i = 0; i < iMax && (i + 1) * CFG_NAME_LEN <= (int)ustrlen(acPacked); i++)
+            {
+                char acName[CFG_NAME_LEN];
+                int  k = CFG_NAME_LEN - 2;
+                memcpy(acName, acPacked + i * CFG_NAME_LEN, CFG_NAME_LEN - 1);
+                acName[CFG_NAME_LEN - 1] = '\0';
+                while(k >= 0 && acName[k] == ' ') { acName[k--] = '\0'; }
+                if(acName[0]) { ConfigNameSet(false, i, acName); }
+            }
+            UARTprintf("CfgRestore: output names restored.\n");
+        }
+    }
+
+    UARTprintf("CfgRestore: settings applied. Rebooting...\n");
+    g_bOTAReset = true;
+    return("/cfgrestore_ok.shtml");
+}
+
+//*****************************************************************************
+//
+// RelayPulseCGIHandler - Trigger a timed relay pulse from the web UI.
+//
+// URL: /relaypulse.cgi?relay=N&ms=D
+//   relay = 0-based relay index
+//   ms    = pulse duration in milliseconds (1..3 600 000)
+//
+//*****************************************************************************
+static char *
+RelayPulseCGIHandler(int32_t iIndex, int32_t i32NumParams,
+                     char *pcParam[], char *pcValue[])
+{
+    int32_t  iRelayIdx, iMsIdx;
+    uint32_t ui32Relay, ui32Ms;
+
+    iRelayIdx = FindCGIParameter("relay", pcParam, i32NumParams);
+    iMsIdx    = FindCGIParameter("ms",    pcParam, i32NumParams);
+
+    if(iRelayIdx < 0)
+    {
+        return(IOCFG_CGI_RESPONSE);
+    }
+
+    ui32Relay = ustrtoul(pcValue[iRelayIdx], NULL, 10);
+    ui32Ms    = (iMsIdx >= 0) ? ustrtoul(pcValue[iMsIdx], NULL, 10) : 0;
+
+    if(ui32Ms == 0)
+    {
+        ui32Ms = 1000;   // implicit default: missing/0 duration pulses for 1 s
+    }
+
+    if(ui32Ms > 3600000u || ui32Relay >= (uint32_t)RelayChainCount())
+    {
+        return(IOCFG_CGI_RESPONSE);
+    }
+
+    UARTprintf("Pulse: relay %u for %u ms (web UI)\n", ui32Relay, ui32Ms);
+    RelayPulseStart((int)ui32Relay, ui32Ms);
+    return(IOCFG_CGI_RESPONSE);
+}
+
+//*****************************************************************************
+//
+// OutCfgCGIHandler - Save per-output modes, timed durations, and the shutter
+// table.  Query parameters (all optional):
+//   modes = one char per output, '1' = Timed, else Standard.
+//   tmo   = comma-separated timed auto-OFF durations (ms), one per output.
+//   sh    = "up:down:travel;up:down:travel;..." shutter definitions (rebuilds
+//           the whole table; invalid pairs are skipped).
+//
+//*****************************************************************************
+static char *
+OutCfgCGIHandler(int32_t iIndex, int32_t i32NumParams, char *pcParam[],
+                 char *pcValue[])
+{
+    int32_t idx;
+    int     i, iSlot;
+
+    (void)iIndex;
+
+    //
+    // Per-output mode.
+    //
+    idx = FindCGIParameter("modes", pcParam, i32NumParams);
+    if(idx >= 0)
+    {
+        const char *p = pcValue[idx];
+        for(i = 0; (p[i] != '\0') && (i < CFG_MAX_OUTPUTS); i++)
+        {
+            ConfigSetOutMode(i, (p[i] == '1') ? OUT_MODE_TIMED
+                                              : OUT_MODE_STANDARD);
+        }
+    }
+
+    //
+    // Per-output timed auto-OFF durations.
+    //
+    idx = FindCGIParameter("tmo", pcParam, i32NumParams);
+    if(idx >= 0)
+    {
+        const char *p = pcValue[idx];
+        i = 0;
+        while((*p != '\0') && (i < CFG_MAX_OUTPUTS))
+        {
+            uint32_t v = 0;
+            while((*p >= '0') && (*p <= '9')) { v = (v * 10u) + (uint32_t)(*p - '0'); p++; }
+            ConfigSetOutTimedMs(i, v ? v : 1000u);
+            i++;
+            if(*p == ',') { p++; } else { break; }
+        }
+    }
+
+    //
+    // Shutter table — always rebuilt from scratch.
+    //
+    for(iSlot = 0; iSlot < CFG_MAX_SHUTTERS; iSlot++)
+    {
+        ConfigShutterClear(iSlot);
+    }
+    idx = FindCGIParameter("sh", pcParam, i32NumParams);
+    if(idx >= 0)
+    {
+        const char *p = pcValue[idx];
+        iSlot = 0;
+        while((*p != '\0') && (iSlot < CFG_MAX_SHUTTERS))
+        {
+            uint32_t up = 0, down = 0, travel = 0;
+            char     acName[CFG_NAME_LEN];
+            acName[0] = '\0';
+            while((*p >= '0') && (*p <= '9')) { up = (up * 10u) + (uint32_t)(*p - '0'); p++; }
+            if(*p != ':') { break; }
+            p++;
+            while((*p >= '0') && (*p <= '9')) { down = (down * 10u) + (uint32_t)(*p - '0'); p++; }
+            if(*p != ':') { break; }
+            p++;
+            while((*p >= '0') && (*p <= '9')) { travel = (travel * 10u) + (uint32_t)(*p - '0'); p++; }
+
+            //
+            // Optional 4th field ":name" (URL-encoded, runs to ';' or end).
+            //
+            if(*p == ':')
+            {
+                char acEnc[3 * CFG_NAME_LEN];
+                int  iEnc = 0;
+                p++;
+                while((*p != '\0') && (*p != ';'))
+                {
+                    if(iEnc < (int)sizeof(acEnc) - 1) { acEnc[iEnc++] = *p; }
+                    p++;
+                }
+                acEnc[iEnc] = '\0';
+                UrlDecodeParam(acEnc, acName, CFG_NAME_LEN);
+            }
+
+            if((up != down) && (up < RelayChainCount()) && (down < RelayChainCount()))
+            {
+                ConfigShutterSet(iSlot, (uint8_t)up, (uint8_t)down,
+                                 travel ? travel : 20000u);
+                ConfigShutterNameSet(iSlot, acName);
+                iSlot++;
+            }
+            if(*p == ';') { p++; } else { break; }
+        }
+    }
+
+    ConfigOutputSave();
+    OutputCtrlReload();
+    g_bRepublishMQTT = true;   // refresh HA discovery (covers vs switches)
+    UARTprintf("Output config saved via web UI.\n");
+    return(IOCFG_CGI_RESPONSE);
+}
+
+//*****************************************************************************
+//
+// CoverCGIHandler - Web UP/DOWN/STOP buttons for a shutter.
+//   /cover.cgi?sh=N&cmd=up|down|stop
+//
+//*****************************************************************************
+static char *
+CoverCGIHandler(int32_t iIndex, int32_t i32NumParams, char *pcParam[],
+                char *pcValue[])
+{
+    int32_t  iShIdx, iCmdIdx;
+    uint32_t ui32Sh;
+    tShCmd   eCmd;
+
+    (void)iIndex;
+
+    iShIdx  = FindCGIParameter("sh",  pcParam, i32NumParams);
+    iCmdIdx = FindCGIParameter("cmd", pcParam, i32NumParams);
+    if((iShIdx < 0) || (iCmdIdx < 0))
+    {
+        return(IOCFG_CGI_RESPONSE);
+    }
+
+    ui32Sh = ustrtoul(pcValue[iShIdx], NULL, 10);
+    switch(pcValue[iCmdIdx][0])
+    {
+        case 'u': eCmd = SH_CMD_UP;     break;   // momentary: idle→open, moving→stop
+        case 'd': eCmd = SH_CMD_DOWN;   break;   // momentary: idle→close, moving→stop
+        case 's': eCmd = SH_CMD_STOP;   break;
+        case 'c': eCmd = SH_CMD_TOGGLE; break;   // single-button cycle
+        default:  return(IOCFG_CGI_RESPONSE);
+    }
+
+    UARTprintf("Cover: shutter %u cmd %d (web UI)\n", ui32Sh, (int)eCmd);
+    OutputCtrlShutter((int)ui32Sh, eCmd);
+    return(IOCFG_CGI_RESPONSE);
+}
+
+//*****************************************************************************
+//
+// RelaySetCGIHandler - direct ON/OFF/Toggle for a light (Control dashboard).
+//   /relayset.cgi?relay=N&cmd=on|off|toggle
+// Routed through OutputCtrlCommand so the output's mode (Standard/Timed) and
+// any shutter-member translation are honored, and the state is published.
+//
+//*****************************************************************************
+static char *
+RelaySetCGIHandler(int32_t iIndex, int32_t i32NumParams, char *pcParam[],
+                   char *pcValue[])
+{
+    int32_t  iRelIdx, iCmdIdx;
+    uint32_t ui32Relay;
+    tOutCmd  eCmd;
+
+    (void)iIndex;
+
+    iRelIdx = FindCGIParameter("relay", pcParam, i32NumParams);
+    iCmdIdx = FindCGIParameter("cmd",   pcParam, i32NumParams);
+    if((iRelIdx < 0) || (iCmdIdx < 0))
+    {
+        return(CONTROL_CGI_RESPONSE);
+    }
+
+    ui32Relay = ustrtoul(pcValue[iRelIdx], NULL, 10);
+    if(ui32Relay >= RelayChainCount())
+    {
+        return(CONTROL_CGI_RESPONSE);
+    }
+
+    //
+    // cmd = "on" | "off" | "toggle".  "on"/"off" share a first char, so
+    // disambiguate on the second; anything else is a toggle.
+    //
+    if(pcValue[iCmdIdx][0] == 'o')
+    {
+        eCmd = (pcValue[iCmdIdx][1] == 'n') ? OUT_CMD_ON : OUT_CMD_OFF;
+    }
+    else
+    {
+        eCmd = OUT_CMD_TOGGLE;
+    }
+
+    UARTprintf("RelaySet: relay %u cmd %d (web UI)\n", ui32Relay, (int)eCmd);
+    OutputCtrlCommand((int)ui32Relay, eCmd);
+    return(CONTROL_CGI_RESPONSE);
+}
+
+//*****************************************************************************
+//
+// RoomCfgCGIHandler - save room names + per-output/per-shutter room assignment.
+//   /roomcfg.cgi?rooms=<;-sep URL-encoded names>&outr=<csv>&shr=<csv>
+// "255" (or any value >= CFG_MAX_ROOMS) means unassigned.
+//
+//*****************************************************************************
+static char *
+RoomCfgCGIHandler(int32_t iIndex, int32_t i32NumParams, char *pcParam[],
+                  char *pcValue[])
+{
+    int32_t idx;
+    int     i;
+
+    (void)iIndex;
+
+    //
+    // Room names: ';'-separated, each URL-encoded (so ';'/'&' cannot appear
+    // literally inside a name), index 0..CFG_MAX_ROOMS-1.
+    //
+    idx = FindCGIParameter("rooms", pcParam, i32NumParams);
+    if(idx >= 0)
+    {
+        const char *p = pcValue[idx];
+        int iRoom = 0;
+        while(iRoom < CFG_MAX_ROOMS)
+        {
+            char acEnc[3 * CFG_NAME_LEN];
+            char acName[CFG_NAME_LEN];
+            int  iEnc = 0;
+            while((*p != '\0') && (*p != ';'))
+            {
+                if(iEnc < (int)sizeof(acEnc) - 1) { acEnc[iEnc++] = *p; }
+                p++;
+            }
+            acEnc[iEnc] = '\0';
+            UrlDecodeParam(acEnc, acName, CFG_NAME_LEN);
+            ConfigRoomNameSet(iRoom, acName);
+            iRoom++;
+            if(*p == ';') { p++; } else { break; }
+        }
+        for(; iRoom < CFG_MAX_ROOMS; iRoom++) { ConfigRoomNameSet(iRoom, ""); }
+    }
+
+    //
+    // Per-output room index (comma list, one per output).
+    //
+    idx = FindCGIParameter("outr", pcParam, i32NumParams);
+    if(idx >= 0)
+    {
+        const char *p = pcValue[idx];
+        i = 0;
+        while((*p != '\0') && (i < CFG_MAX_OUTPUTS))
+        {
+            uint32_t v = 0;
+            while((*p >= '0') && (*p <= '9')) { v = (v * 10u) + (uint32_t)(*p - '0'); p++; }
+            ConfigOutRoomSet(i, (v < CFG_MAX_ROOMS) ? (uint8_t)v : ROOM_NONE);
+            i++;
+            if(*p == ',') { p++; } else { break; }
+        }
+    }
+
+    //
+    // Per-shutter room index (comma list, defined shutters in slot order).
+    //
+    idx = FindCGIParameter("shr", pcParam, i32NumParams);
+    if(idx >= 0)
+    {
+        const char *p = pcValue[idx];
+        i = 0;
+        while((*p != '\0') && (i < CFG_MAX_SHUTTERS))
+        {
+            uint32_t v = 0;
+            while((*p >= '0') && (*p <= '9')) { v = (v * 10u) + (uint32_t)(*p - '0'); p++; }
+            ConfigShRoomSet(i, (v < CFG_MAX_ROOMS) ? (uint8_t)v : ROOM_NONE);
+            i++;
+            if(*p == ',') { p++; } else { break; }
+        }
+    }
+
+    ConfigRoomSave();
+    UARTprintf("Room config saved via web UI.\n");
+    return(IOCFG_CGI_RESPONSE);
+}
+
+//*****************************************************************************
+static int32_t
+SSIHandler(int32_t iIndex, char *pcInsert, int32_t iInsertLen)
+{
+    tMQTTConfig *psCfg = ConfigGet();
+
+    //
+    // Which SSI tag have we been passed?  (The password is intentionally never
+    // echoed back to the browser.)
+    //
+    switch(iIndex)
+    {
+        case SSI_INDEX_HOST:
+            usnprintf(pcInsert, iInsertLen, "%s", psCfg->pcHost);
+            break;
+
+        case SSI_INDEX_PORT:
+            usnprintf(pcInsert, iInsertLen, "%d", psCfg->ui16Port);
+            break;
+
+        case SSI_INDEX_CLIENT:
+            usnprintf(pcInsert, iInsertLen, "%s", psCfg->pcClientID);
+            break;
+
+        case SSI_INDEX_USER:
+            usnprintf(pcInsert, iInsertLen, "%s", psCfg->pcUser);
+            break;
+
+        case SSI_INDEX_TOPIC:
+            usnprintf(pcInsert, iInsertLen, "%s", psCfg->pcTopicBase);
+            break;
+
+        case SSI_INDEX_DIN:
+            usnprintf(pcInsert, iInsertLen, "%d", ConfigGetDinDevices());
+            break;
+
+        case SSI_INDEX_RELAY:
+            usnprintf(pcInsert, iInsertLen, "%d", ConfigGetRelayDevices());
+            break;
+
+        case SSI_INDEX_AUTH:
+            usnprintf(pcInsert, iInsertLen, "%s",
+                      psCfg->ui8UseAuth ? "checked" : "");
+            break;
+
+        case SSI_INDEX_STATUS:
+            usnprintf(pcInsert, iInsertLen, "%s", MQTTAppStatusStr());
+            break;
+
+        case SSI_INDEX_IP:
+            usnprintf(pcInsert, iInsertLen, "%d.%d.%d.%d",
+                      g_ui32IPAddress & 0xff, (g_ui32IPAddress >> 8) & 0xff,
+                      (g_ui32IPAddress >> 16) & 0xff,
+                      (g_ui32IPAddress >> 24) & 0xff);
+            break;
+
+        case SSI_INDEX_IOTYPES:
+        {
+            //
+            // Emit one byte (2 hex chars) per DIN device, LSB = input 0 of
+            // that device.  The I/O config page uses this to seed each select.
+            //
+            static const char pcHex[] = "0123456789abcdef";
+            int iDin = (int)ConfigGetDinDevices();
+            int iByte, iBit;
+            int iPos = 0;
+            for(iByte = 0; (iByte < iDin) && ((iPos + 2) < iInsertLen);
+                iByte++)
+            {
+                uint8_t ui8Val = 0;
+                for(iBit = 0; iBit < 8; iBit++)
+                {
+                    if(ConfigInputIsPushbutton(iByte * 8 + iBit))
+                    {
+                        ui8Val |= (uint8_t)(1u << iBit);
+                    }
+                }
+                pcInsert[iPos++] = pcHex[(ui8Val >> 4) & 0xF];
+                pcInsert[iPos++] = pcHex[ui8Val & 0xF];
+            }
+            pcInsert[iPos] = '\0';
+            break;
+        }
+
+        case SSI_INDEX_IOBINDS:
+        {
+            //
+            // Emit up to D*8 inputs x 4 slots x 3 hex chars (12 B/input).  The
+            // loop guard below caps it at the SSI insert buffer
+            // (LWIP_HTTPD_MAX_TAG_INSERT_LEN, 800 B = 66 inputs).  Per slot:
+            // 12-bit value = (output<<5)|(action<<3)|trigger as "XYZ";
+            // "000" = unused slot.
+            //
+            static const char pcHexB[] = "0123456789abcdef";
+            int iDin = (int)ConfigGetDinDevices();
+            int iMaxIn = iDin * 8;
+            int iInput, iSlot, iPos = 0;
+            if(iMaxIn > CFG_MAX_INPUTS) { iMaxIn = CFG_MAX_INPUTS; }
+            for(iInput = 0; (iInput < iMaxIn) && ((iPos + 3) < iInsertLen);
+                iInput++)
+            {
+                for(iSlot = 0; (iSlot < CFG_BIND_SLOTS) &&
+                               ((iPos + 3) < iInsertLen); iSlot++)
+                {
+                    uint8_t ta  = ConfigBindingGetTrigAct(iInput, iSlot);
+                    uint8_t out = ConfigBindingGetOutput(iInput, iSlot);
+                    uint16_t v  = 0;
+                    if(((ta & 0x07u) != 0) && (out != BIND_OUTPUT_NONE))
+                    {
+                        v = (uint16_t)(((uint16_t)out << 5) | (ta & 0x1Fu));
+                    }
+                    pcInsert[iPos++] = pcHexB[(v >> 8) & 0xFu];
+                    pcInsert[iPos++] = pcHexB[(v >> 4) & 0xFu];
+                    pcInsert[iPos++] = pcHexB[v & 0xFu];
+                }
+            }
+            pcInsert[iPos] = '\0';
+            break;
+        }
+
+        case SSI_INDEX_FWVER:
+        {
+            //
+            // Build timestamp formatted as YYYYMMDDHHMM from __DATE__ and
+            // __TIME__ (both are compile-time string literals).
+            //
+            // __DATE__ = "Mon DD YYYY"  e.g. "Jul 11 2026"  (space-padded day)
+            // __TIME__ = "HH:MM:SS"     e.g. "09:23:45"
+            //
+            static const char pcMons[] =
+                "JanFebMarAprMayJunJulAugSepOctNovDec";
+            const char *pd = g_pcBuildDate;
+            const char *pt = g_pcBuildTime;
+            int iMon, iDay, iYear, iHour, iMin;
+
+            for(iMon = 0; iMon < 12; iMon++)
+            {
+                if((pd[0] == pcMons[iMon * 3]) &&
+                   (pd[1] == pcMons[iMon * 3 + 1]) &&
+                   (pd[2] == pcMons[iMon * 3 + 2]))
+                {
+                    break;
+                }
+            }
+            iMon++;
+            iDay  = ((pd[4] == ' ') ? 0 : (pd[4] - '0')) * 10 + (pd[5] - '0');
+            iYear = (pd[7]-'0')*1000 + (pd[8]-'0')*100 +
+                    (pd[9]-'0')*10   + (pd[10]-'0');
+            iHour = (pt[0]-'0')*10 + (pt[1]-'0');
+            iMin  = (pt[3]-'0')*10 + (pt[4]-'0');
+
+            usnprintf(pcInsert, iInsertLen, "%04d%02d%02d%02d%02d",
+                      iYear, iMon, iDay, iHour, iMin);
+            break;
+        }
+
+        case SSI_INDEX_NTPTIME:
+            SntpGetTimeStr(pcInsert, iInsertLen);
+            break;
+
+        case SSI_INDEX_NTPSVR:
+            usnprintf(pcInsert, iInsertLen, "%s",
+                      ConfigNtpGet()->pcServer);
+            break;
+
+        case SSI_INDEX_NTPTZ:
+            usnprintf(pcInsert, iInsertLen, "%d",
+                      (int)ConfigNtpGet()->i8TzOffset);
+            break;
+
+        case SSI_INDEX_MQPASS:
+            usnprintf(pcInsert, iInsertLen, "%s", ConfigGet()->pcPass);
+            break;
+
+        case SSI_INDEX_INNAMES:
+        case SSI_INDEX_OUTNAMES:
+        {
+            //
+            // Emit one CFG_NAME_LEN (12) char block per channel, space-padded,
+            // no NUL separators so JS can index by i*12.  Bounded by the names
+            // record capacity (64) and by the SSI insert buffer
+            // (LWIP_HTTPD_MAX_TAG_INSERT_LEN, 800 B = up to 66 blocks) via the
+            // loop guard below.  Previously hard-capped at 16, so output/input
+            // names past #16 never reached the browser.
+            //
+            bool bIn = (iIndex == SSI_INDEX_INNAMES);
+            int iMax = bIn ? CFG_NAMES_MAX_INPUTS : CFG_NAMES_MAX_OUTPUTS;
+            int iCount = bIn ? (int)ConfigGetDinDevices() * 8
+                             : (int)ConfigGetRelayDevices() * 8;
+            int i, j, iPos = 0;
+            if(iCount > iMax) { iCount = iMax; }
+            for(i = 0; i < iCount && (iPos + CFG_NAME_LEN) <= iInsertLen; i++)
+            {
+                const char *pcN = bIn ? ConfigGetInputName(i)
+                                      : ConfigGetOutputName(i);
+                for(j = 0; j < CFG_NAME_LEN; j++)
+                {
+                    pcInsert[iPos++] = (j < CFG_NAME_LEN - 1 && pcN[j])
+                                       ? pcN[j] : ' ';
+                }
+            }
+            pcInsert[iPos] = '\0';
+            break;
+        }
+
+        case SSI_INDEX_INSTATES:
+        case SSI_INDEX_OUTSTATES:
+        {
+            //
+            // Emit one hex byte per configured device (8 inputs or relays
+            // per byte).  Bit b of byte d = channel d*8+b is active/ON.
+            //
+            static const char pcH[] = "0123456789abcdef";
+            bool bIn   = (iIndex == SSI_INDEX_INSTATES);
+            int  nDev  = bIn ? (int)ConfigGetDinDevices()
+                              : (int)ConfigGetRelayDevices();
+            int  iPos = 0, d, b;
+            if(nDev > 8) { nDev = 8; }  // cap: 8 devices = 64 channels
+            for(d = 0; d < nDev && iPos + 2 <= iInsertLen; d++)
+            {
+                uint8_t ui8B = 0;
+                for(b = 0; b < 8; b++)
+                {
+                    if(bIn)
+                    {
+                        if(g_pui8LiveInState[d] & (1u << b)) { ui8B |= (1u << b); }
+                    }
+                    else
+                    {
+                        if(RelayChainGet((uint16_t)(d * 8 + b))) { ui8B |= (1u << b); }
+                    }
+                }
+                pcInsert[iPos++] = pcH[ui8B >> 4];
+                pcInsert[iPos++] = pcH[ui8B & 0xFu];
+            }
+            pcInsert[iPos] = '\0';
+            break;
+        }
+
+        case SSI_INDEX_OUTMODES:
+        {
+            //
+            // One character per output: '1' = Timed, '0' = Standard (up to 16).
+            //
+            int n = (int)ConfigGetRelayDevices() * 8, i, iPos = 0;
+            if(n > 16) { n = 16; }
+            for(i = 0; (i < n) && ((iPos + 1) < iInsertLen); i++)
+            {
+                pcInsert[iPos++] = (ConfigOutMode(i) == OUT_MODE_TIMED) ? '1' : '0';
+            }
+            pcInsert[iPos] = '\0';
+            break;
+        }
+
+        case SSI_INDEX_OUTTMO:
+        {
+            //
+            // Comma-separated timed auto-OFF durations (ms), one per output.
+            //
+            int n = (int)ConfigGetRelayDevices() * 8, i, iPos = 0;
+            if(n > 16) { n = 16; }
+            for(i = 0; i < n; i++)
+            {
+                char tmp[12];
+                int  L;
+                usnprintf(tmp, sizeof(tmp), "%u", ConfigOutTimedMs(i));
+                L = (int)strlen(tmp);
+                if((iPos + L + 2) >= iInsertLen) { break; }
+                if(i > 0) { pcInsert[iPos++] = ','; }
+                memcpy(pcInsert + iPos, tmp, L);
+                iPos += L;
+            }
+            pcInsert[iPos] = '\0';
+            break;
+        }
+
+        case SSI_INDEX_SHUTTERS:
+        {
+            //
+            // Configured shutters as "up:down:travel;" entries.
+            //
+            int i, iPos = 0;
+            for(i = 0; i < CFG_MAX_SHUTTERS; i++)
+            {
+                uint8_t  up, down;
+                uint32_t travel;
+                char     tmp[24];
+                int      L;
+                if(!ConfigShutterGet(i, &up, &down, &travel)) { continue; }
+                usnprintf(tmp, sizeof(tmp), "%d:%d:%u;", up, down, travel);
+                L = (int)strlen(tmp);
+                if((iPos + L) >= iInsertLen) { break; }
+                memcpy(pcInsert + iPos, tmp, L);
+                iPos += L;
+            }
+            pcInsert[iPos] = '\0';
+            break;
+        }
+
+        case SSI_INDEX_SHNAMES:
+        {
+            //
+            // One CFG_NAME_LEN (12) char space-padded block per DEFINED shutter,
+            // in slot order - same skip condition and ordering as SSI_INDEX_SHUTTERS
+            // so block n aligns with shutter entry n on the client.  Up to
+            // 32 x 12 = 384 B, within the SSI insert buffer.
+            //
+            int i, j, iPos = 0;
+            for(i = 0; i < CFG_MAX_SHUTTERS &&
+                       (iPos + CFG_NAME_LEN) <= iInsertLen; i++)
+            {
+                uint8_t  up, down;
+                uint32_t travel;
+                const char *pcN;
+                if(!ConfigShutterGet(i, &up, &down, &travel)) { continue; }
+                pcN = ConfigShutterName(i);
+                for(j = 0; j < CFG_NAME_LEN; j++)
+                {
+                    pcInsert[iPos++] = (j < CFG_NAME_LEN - 1 && pcN[j])
+                                       ? pcN[j] : ' ';
+                }
+            }
+            pcInsert[iPos] = '\0';
+            break;
+        }
+
+        case SSI_INDEX_RMNAMES:
+        {
+            //
+            // 12-char space-padded block for EVERY room (0..CFG_MAX_ROOMS-1) so
+            // the client can index by room number.  16 x 12 = 192 B.
+            //
+            int i, j, iPos = 0;
+            for(i = 0; i < CFG_MAX_ROOMS &&
+                       (iPos + CFG_NAME_LEN) <= iInsertLen; i++)
+            {
+                const char *pcN = ConfigRoomName(i);
+                for(j = 0; j < CFG_NAME_LEN; j++)
+                {
+                    pcInsert[iPos++] = (j < CFG_NAME_LEN - 1 && pcN[j])
+                                       ? pcN[j] : ' ';
+                }
+            }
+            pcInsert[iPos] = '\0';
+            break;
+        }
+
+        case SSI_INDEX_OUTROOMS:
+        {
+            //
+            // Comma-separated room index per output (ROOM_NONE = 255).
+            //
+            int i, iCount = (int)ConfigGetRelayDevices() * 8;
+            int iPos = 0;
+            char tmp[8];
+            for(i = 0; i < iCount; i++)
+            {
+                int L;
+                usnprintf(tmp, sizeof(tmp), (i == 0) ? "%d" : ",%d",
+                          (int)ConfigOutRoom(i));
+                L = (int)strlen(tmp);
+                if((iPos + L) >= iInsertLen) { break; }
+                memcpy(pcInsert + iPos, tmp, L);
+                iPos += L;
+            }
+            pcInsert[iPos] = '\0';
+            break;
+        }
+
+        case SSI_INDEX_SHROOMS:
+        {
+            //
+            // Comma-separated room index per DEFINED shutter, slot order (same
+            // skip as SSI_INDEX_SHUTTERS so entry n aligns with client SH[n]).
+            //
+            int i, iPos = 0, iEmit = 0;
+            char tmp[8];
+            for(i = 0; i < CFG_MAX_SHUTTERS; i++)
+            {
+                uint8_t  up, down;
+                uint32_t travel;
+                int      L;
+                if(!ConfigShutterGet(i, &up, &down, &travel)) { continue; }
+                usnprintf(tmp, sizeof(tmp), (iEmit == 0) ? "%d" : ",%d",
+                          (int)ConfigShRoom(i));
+                L = (int)strlen(tmp);
+                if((iPos + L) >= iInsertLen) { break; }
+                memcpy(pcInsert + iPos, tmp, L);
+                iPos += L;
+                iEmit++;
+            }
+            pcInsert[iPos] = '\0';
+            break;
+        }
+
+        default:
+            usnprintf(pcInsert, iInsertLen, "??");
+            break;
+    }
+
+    //
+    // Tell the server how many characters our insert string contains.
+    //
+    return(strlen(pcInsert));
+}
+
+//*****************************************************************************
+//
+// WebUIRegister - hand the SSI + CGI tables to the lwIP httpd.  Casts absorb the
+// legacy int32_t/char* handler prototypes into the httpd typedefs (same layout
+// on both lwIP versions).  Call once after httpd_init() (core lock held on
+// NO_SYS=0 builds).
+//
+//*****************************************************************************
+void
+WebUIRegister(void)
+{
+    http_set_ssi_handler((tSSIHandler)SSIHandler, g_pcConfigSSITags,
+                         NUM_CONFIG_SSI_TAGS);
+    http_set_cgi_handlers(g_psConfigCGIURIs, NUM_CONFIG_CGI_URIS);
+}
