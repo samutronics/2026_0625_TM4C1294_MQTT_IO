@@ -50,6 +50,7 @@ serial_logs/
 
 # --- Local Claude/CCS session artifacts (keep project CLAUDE.md & .mcp.json at root) ---
 .claude/
+.codex/
 
 # --- CC35x1 SDK example spikes (imported into the CCS workspace for toolchain validation;
 #     NOT part of this repo — to be relocated under platform/cc35x1 or removed later) ---
