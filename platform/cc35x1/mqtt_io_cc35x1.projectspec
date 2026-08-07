@@ -62,7 +62,10 @@
             -DLWIP_HTTPD=1
             -DLWIP_HTTPD_CGI=1
             -DLWIP_HTTPD_SSI=1
+            -DLWIP_HTTPD_SUPPORT_11_KEEPALIVE=1
+            -DLWIP_HTTPD_KEEPALIVE_TIMEOUT=60000
             -I${COM_TI_SIMPLELINK_WIFI_SDK_INSTALL_DIR}/source
+            -I${COM_TI_SIMPLELINK_WIFI_SDK_INSTALL_DIR}/source/ti/utils/FWU/headers
             -I${COM_TI_SIMPLELINK_WIFI_SDK_INSTALL_DIR}/source/ti/common/nv
             -I${COM_TI_SIMPLELINK_WIFI_SDK_INSTALL_DIR}/source/third_party/mbedtls/include
             -I${COM_TI_SIMPLELINK_WIFI_SDK_INSTALL_DIR}/source/third_party/mbedtls/ti/configs

@@ -52,7 +52,7 @@
 #include "netbiosns.h"
 #include "sntp_client.h"
 #include "webui.h"
-#include "pal_sys.h"
+#include "webui_platform.h"
 
 //
 // Wi-Fi station credentials (WIFI_SSID / WIFI_PASS) come from the local,
@@ -102,6 +102,7 @@ mainThread(void *pvArg0)
     uint32_t ui32UptimeMs = 0;
     uint32_t ui32HeartbeatMs = 0;
     bool     bMQTTStarted = false;
+    bool     bTrialChecked = false;
 
     (void)pvArg0;
 
@@ -114,6 +115,13 @@ mainThread(void *pvArg0)
     // Load persistent configuration (NVS/NVOCMP via pal_storage).
     //
     ConfigInit();
+
+    //
+    // Initialise PSA Firmware Update (reads the boot report, sets component
+    // states, caches the OTA staging-size cap).  Must run before we query FWU
+    // state or serve the web UI's OTA handler.
+    //
+    WebPlatformOtaInit();
 
     //
     // Start Wi-Fi and connect to the AP as a station; DHCP starts on link-up.
@@ -229,17 +237,32 @@ mainThread(void *pvArg0)
         }
 
         //
+        // OTA trial gate: the first time we reach a healthy state (Wi-Fi up +
+        // an IP), commit a firmware that was just installed and is running in
+        // TRIAL.  A bad OTA that never gets here is rolled back to the previous
+        // slot by the bootloader on the next power-cycle.  No-op when not in
+        // trial (the normal case); may reboot once to finalise when it is.
+        //
+        if(!bTrialChecked && NetWifiIsIpAcquired())
+        {
+            bTrialChecked = true;
+            WebPlatformOtaTrialAccept();
+        }
+
+        //
         // Service web-UI requests raised by the CGI handlers (which run on the
         // tcpip_thread and only set a flag).
         //
         if(WebUIResetPending())
         {
             //
-            // Let the /reboot.cgi (or factory-reset) HTTP response flush, then
-            // reset.  PalReboot does not return.
+            // Let the HTTP response flush, then reset.  WebPlatformFinalizeReboot
+            // reboots through PSA FWU when an OTA image was just staged (so the
+            // bootloader swaps to the new slot), otherwise a plain reset for
+            // /reboot.cgi / factory-reset.  Does not return.
             //
             vTaskDelay(pdMS_TO_TICKS(300));
-            PalReboot();
+            WebPlatformFinalizeReboot();
         }
 
         if(WebUIMqttApplyPending())

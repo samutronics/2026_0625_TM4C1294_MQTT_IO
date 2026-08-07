@@ -166,8 +166,10 @@ textarea.drag-over{border-color:#cc0000;background:#fff5f5}
 // the worst-case request line (2xhex + seq + totlen/totcrc + overhead) stays under
 // the device's 1023-byte request-line limit.
 var FWCHUNK = 448;
-// Staging region on the device (OTA_IMAGE_MAX_SIZE = 1 MB - 0x84000 = 496 KB).
-var OTA_MAX_BYTES = 507904;
+// Max image the device will stage, filled per-platform by the "otamax" SSI tag
+// (TM4C internal-flash staging region; CC35x1 PSA vendor-image A/B slot).  Falls
+// back to the TM4C 496 KB region if the tag is unavailable.
+var OTA_MAX_BYTES = parseInt("<!--#otamax-->", 10) || 507904;
 
 // CRC32 (IEEE 802.3, reflected; init/xorout 0xFFFFFFFF).  MUST match ConfigCRC32
 // on the device — the firmware rejects the image unless this CRC agrees, so this
@@ -239,7 +241,7 @@ async function startUpload() {
   var total = buf.length;
   // Reject an oversized/empty image up front — the device would refuse it anyway.
   if(total === 0 || total > OTA_MAX_BYTES) {
-    fwStatus('File is ' + total + ' bytes; must be 1 .. ' + OTA_MAX_BYTES + ' (496 KB).');
+    fwStatus('File is ' + total + ' bytes; must be 1 .. ' + OTA_MAX_BYTES + ' (' + Math.round(OTA_MAX_BYTES / 1024) + ' KB).');
     document.getElementById('upbtn').disabled = false; return;
   }
   // CRC + size the device verifies against before it commits the image.

@@ -27,6 +27,13 @@
 #
 set -uo pipefail
 
+# --sign-only: re-sign the flash images from the current .out and stop (no probe,
+# no programming).  This is the OTA release step -- the resulting
+# Debug/toolbox/primary_vendor_image.sign.bin is what you push over the air with
+# tools/ota_push.py (or the Tools web page), instead of cold-flashing it.
+SIGN_ONLY=0
+[ "${1:-}" = "--sign-only" ] && SIGN_ONLY=1
+
 SDK="C:/ti/simplelink_wifi_sdk_10_10_01_08"
 TOOLBOX="C:/ti/simplelink_wifi_toolbox_win_4_2_4"
 TOOLBOX_EXE="/c/ti/simplelink_wifi_toolbox_win_4_2_4/simplelink-wifi-toolbox.exe"
@@ -62,6 +69,13 @@ fi
 echo "  ok ($(ls -la --time-style=+%H:%M "$BUILD_DIR/toolbox/primary_vendor_image.sign.bin" | awk '{print $6}') vendor image)"
 
 [ -f "$TOOL_SETTINGS" ] || { echo "error: $TOOL_SETTINGS missing after re-sign." >&2; exit 3; }
+
+if [ "$SIGN_ONLY" -eq 1 ]; then
+    echo ">>> sign-only: $BUILD_DIR/toolbox/primary_vendor_image.sign.bin"
+    echo ">>> push it over the air: python platform/cc35x1/tools/ota_push.py <ip> \\"
+    echo "        \"$BUILD_DIR/toolbox/primary_vendor_image.sign.bin\""
+    exit 0
+fi
 
 # --- Stage 2: program via the toolbox 'programmer' ---------------------------
 # Probe identity is gated by preflight.sh: it asserts exactly ONE XDS110 and that

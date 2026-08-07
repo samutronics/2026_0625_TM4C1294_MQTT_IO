@@ -76,6 +76,7 @@
 #define SSI_INDEX_RMNAMES   25
 #define SSI_INDEX_OUTROOMS  26
 #define SSI_INDEX_SHROOMS   27
+#define SSI_INDEX_OTAMAX    28
 
 static const char *g_pcConfigSSITags[] =
 {
@@ -106,7 +107,8 @@ static const char *g_pcConfigSSITags[] =
     "shnames",       // SSI_INDEX_SHNAMES   — packed shutter names (12 B each, up to 32)
     "rmnames",       // SSI_INDEX_RMNAMES   — packed room names (12 B each, 16 rooms)
     "outrooms",      // SSI_INDEX_OUTROOMS  — room index per output (comma list)
-    "shrooms"        // SSI_INDEX_SHROOMS   — room index per defined shutter (comma list)
+    "shrooms",       // SSI_INDEX_SHROOMS   — room index per defined shutter (comma list)
+    "otamax"         // SSI_INDEX_OTAMAX    — max OTA image size (bytes), per platform
 };
 
 //*****************************************************************************
@@ -1532,6 +1534,16 @@ SSIHandler(int32_t iIndex, char *pcInsert, int32_t iInsertLen)
             pcInsert[iPos] = '\0';
             break;
         }
+
+        case SSI_INDEX_OTAMAX:
+            //
+            // Largest image the firmware-upload page will offer to send.  The
+            // value is platform-specific (TM4C flash staging region vs. CC35x1
+            // PSA vendor-image slot), so it comes from the platform seam.
+            //
+            usnprintf(pcInsert, iInsertLen, "%u",
+                      (unsigned)WebPlatformOtaMaxBytes());
+            break;
 
         default:
             usnprintf(pcInsert, iInsertLen, "??");

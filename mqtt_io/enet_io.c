@@ -472,6 +472,19 @@ WebPlatformOtaChunkCGI(int32_t iIndex, int32_t i32NumParams,
 
 //*****************************************************************************
 //
+// WebPlatformOtaMaxBytes - largest OTA image this platform stages, rendered by
+// the shared "otamax" SSI tag.  On the TM4C that is the internal-flash staging
+// region (OTA_IMAGE_MAX_SIZE); the browser rejects anything larger up front.
+//
+//*****************************************************************************
+uint32_t
+WebPlatformOtaMaxBytes(void)
+{
+    return(OTA_IMAGE_MAX_SIZE);
+}
+
+//*****************************************************************************
+//
 // CheckHWFactoryReset - Check SW1 (PJ0) at startup.
 //
 // If SW1 is held continuously for 5 seconds, all EEPROM records are

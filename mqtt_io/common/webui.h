@@ -66,6 +66,13 @@ bool WebUIMqttRepublishPending(void);
 extern char *WebPlatformOtaChunkCGI(int32_t iIndex, int32_t i32NumParams,
                                     char *pcParam[], char *pcValue[]);
 
+//
+// Largest firmware image the platform will accept, rendered by the "otamax" SSI
+// tag so the browser rejects an oversized upload up front.  TM4C returns its
+// flash staging-region size; CC35x1 returns the PSA vendor-image slot size.
+//
+extern uint32_t WebPlatformOtaMaxBytes(void);
+
 #ifdef __cplusplus
 }
 #endif
