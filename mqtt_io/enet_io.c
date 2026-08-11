@@ -485,6 +485,19 @@ WebPlatformOtaMaxBytes(void)
 
 //*****************************************************************************
 //
+// WebPlatformOtaUsePost - upload transport for the shared "otapost" SSI tag.
+// The TM4C flash-programming OTA handler speaks the hex-GET chunk protocol, so
+// this returns 0 (the CC35x1 PSA-FWU path returns 1 to use streaming POST).
+//
+//*****************************************************************************
+uint32_t
+WebPlatformOtaUsePost(void)
+{
+    return(0u);
+}
+
+//*****************************************************************************
+//
 // CheckHWFactoryReset - Check SW1 (PJ0) at startup.
 //
 // If SW1 is held continuously for 5 seconds, all EEPROM records are

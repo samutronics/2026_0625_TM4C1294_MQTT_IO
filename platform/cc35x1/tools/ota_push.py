@@ -31,6 +31,40 @@ import time
 FWCHUNK_DEFAULT = 448   # binary bytes per GET; matches tools.shtml FWCHUNK
 
 
+def post_upload(host, port, data, timeout):
+    """Stream the whole signed image as ONE binary POST to /fwupload - the CC35x1
+    fast path (device pipes the body straight into psa_fwu_write as it arrives, no
+    hex, no per-chunk round trips).  Success = the response body contains
+    FWUPDATE_OK.  Returns a process exit code."""
+    total = len(data)
+    print("POST %d bytes to http://%s:%d/fwupload (single stream)" % (total, host, port))
+    conn = http.client.HTTPConnection(host, port, timeout=timeout)
+    t0 = time.time()
+    try:
+        conn.request("POST", "/fwupload", body=data,
+                     headers={"Content-Type": "application/octet-stream",
+                              "Content-Length": str(total)})
+        resp = conn.getresponse()
+        body = resp.read()
+    except Exception as e:      # noqa: BLE001
+        # A drop at the very end can mean the device already committed and is
+        # rebooting - the update may in fact have succeeded.
+        print("\nconnection lost after %.1fs: %s - if the device reboots it may "
+              "have applied; check the running version before retrying."
+              % (time.time() - t0, e))
+        return 1
+    finally:
+        conn.close()
+    dt = time.time() - t0
+    if resp.status == 200 and b"FWUPDATE_OK" in body:
+        print("upload verified in %.1fs (%.0f KB/s) - device rebooting into the new image."
+              % (dt, total / 1024.0 / max(0.001, dt)))
+        return 0
+    print("upload FAILED (HTTP %d, %d-byte body) after %.1fs - device kept its firmware."
+          % (resp.status, len(body), dt))
+    return 1
+
+
 class Device:
     """A single reusable HTTP/1.1 keep-alive connection to the device."""
 
@@ -74,6 +108,9 @@ def main():
     ap.add_argument("--port", type=int, default=80)
     ap.add_argument("--chunk", type=int, default=FWCHUNK_DEFAULT)
     ap.add_argument("--timeout", type=float, default=30.0)
+    ap.add_argument("--post", action="store_true",
+                    help="stream the image as a single binary POST to /fwupload "
+                         "(CC35x1 fast path); default is the legacy hex-GET chunk loop")
     args = ap.parse_args()
 
     with open(args.image, "rb") as f:
@@ -81,6 +118,10 @@ def main():
     total = len(data)
     if total == 0:
         sys.exit("image is empty")
+
+    # Fast path: one streaming POST (device validates the signed manifest itself).
+    if args.post:
+        sys.exit(post_upload(args.host, args.port, data, max(args.timeout, 300.0)))
 
     crc = binascii.crc32(data) & 0xFFFFFFFF
     nchunks = (total + args.chunk - 1) // args.chunk
