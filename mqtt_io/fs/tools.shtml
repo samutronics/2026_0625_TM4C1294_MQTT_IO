@@ -170,10 +170,6 @@ var FWCHUNK = 448;
 // (TM4C internal-flash staging region; CC35x1 PSA vendor-image A/B slot).  Falls
 // back to the TM4C 496 KB region if the tag is unavailable.
 var OTA_MAX_BYTES = parseInt("<!--#otamax-->", 10) || 507904;
-// Transport: 1 = stream the whole image as ONE binary POST to /fwupload (CC35x1
-// PSA-FWU fast path — no hex, no per-chunk round trips); 0 = legacy hex-GET chunk
-// loop (TM4C flash programming).  Filled by the "otapost" SSI tag.
-var OTA_USE_POST = parseInt("<!--#otapost-->", 10) || 0;
 
 // CRC32 (IEEE 802.3, reflected; init/xorout 0xFFFFFFFF).  MUST match ConfigCRC32
 // on the device — the firmware rejects the image unless this CRC agrees, so this
@@ -232,36 +228,6 @@ async function fwSendChunk(url, isLast) {
   return {ok:false, reason:reason};
 }
 
-// Streaming binary POST (CC35x1).  One request, the raw image as the body; the
-// device pipes it straight into flash as it arrives.  Progress comes from the
-// upload events; success is the device serving a page containing FWUPDATE_OK.
-function fwUploadPost(buf, total) {
-  fwStatus('Uploading...');
-  var xhr = new XMLHttpRequest();
-  xhr.open('POST', '/fwupload', true);
-  xhr.setRequestHeader('Content-Type', 'application/octet-stream');
-  xhr.timeout = 0;   // large image + final install hashing can take a while
-  xhr.upload.onprogress = function(e) {
-    if(e.lengthComputable) { fwProgress(e.loaded / e.total * 100); }
-  };
-  xhr.onload = function() {
-    if(xhr.status === 200 && xhr.responseText.indexOf('FWUPDATE_OK') >= 0) {
-      fwProgress(100);
-      fwStatus('Upload verified. Device rebooting — reconnect in ~10 s.');
-    } else {
-      fwStatus('Upload failed (device kept its current firmware). Retry.');
-      document.getElementById('upbtn').disabled = false;
-    }
-  };
-  xhr.onerror = xhr.ontimeout = function() {
-    // A drop at the very end can mean the device already committed and is
-    // rebooting — the update may in fact have succeeded.
-    fwStatus('Connection lost — if the device reboots it may have applied; check the running version before retrying.');
-    document.getElementById('upbtn').disabled = false;
-  };
-  xhr.send(buf);
-}
-
 async function startUpload() {
   var file = document.getElementById('fwfile').files[0];
   if(!file) { alert('Select a .bin file first.'); return; }
@@ -278,9 +244,6 @@ async function startUpload() {
     fwStatus('File is ' + total + ' bytes; must be 1 .. ' + OTA_MAX_BYTES + ' (' + Math.round(OTA_MAX_BYTES / 1024) + ' KB).');
     document.getElementById('upbtn').disabled = false; return;
   }
-  // Fast path: stream the raw image as a single binary POST (device validates the
-  // signed PSA manifest itself, so no client-side CRC is needed).
-  if(OTA_USE_POST) { return fwUploadPost(buf, total); }
   // CRC + size the device verifies against before it commits the image.
   var crc = ('00000000' + crc32(buf).toString(16)).slice(-8);
   var nChunks = Math.ceil(total / FWCHUNK);

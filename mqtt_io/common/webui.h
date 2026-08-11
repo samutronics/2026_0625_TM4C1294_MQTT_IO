@@ -73,13 +73,6 @@ extern char *WebPlatformOtaChunkCGI(int32_t iIndex, int32_t i32NumParams,
 //
 extern uint32_t WebPlatformOtaMaxBytes(void);
 
-//
-// Upload transport the Tools page should use, rendered by the "otapost" SSI tag:
-// 1 = stream the image as a single binary POST to /fwupload (CC35x1 fast path),
-// 0 = legacy hex-encoded GET chunk loop (TM4C internal-flash programming).
-//
-extern uint32_t WebPlatformOtaUsePost(void);
-
 #ifdef __cplusplus
 }
 #endif

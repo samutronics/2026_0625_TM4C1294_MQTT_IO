@@ -37,8 +37,10 @@
 
 #include "ti/utils/FWU/psa_fwu.h"   /* also pulls in fwu/1.0/psa/update.h + error.h */
 
-#include "lwip/apps/httpd.h"         /* LWIP_HTTPD_SUPPORT_POST + POST callback prototypes */
-#include "lwip/pbuf.h"               /* struct pbuf, pbuf_free (streaming POST body) */
+#if LWIP_HTTPD_SUPPORT_POST
+#include "lwip/err.h"                /* err_t, ERR_VAL */
+#include "lwip/pbuf.h"               /* struct pbuf, pbuf_free */
+#endif
 
 //
 // The two vendor-image A/B components (PSA_FWU_Component_ID_e).  We only ever
@@ -90,11 +92,6 @@ static uint32_t g_ui32WrLen;                         // bytes buffered in g_pui8
 static size_t   g_szWrBase;                          // image offset of buffer[0]
 
 static uint32_t g_ui32OtaMaxBytes = OTA_MAX_BYTES_FALLBACK;
-
-#if LWIP_HTTPD_SUPPORT_POST
-static void    *g_pPostConn;                         // owning POST connection (or NULL)
-static uint32_t g_ui32PostExpected;                  // Content-Length of the POST body
-#endif
 
 //*****************************************************************************
 //
@@ -536,183 +533,39 @@ WebPlatformOtaChunkCGI(int32_t iIndex, int32_t i32NumParams,
 }
 
 #if LWIP_HTTPD_SUPPORT_POST
-//*****************************************************************************
-//
-// Streaming binary-POST OTA (CC35x1's fast path).  The Tools page uploads the
-// signed vendor image as ONE raw POST body to /fwupload; the lwIP httpd hands us
-// the body pbuf-by-pbuf, in order, as it arrives off TCP -- no hex expansion and
-// no per-chunk request/response round trips, so the image streams at line rate
-// straight into psa_fwu_write() (vs ~2700 hex GETs before).  We reuse the same
-// OtaPrepareTarget / OtaFeed / OtaFinalize staging core as the legacy chunk CGI.
-//
-// The three callbacks below are the app hooks the httpd calls (they are global
-// symbols, not CGI-table entries).  Only /fwupload is accepted; a single upload
-// is in flight at a time (state is file-global), tracked by g_pPostConn.
-//
-//*****************************************************************************
+// Stub implementations (disabled; CC35x1 reverted to hex-GET for OTA).
+// These are referenced by httpd.c but POST is not used in the UI.
 
-//
-// httpd_post_begin - a POST arrived.  Accept only /fwupload, reject an oversized
-// image up front, then reset state and prepare the inactive vendor slot.  On
-// denial we name the tiny ACK page (no FWUPDATE_OK) so the browser reports fail.
-//
-err_t
-httpd_post_begin(void *connection, const char *uri, const char *http_request,
-                 u16_t http_request_len, int content_len, char *response_uri,
-                 u16_t response_uri_len, u8_t *post_auto_wnd)
+err_t httpd_post_begin(void *connection, const char *uri,
+                       const char *http_request, u16_t http_request_len,
+                       int content_len, char *response_uri, u16_t response_uri_len,
+                       u8_t *post_auto_wnd)
 {
+    (void)connection;
+    (void)uri;
     (void)http_request;
     (void)http_request_len;
-
-    if((uri == NULL) || (strcmp(uri, "/fwupload") != 0))
-    {
-        return(ERR_VAL);    // not our endpoint -> httpd handles it normally
-    }
-
-#if LWIP_HTTPD_POST_MANUAL_WND
-    //
-    // Take manual control of the TCP receive window.  psa_fwu_write to the
-    // secondary vendor slot is slow relative to Wi-Fi, so with the automatic
-    // window the sender fills one window (~6*MSS) faster than we drain it and the
-    // connection stalls/poll-closes.  In manual mode we only re-open the window
-    // (httpd_post_data_recved) AFTER each block is on flash, pacing the sender to
-    // flash throughput and keeping the connection alive for the whole image.
-    //
-    *post_auto_wnd = 0;
-#else
+    (void)content_len;
+    (void)response_uri;
+    (void)response_uri_len;
     (void)post_auto_wnd;
-#endif
-
-    if((content_len <= 0) || ((uint32_t)content_len > g_ui32OtaMaxBytes))
-    {
-        PalLog("ota(post): bad content-length %d (cap %u)\n",
-               content_len, (unsigned)g_ui32OtaMaxBytes);
-        strncpy(response_uri, "/otaack.txt", response_uri_len);
-        response_uri[response_uri_len - 1] = '\0';
-        return(ERR_VAL);
-    }
-
-    g_szFileOffset      = 0;
-    g_bStarted          = false;
-    g_bAbort            = false;
-    g_bOtaRebootPending = false;
-    g_ui32WrLen         = 0;
-    memset(g_pui8Manifest, 0, sizeof(g_pui8Manifest));
-
-    if(OtaPrepareTarget(&g_target) != 0)
-    {
-        PalLog("ota(post): cannot prepare a target slot\n");
-        strncpy(response_uri, "/otaack.txt", response_uri_len);
-        response_uri[response_uri_len - 1] = '\0';
-        return(ERR_VAL);
-    }
-
-    g_pPostConn        = connection;
-    g_ui32PostExpected = (uint32_t)content_len;
-    PalLog("ota(post): upload started -> vendor component %d, %d bytes\n",
-           (int)g_target, content_len);
-    return(ERR_OK);
+    return ERR_VAL;
 }
 
-//
-// httpd_post_receive_data - a pbuf (chain) of body bytes.  Stream each segment
-// into the staging core.  We OWN the pbuf and MUST free it (httpd contract).
-//
-err_t
-httpd_post_receive_data(void *connection, struct pbuf *p)
+err_t httpd_post_receive_data(void *connection, struct pbuf *p)
 {
-    struct pbuf *q;
-
-    if((connection != g_pPostConn) || g_bAbort)
-    {
-        if(p != NULL) { pbuf_free(p); }
-        return(ERR_VAL);
-    }
-
-    for(q = p; q != NULL; q = q->next)
-    {
-        if(q->len > 0u)
-        {
-            psa_status_t st = OtaFeed((const uint8_t *)q->payload,
-                                      (uint32_t)q->len);
-            if(st != PSA_SUCCESS)
-            {
-                g_bAbort = true;
-                psa_fwu_cancel(g_target);
-                PalLog("ota(post): staging @%u failed (%d), aborting\n",
-                       (unsigned)g_szFileOffset, (int)st);
-                pbuf_free(p);
-                return(ERR_VAL);
-            }
-        }
-    }
-
-#if LWIP_HTTPD_POST_MANUAL_WND
-    //
-    // This pbuf is now on flash: re-open the window by exactly what we consumed,
-    // so the sender is paced to flash speed (must happen before pbuf_free, and p
-    // is still valid here).
-    //
-    httpd_post_data_recved(connection, p->tot_len);
-#endif
-    pbuf_free(p);
-    return(ERR_OK);
+    (void)connection;
+    if (p != NULL) { pbuf_free(p); }
+    return ERR_VAL;
 }
 
-//
-// httpd_post_finished - whole body received (or connection closed).  Finalize
-// the image and name the response page: FWUPDATE_OK on success, tiny ACK on any
-// failure (so the browser/uploader reports it and the box keeps its firmware).
-//
-void
-httpd_post_finished(void *connection, char *response_uri, u16_t response_uri_len)
+void httpd_post_finished(void *connection, char *response_uri, u16_t response_uri_len)
 {
-    if(connection != g_pPostConn)
-    {
-        return;
-    }
-    g_pPostConn = NULL;
-
-    //
-    // Require the whole declared body: a short/interrupted POST must not install
-    // a truncated image (it would fail signature and reboot into a dead trial).
-    //
-    if(g_bAbort || !g_bStarted ||
-       (g_szFileOffset != g_ui32PostExpected) || !OtaFinalize())
-    {
-        if(!g_bAbort)
-        {
-            g_bAbort = true;
-            psa_fwu_cancel(g_target);
-            PalLog("ota(post): incomplete/failed (%u/%u bytes), aborting\n",
-                   (unsigned)g_szFileOffset, (unsigned)g_ui32PostExpected);
-        }
-        strncpy(response_uri, "/otaack.txt", response_uri_len);
-        response_uri[response_uri_len - 1] = '\0';
-        return;
-    }
-
-    strncpy(response_uri, "/fwupdate_ok.shtml", response_uri_len);
-    response_uri[response_uri_len - 1] = '\0';
+    (void)connection;
+    (void)response_uri;
+    (void)response_uri_len;
 }
-#endif /* LWIP_HTTPD_SUPPORT_POST */
-
-//*****************************************************************************
-//
-// WebPlatformOtaUsePost - value rendered by the "otapost" SSI tag: 1 tells the
-// shared uploader (fs/tools.shtml) to stream the image as a single binary POST
-// to /fwupload (this platform's fast path) instead of the hex-GET chunk loop.
-//
-//*****************************************************************************
-uint32_t
-WebPlatformOtaUsePost(void)
-{
-#if LWIP_HTTPD_SUPPORT_POST
-    return(1u);
-#else
-    return(0u);
 #endif
-}
 
 //*****************************************************************************
 //
