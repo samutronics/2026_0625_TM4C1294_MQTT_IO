@@ -65,6 +65,7 @@
             -DLWIP_HTTPD_SSI_INCLUDE_TAG=0
             -DLWIP_HTTPD_SUPPORT_11_KEEPALIVE=1
             -DLWIP_HTTPD_KEEPALIVE_TIMEOUT=60000
+            -DLWIP_HTTPD_SUPPORT_POST=1
             -I${COM_TI_SIMPLELINK_WIFI_SDK_INSTALL_DIR}/source
             -I${COM_TI_SIMPLELINK_WIFI_SDK_INSTALL_DIR}/source/ti/utils/FWU/headers
             -I${COM_TI_SIMPLELINK_WIFI_SDK_INSTALL_DIR}/source/ti/common/nv

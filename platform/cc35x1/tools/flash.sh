@@ -49,6 +49,25 @@ TOOL_SETTINGS="$BUILD_DIR/toolbox/tool_settings.json"
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPORT="$HERE/last_programming_report.txt"
 LOG="$HERE/flash.log"
+OTA_DIR="$BUILD_DIR/ota"     # clean single-file OTA output (one <fingerprint>.bin)
+
+# fw_fingerprint - the YYYYMMDDHHMM build stamp the web UI shows, read from the
+# __DATE__/__TIME__ strings baked into buildinfo.o.  Naming the OTA file with this
+# makes it match exactly what the device reports once it applies the update.
+fw_fingerprint() {
+    local o="$BUILD_DIR/buildinfo.o" d t mon day yr hh mm mnum
+    d="$(grep -a -o -E '[A-Z][a-z][a-z] [ 0-9][0-9] 20[0-9][0-9]' "$o" 2>/dev/null | head -1)"
+    t="$(grep -a -o -E '[0-9][0-9]:[0-9][0-9]:[0-9][0-9]' "$o" 2>/dev/null | head -1)"
+    [ -n "$d" ] && [ -n "$t" ] || return 1
+    mon="${d:0:3}"; day="${d:4:2}"; yr="${d:7:4}"; hh="${t:0:2}"; mm="${t:3:2}"
+    day="${day// /0}"        # space-padded single-digit day -> zero-padded
+    case "$mon" in
+        Jan) mnum=01;; Feb) mnum=02;; Mar) mnum=03;; Apr) mnum=04;;
+        May) mnum=05;; Jun) mnum=06;; Jul) mnum=07;; Aug) mnum=08;;
+        Sep) mnum=09;; Oct) mnum=10;; Nov) mnum=11;; Dec) mnum=12;; *) return 1;;
+    esac
+    printf '%s%s%s%s%s\n' "$yr" "$mnum" "$day" "$hh" "$mm"
+}
 
 [ -x "$TOOLBOX_EXE" ] || { echo "error: toolbox not found: $TOOLBOX_EXE" >&2; exit 2; }
 [ -f "$BUILD_DIR/mqtt_io_cc35x1.out" ] || { echo "error: .out missing -- build the CCS project first." >&2; exit 2; }
@@ -70,10 +89,27 @@ echo "  ok ($(ls -la --time-style=+%H:%M "$BUILD_DIR/toolbox/primary_vendor_imag
 
 [ -f "$TOOL_SETTINGS" ] || { echo "error: $TOOL_SETTINGS missing after re-sign." >&2; exit 3; }
 
+# --- Publish ONE clean OTA artifact: <build-fingerprint>.bin ------------------
+# The signed vendor image is the OTA payload.  Copy it to a dedicated Debug/ota/
+# dir named with the firmware's build fingerprint (the version the web UI shows),
+# and wipe any older artifact so exactly one uploadable file ever sits there.
+# NOTE: the toolbox/ intermediates are intentionally LEFT untouched -- the
+# cold-flash programmer (Stage 2) consumes the whole signed image set from there.
+mkdir -p "$OTA_DIR"
+rm -f "$OTA_DIR"/*.bin
+if OTA_FP="$(fw_fingerprint)"; then
+    OTA_BIN="$OTA_DIR/$OTA_FP.bin"
+else
+    OTA_BIN="$OTA_DIR/primary_vendor_image.sign.bin"
+    echo "  warn: could not derive build fingerprint; used generic OTA name" >&2
+fi
+cp "$BUILD_DIR/toolbox/primary_vendor_image.sign.bin" "$OTA_BIN"
+echo "  OTA image: $OTA_BIN"
+
 if [ "$SIGN_ONLY" -eq 1 ]; then
-    echo ">>> sign-only: $BUILD_DIR/toolbox/primary_vendor_image.sign.bin"
-    echo ">>> push it over the air: python platform/cc35x1/tools/ota_push.py <ip> \\"
-    echo "        \"$BUILD_DIR/toolbox/primary_vendor_image.sign.bin\""
+    echo ">>> sign-only OTA image ready: $OTA_BIN"
+    echo ">>> push it over the air: python platform/cc35x1/tools/ota_push.py --post <ip> \\"
+    echo "        \"$OTA_BIN\""
     exit 0
 fi
 

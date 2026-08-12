@@ -77,6 +77,7 @@
 #define SSI_INDEX_OUTROOMS  26
 #define SSI_INDEX_SHROOMS   27
 #define SSI_INDEX_OTAMAX    28
+#define SSI_INDEX_OTAPOST   29
 
 static const char *g_pcConfigSSITags[] =
 {
@@ -108,7 +109,8 @@ static const char *g_pcConfigSSITags[] =
     "rmnames",       // SSI_INDEX_RMNAMES   — packed room names (12 B each, 16 rooms)
     "outrooms",      // SSI_INDEX_OUTROOMS  — room index per output (comma list)
     "shrooms",       // SSI_INDEX_SHROOMS   — room index per defined shutter (comma list)
-    "otamax"         // SSI_INDEX_OTAMAX    — max OTA image size (bytes), per platform
+    "otamax",        // SSI_INDEX_OTAMAX    — max OTA image size (bytes), per platform
+    "otapost"        // SSI_INDEX_OTAPOST   — 1: upload via streaming POST, 0: hex-GET
 };
 
 //*****************************************************************************
@@ -1543,6 +1545,16 @@ SSIHandler(int32_t iIndex, char *pcInsert, int32_t iInsertLen)
             //
             usnprintf(pcInsert, iInsertLen, "%u",
                       (unsigned)WebPlatformOtaMaxBytes());
+            break;
+
+        case SSI_INDEX_OTAPOST:
+            //
+            // Which upload transport the Tools page should use: 1 = stream the
+            // image as a single binary POST (CC35x1's fast path), 0 = legacy
+            // hex-GET chunk loop (TM4C).  Platform seam.
+            //
+            usnprintf(pcInsert, iInsertLen, "%u",
+                      (unsigned)WebPlatformOtaUsePost());
             break;
 
         default:

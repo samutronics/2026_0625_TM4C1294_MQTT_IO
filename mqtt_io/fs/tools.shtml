@@ -170,6 +170,13 @@ var FWCHUNK = 448;
 // (TM4C internal-flash staging region; CC35x1 PSA vendor-image A/B slot).  Falls
 // back to the TM4C 496 KB region if the tag is unavailable.
 var OTA_MAX_BYTES = parseInt("<!--#otamax-->", 10) || 507904;
+// Transport: 1 = stream the whole image as ONE binary POST to /fwupload (CC35x1
+// PSA-FWU fast path — no hex, no per-chunk round trips); 0 = legacy hex-GET chunk
+// loop (TM4C flash programming).  Filled by the "otapost" SSI tag.
+var OTA_USE_POST = parseInt("<!--#otapost-->", 10) || 0;
+// Binary bytes per POST body on the chunked-POST path; must be <= the device's
+// OTA_POST_CHUNK_MAX and stay under one TCP window so each chunk flows in one go.
+var POST_CHUNK = 4096;
 
 // CRC32 (IEEE 802.3, reflected; init/xorout 0xFFFFFFFF).  MUST match ConfigCRC32
 // on the device — the firmware rejects the image unless this CRC agrees, so this
@@ -228,6 +235,56 @@ async function fwSendChunk(url, isLast) {
   return {ok:false, reason:reason};
 }
 
+// Chunked binary POST (CC35x1).  The image is sent as many small binary POST
+// bodies to /fwupload?seq=N&last=L over keep-alive; each POST fits one TCP window
+// and its reply flushes the window for the next (a single large body stalls this
+// stack after one window).  No hex, ~10x bigger chunks than the hex-GET path.
+// Success is the final chunk's response containing FWUPDATE_OK.
+async function fwPostChunk(url, body, isLast) {
+  var reason = 'network error';
+  for(var attempt = 0; attempt < 5; attempt++) {
+    try {
+      var resp = await fetch(url, {method:'POST', body:body, cache:'no-store',
+                                   headers:{'Content-Type':'application/octet-stream'}});
+      if(resp.ok) {
+        if(!isLast) { return {ok:true}; }
+        var txt = await resp.text();
+        if(txt.indexOf('FWUPDATE_OK') >= 0) { return {ok:true}; }
+        return {ok:false, reason:'device rejected image (integrity check failed)', fatal:true};
+      }
+      reason = 'HTTP ' + resp.status;
+    } catch(e) { reason = e.message || 'network error'; }
+    await new Promise(function(r){ setTimeout(r, 200 + 250 * attempt); });
+  }
+  return {ok:false, reason:reason};
+}
+
+async function fwUploadPost(buf, total) {
+  fwStatus('Uploading...');
+  var seq = 0, offset = 0;
+  while(offset < total) {
+    var len = Math.min(POST_CHUNK, total - offset);
+    var last = (offset + len >= total) ? 1 : 0;
+    var url = '/fwupload?seq=' + seq + '&last=' + last;
+    var r = await fwPostChunk(url, buf.subarray(offset, offset + len), last === 1);
+    if(!r.ok) {
+      // A drop on the final chunk can mean the device already committed and is
+      // rebooting — the update may in fact have succeeded.
+      if(last) {
+        fwStatus('Connection lost near the end — if the device reboots it may have applied; check the running version.');
+      } else {
+        fwStatus('Upload failed: ' + r.reason + ' (chunk ' + seq + '). Device kept its firmware; retry.');
+      }
+      document.getElementById('upbtn').disabled = false;
+      return;
+    }
+    offset += len; seq++;
+    fwProgress(offset / total * 100);
+  }
+  fwProgress(100);
+  fwStatus('Upload verified. Device rebooting — reconnect in ~10 s.');
+}
+
 async function startUpload() {
   var file = document.getElementById('fwfile').files[0];
   if(!file) { alert('Select a .bin file first.'); return; }
@@ -244,6 +301,9 @@ async function startUpload() {
     fwStatus('File is ' + total + ' bytes; must be 1 .. ' + OTA_MAX_BYTES + ' (' + Math.round(OTA_MAX_BYTES / 1024) + ' KB).');
     document.getElementById('upbtn').disabled = false; return;
   }
+  // Fast path: stream the raw image as a single binary POST (device validates the
+  // signed PSA manifest itself, so no client-side CRC is needed).
+  if(OTA_USE_POST) { return fwUploadPost(buf, total); }
   // CRC + size the device verifies against before it commits the image.
   var crc = ('00000000' + crc32(buf).toString(16)).slice(-8);
   var nChunks = Math.ceil(total / FWCHUNK);

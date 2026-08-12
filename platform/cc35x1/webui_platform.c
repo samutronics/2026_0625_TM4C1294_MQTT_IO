@@ -37,10 +37,9 @@
 
 #include "ti/utils/FWU/psa_fwu.h"   /* also pulls in fwu/1.0/psa/update.h + error.h */
 
-#if LWIP_HTTPD_SUPPORT_POST
-#include "lwip/err.h"                /* err_t, ERR_VAL */
-#include "lwip/pbuf.h"               /* struct pbuf, pbuf_free */
-#endif
+#include "lwip/apps/httpd.h"         /* LWIP_HTTPD_SUPPORT_POST + POST callback prototypes */
+#include "lwip/pbuf.h"               /* struct pbuf, pbuf_free (streaming POST body) */
+
 
 //
 // The two vendor-image A/B components (PSA_FWU_Component_ID_e).  We only ever
@@ -92,6 +91,25 @@ static uint32_t g_ui32WrLen;                         // bytes buffered in g_pui8
 static size_t   g_szWrBase;                          // image offset of buffer[0]
 
 static uint32_t g_ui32OtaMaxBytes = OTA_MAX_BYTES_FALLBACK;
+
+#if LWIP_HTTPD_SUPPORT_POST
+//
+// Chunked binary-POST OTA.  A single large POST body stalls this prebuilt
+// lwIP/Wi-Fi stack after exactly one TCP receive window (8760 B): during a bulk
+// inbound body the device sends nothing back, so window updates never flush and
+// the sender freezes.  The hex-GET path never hits this because it is
+// request/response -- every chunk gets a tiny reply that flushes the window.  So
+// we upload the image as many small BINARY POSTs (<= OTA_POST_CHUNK_MAX each) on
+// one keep-alive connection: each POST fits inside a window and its per-chunk
+// reply slides the window for the next -- same proven pattern as hex-GET, but
+// with no 2x hex overhead and ~10x larger chunks.
+//
+#define OTA_POST_CHUNK_MAX  8192u            // reject a POST body larger than this (< TCP window)
+
+static void    *g_pPostConn;                         // owning POST connection (this chunk)
+static bool     g_bChunkDup;                         // this POST re-sends an already-applied seq
+static bool     g_bChunkLast;                        // this POST carries the final image bytes
+#endif
 
 //*****************************************************************************
 //
@@ -533,39 +551,254 @@ WebPlatformOtaChunkCGI(int32_t iIndex, int32_t i32NumParams,
 }
 
 #if LWIP_HTTPD_SUPPORT_POST
-// Stub implementations (disabled; CC35x1 reverted to hex-GET for OTA).
-// These are referenced by httpd.c but POST is not used in the UI.
+//*****************************************************************************
+//
+// Streaming binary-POST OTA (CC35x1's fast path).  The Tools page uploads the
+// signed vendor image as ONE raw POST body to /fwupload; the lwIP httpd hands us
+// the body pbuf-by-pbuf, in order, as it arrives off TCP -- no hex expansion and
+// no per-chunk request/response round trips, so the image streams at line rate
+// straight into psa_fwu_write() (vs ~2700 hex GETs before).  We reuse the same
+// OtaPrepareTarget / OtaFeed / OtaFinalize staging core as the legacy chunk CGI.
+//
+// The three callbacks below are the app hooks the httpd calls (they are global
+// symbols, not CGI-table entries).  Only /fwupload is accepted; a single upload
+// is in flight at a time (state is file-global), tracked by g_pPostConn.
+//
+//*****************************************************************************
 
-err_t httpd_post_begin(void *connection, const char *uri,
-                       const char *http_request, u16_t http_request_len,
-                       int content_len, char *response_uri, u16_t response_uri_len,
-                       u8_t *post_auto_wnd)
+//
+// OtaUriQueryU32 - read an unsigned decimal query parameter (e.g. "seq") from a
+// request URI like "/fwupload?seq=5&last=0".  Returns true and *pui32Out on hit.
+//
+static bool
+OtaUriQueryU32(const char *pcUri, const char *pcKey, uint32_t *pui32Out)
 {
-    (void)connection;
-    (void)uri;
+    const char *p = strstr(pcUri, pcKey);
+    if(p == NULL)
+    {
+        return(false);
+    }
+    p += strlen(pcKey);                 // step past "seq=" / "last="
+    *pui32Out = OtaStrToUl(p);
+    return(true);
+}
+
+//
+// httpd_post_begin - one chunk of the chunked binary upload arrived.  The image
+// is POSTed as many small binary bodies to /fwupload?seq=N&last=L over a single
+// keep-alive connection; each POST is <= one TCP window and its reply flushes the
+// window for the next (the pattern hex-GET uses, which this stack needs -- a
+// single large body stalls at one window).  seq==0 resets state and prepares the
+// slot; each body then feeds OtaFeed inline (small enough that tcpip_thread is
+// free again before the next chunk).  On denial we name the tiny ACK page.
+//
+err_t
+httpd_post_begin(void *connection, const char *uri, const char *http_request,
+                 u16_t http_request_len, int content_len, char *response_uri,
+                 u16_t response_uri_len, u8_t *post_auto_wnd)
+{
+    uint32_t ui32Seq = 0, ui32Last = 0;
+
     (void)http_request;
     (void)http_request_len;
-    (void)content_len;
-    (void)response_uri;
-    (void)response_uri_len;
-    (void)post_auto_wnd;
-    return ERR_VAL;
+
+    // Match the path irrespective of the ?seq=..&last=.. query suffix.
+    if((uri == NULL) || (strncmp(uri, "/fwupload", 9) != 0))
+    {
+        return(ERR_VAL);    // not our endpoint -> httpd handles it normally
+    }
+
+    // Automatic receive window: each chunk fits one window, and the per-chunk
+    // response flushes the window update for the next chunk.
+    *post_auto_wnd = 1;
+
+    if((content_len <= 0) || ((uint32_t)content_len > OTA_POST_CHUNK_MAX))
+    {
+        PalLog("ota(post): bad chunk length %d (max %u)\n",
+               content_len, (unsigned)OTA_POST_CHUNK_MAX);
+        strncpy(response_uri, "/otaack.txt", response_uri_len);
+        response_uri[response_uri_len - 1] = '\0';
+        return(ERR_VAL);
+    }
+
+    if(!OtaUriQueryU32(uri, "seq=", &ui32Seq))
+    {
+        strncpy(response_uri, "/otaack.txt", response_uri_len);
+        response_uri[response_uri_len - 1] = '\0';
+        return(ERR_VAL);
+    }
+    (void)OtaUriQueryU32(uri, "last=", &ui32Last);
+
+    //
+    // First chunk: reset staging state and prepare the inactive vendor slot.
+    //
+    if(ui32Seq == 0u)
+    {
+        g_szFileOffset      = 0;
+        g_bStarted          = false;
+        g_bAbort            = false;
+        g_i32NextSeq        = 0;
+        g_bOtaRebootPending = false;
+        g_ui32WrLen         = 0;
+        memset(g_pui8Manifest, 0, sizeof(g_pui8Manifest));
+
+        if(OtaPrepareTarget(&g_target) != 0)
+        {
+            g_bAbort = true;
+            PalLog("ota(post): cannot prepare a target slot\n");
+            strncpy(response_uri, "/otaack.txt", response_uri_len);
+            response_uri[response_uri_len - 1] = '\0';
+            return(ERR_VAL);
+        }
+        PalLog("ota(post): upload started -> vendor component %d\n",
+               (int)g_target);
+    }
+
+    if(g_bAbort)
+    {
+        strncpy(response_uri, "/otaack.txt", response_uri_len);
+        response_uri[response_uri_len - 1] = '\0';
+        return(ERR_VAL);
+    }
+
+    //
+    // Ordering / idempotency (same semantics as the hex-GET path): a resent chunk
+    // (seq < next) is accepted but its body discarded; a gap (seq > next) aborts.
+    //
+    if((int32_t)ui32Seq < g_i32NextSeq)
+    {
+        g_bChunkDup = true;
+    }
+    else if((int32_t)ui32Seq > g_i32NextSeq)
+    {
+        g_bAbort = true;
+        PalLog("ota(post): out-of-order chunk (got %d, want %d), aborting\n",
+               (int)ui32Seq, (int)g_i32NextSeq);
+        strncpy(response_uri, "/otaack.txt", response_uri_len);
+        response_uri[response_uri_len - 1] = '\0';
+        return(ERR_VAL);
+    }
+    else
+    {
+        g_bChunkDup = false;
+    }
+
+    g_bChunkLast = (ui32Last != 0u);
+    g_pPostConn  = connection;
+    return(ERR_OK);
 }
 
-err_t httpd_post_receive_data(void *connection, struct pbuf *p)
+//
+// httpd_post_receive_data - body bytes of the current chunk.  Feed them straight
+// into the staging core (small chunk -> quick inline psa_fwu_write), then free
+// the pbuf (httpd contract).  A duplicate/aborted chunk is drained and discarded.
+//
+err_t
+httpd_post_receive_data(void *connection, struct pbuf *p)
 {
-    (void)connection;
-    if (p != NULL) { pbuf_free(p); }
-    return ERR_VAL;
+    struct pbuf *q;
+
+    if(connection != g_pPostConn)
+    {
+        if(p != NULL) { pbuf_free(p); }
+        return(ERR_VAL);
+    }
+    if(g_bAbort || g_bChunkDup)
+    {
+        if(p != NULL) { pbuf_free(p); }     // already have these bytes (or dead)
+        return(ERR_OK);
+    }
+
+    for(q = p; q != NULL; q = q->next)
+    {
+        if(q->len > 0u)
+        {
+            psa_status_t st = OtaFeed((const uint8_t *)q->payload,
+                                      (uint32_t)q->len);
+            if(st != PSA_SUCCESS)
+            {
+                g_bAbort = true;
+                psa_fwu_cancel(g_target);
+                PalLog("ota(post): staging @%u failed (%d), aborting\n",
+                       (unsigned)g_szFileOffset, (int)st);
+                pbuf_free(p);
+                return(ERR_VAL);
+            }
+        }
+    }
+
+    pbuf_free(p);
+    return(ERR_OK);
 }
 
-void httpd_post_finished(void *connection, char *response_uri, u16_t response_uri_len)
+//
+// httpd_post_finished - the current chunk's body is complete.  A fresh chunk
+// advances the sequence and, on the last one, finalizes + installs the image.
+// Every non-final chunk returns the tiny ACK page, whose transmission flushes the
+// TCP window so the next chunk can flow.
+//
+void
+httpd_post_finished(void *connection, char *response_uri, u16_t response_uri_len)
 {
-    (void)connection;
-    (void)response_uri;
-    (void)response_uri_len;
+    const char *pcResp = "/otaack.txt";
+
+    if(connection != g_pPostConn)
+    {
+        return;
+    }
+
+    if(g_bAbort)
+    {
+        pcResp = "/otaack.txt";
+    }
+    else if(g_bChunkDup)
+    {
+        // Already applied on the first delivery; echo the same verdict.
+        pcResp = g_bChunkLast ? "/fwupdate_ok.shtml" : "/otaack.txt";
+    }
+    else
+    {
+        g_i32NextSeq++;                     // this chunk is now applied
+        if(g_bChunkLast)
+        {
+            if(OtaFinalize())
+            {
+                pcResp = "/fwupdate_ok.shtml";
+            }
+            else
+            {
+                g_bAbort = true;
+                psa_fwu_cancel(g_target);
+                pcResp = "/otaack.txt";
+            }
+        }
+        else
+        {
+            pcResp = "/otaack.txt";
+        }
+    }
+
+    strncpy(response_uri, pcResp, response_uri_len);
+    response_uri[response_uri_len - 1] = '\0';
 }
+#endif /* LWIP_HTTPD_SUPPORT_POST */
+
+//*****************************************************************************
+//
+// WebPlatformOtaUsePost - value rendered by the "otapost" SSI tag: 1 tells the
+// shared uploader (fs/tools.shtml) to stream the image as a single binary POST
+// to /fwupload (this platform's fast path) instead of the hex-GET chunk loop.
+//
+//*****************************************************************************
+uint32_t
+WebPlatformOtaUsePost(void)
+{
+#if LWIP_HTTPD_SUPPORT_POST
+    return(1u);
+#else
+    return(0u);
 #endif
+}
 
 //*****************************************************************************
 //
