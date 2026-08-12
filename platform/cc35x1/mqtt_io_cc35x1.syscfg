@@ -88,8 +88,7 @@ UART21.uart.dmaRxChannel.$assign = "DMA_CH3";
 UART22.$name = "CONFIG_UART2_1";
 
 const ActionReq = scripting.addModule("/ti/vendorutils/Action/ActionReq", {}, false);
-ActionReq.ota                          = true;
-ActionReq.primary_vendor_image_version = "0.0.17.0";
+ActionReq.ota   = true;
 
 /**
  * Pinmux solution for unlocked pins/peripherals. This ensures that minor changes to the automatic solver in a future

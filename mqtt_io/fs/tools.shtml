@@ -268,9 +268,13 @@ async function fwUploadPost(buf, total) {
     var url = '/fwupload?seq=' + seq + '&last=' + last;
     var r = await fwPostChunk(url, buf.subarray(offset, offset + len), last === 1);
     if(!r.ok) {
-      // A drop on the final chunk can mean the device already committed and is
-      // rebooting — the update may in fact have succeeded.
-      if(last) {
+      if(r.fatal) {
+        // The device answered and definitively REJECTED the image (bad signature/
+        // integrity) — it kept its firmware; resending identical bytes won't help.
+        fwStatus('Upload failed: ' + r.reason + '. Device kept its firmware.');
+      } else if(last) {
+        // A network drop on the final chunk can mean the device already committed
+        // and is rebooting — the update may in fact have succeeded.
         fwStatus('Connection lost near the end — if the device reboots it may have applied; check the running version.');
       } else {
         fwStatus('Upload failed: ' + r.reason + ' (chunk ' + seq + '). Device kept its firmware; retry.');

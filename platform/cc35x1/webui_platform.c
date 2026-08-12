@@ -573,14 +573,21 @@ WebPlatformOtaChunkCGI(int32_t iIndex, int32_t i32NumParams,
 static bool
 OtaUriQueryU32(const char *pcUri, const char *pcKey, uint32_t *pui32Out)
 {
-    const char *p = strstr(pcUri, pcKey);
-    if(p == NULL)
+    size_t      szKey = strlen(pcKey);
+    const char *p     = pcUri;
+
+    // Match the key only where it starts a real query parameter (right after '?'
+    // or '&'), so "seq=" can't be captured from inside e.g. "myseq=".
+    while((p = strstr(p, pcKey)) != NULL)
     {
-        return(false);
+        if((p != pcUri) && ((p[-1] == '?') || (p[-1] == '&')))
+        {
+            *pui32Out = OtaStrToUl(p + szKey);
+            return(true);
+        }
+        p += szKey;
     }
-    p += strlen(pcKey);                 // step past "seq=" / "last="
-    *pui32Out = OtaStrToUl(p);
-    return(true);
+    return(false);
 }
 
 //
@@ -602,8 +609,12 @@ httpd_post_begin(void *connection, const char *uri, const char *http_request,
     (void)http_request;
     (void)http_request_len;
 
-    // Match the path irrespective of the ?seq=..&last=.. query suffix.
-    if((uri == NULL) || (strncmp(uri, "/fwupload", 9) != 0))
+    // Match exactly "/fwupload" plus an optional ?query -- NOT a longer path like
+    // "/fwuploadX" (a stray POST there with seq=0 would reset staging + churn the
+    // PSA slot).  uri[9] is safe to read: strncmp confirmed 9 chars, so [9] is at
+    // worst the terminating '\0'.
+    if((uri == NULL) || (strncmp(uri, "/fwupload", 9) != 0) ||
+       ((uri[9] != '\0') && (uri[9] != '?')))
     {
         return(ERR_VAL);    // not our endpoint -> httpd handles it normally
     }
@@ -681,6 +692,22 @@ httpd_post_begin(void *connection, const char *uri, const char *http_request,
     else
     {
         g_bChunkDup = false;
+    }
+
+    //
+    // Cumulative image-size cap (a fresh chunk only): the accumulated file must
+    // fit the vendor slot.  The hex-GET path relied on psa_fwu_write to fail past
+    // the slot end; refuse up front here instead of streaming into a doomed write.
+    //
+    if(!g_bChunkDup &&
+       (((uint64_t)g_szFileOffset + (uint32_t)content_len) > g_ui32OtaMaxBytes))
+    {
+        g_bAbort = true;
+        PalLog("ota(post): image over slot cap (%u+%d > %u), aborting\n",
+               (unsigned)g_szFileOffset, content_len, (unsigned)g_ui32OtaMaxBytes);
+        strncpy(response_uri, "/otaack.txt", response_uri_len);
+        response_uri[response_uri_len - 1] = '\0';
+        return(ERR_VAL);
     }
 
     g_bChunkLast = (ui32Last != 0u);
