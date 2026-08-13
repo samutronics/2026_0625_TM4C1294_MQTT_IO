@@ -753,22 +753,6 @@ NetWifiSwitchToSta(const char *pcSsid, const char *pcPass)
 
 //*****************************************************************************
 //
-// NetWifiConnect - legacy one-shot: start the driver and bring the STA up.
-// Retained for callers that just want "start Wi-Fi and join this AP".
-//
-//*****************************************************************************
-int
-NetWifiConnect(const char *pcSsid, const char *pcPass)
-{
-    if(NetWifiDriverStart() != 0)
-    {
-        return(-1);
-    }
-    return(NetWifiStaUp(pcSsid, pcPass));
-}
-
-//*****************************************************************************
-//
 // NetWifiReconnect - re-issue the association without re-initialising the NWP
 // or STA role.  Used by the connect-retry loop when DHCP does not complete.
 //

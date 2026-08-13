@@ -44,9 +44,4 @@ bool WifiStoreSave(const char *pcSsid, const char *pcPass);
 //
 void WifiStoreClear(void);
 
-//
-// True if a valid credentials record is currently stored.
-//
-bool WifiStoreHas(void);
-
 #endif // WIFI_STORE_H

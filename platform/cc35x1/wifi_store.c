@@ -144,16 +144,3 @@ WifiStoreClear(void)
         PalLog("wifi: credentials cleared\n");
     }
 }
-
-//*****************************************************************************
-//
-// WifiStoreHas - true when a valid credentials record is stored.
-//
-//*****************************************************************************
-bool
-WifiStoreHas(void)
-{
-    char pcSsid[WIFI_SSID_MAX + 1];
-
-    return(WifiStoreLoad(pcSsid, NULL));
-}

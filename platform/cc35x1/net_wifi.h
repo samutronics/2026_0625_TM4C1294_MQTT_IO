@@ -17,20 +17,13 @@
 
 //
 // Bring up the lwIP TCP/IP thread (tcpip_init) and block until it is ready.
-// Call once, before NetWifiConnect().
+// Call once, before bringing any role up.
 //
 void NetWifiInit(void);
 
 //
-// Register the STA netif, start the NWP, and issue an asynchronous connect to
-// the given open/WPA2 AP.  A NULL or empty password selects an open network.
-// Returns 0 if the connect request was issued.
-//
-int NetWifiConnect(const char *pcSsid, const char *pcPass);
-
-//
 // Re-issue the association (no NWP/role re-init) after a failed/dropped connect.
-// NetWifiConnect() must have been called once first.  Returns 0 if the connect
+// NetWifiStaUp() must have been called once first.  Returns 0 if the connect
 // request was issued.
 //
 int NetWifiReconnect(const char *pcSsid, const char *pcPass);
