@@ -49,8 +49,10 @@ _Static_assert(CFG_IO_NAMES_ADDR + sizeof(tIONames) <= CFG_OUTCFG_ADDR,
 _Static_assert(CFG_OUTCFG_ADDR + sizeof(tOutputConfig) <= CFG_ROOMCFG_ADDR,
                "tOutputConfig overflows into the ROOM record — add a NEW record, "
                "never grow OUTC past CFG_ROOMCFG_ADDR");
-_Static_assert(CFG_ROOMCFG_ADDR + sizeof(tRoomConfig) <= CFG_EEPROM_SIZE,
-               "tRoomConfig overflows the end of EEPROM");
+_Static_assert(CFG_ROOMCFG_ADDR + sizeof(tRoomConfig) <= CFG_WIFI_EEPROM_ADDR,
+               "tRoomConfig overflows into the WIFI record");
+_Static_assert(CFG_WIFI_EEPROM_ADDR <= CFG_EEPROM_SIZE,
+               "WIFI record base past the end of EEPROM");
 //
 // Targeted per-name EEPROM writes (ConfigNameSet) require the name stride and the
 // names payload base to be 4-byte aligned, or PalStorageWrite faults/corrupts.

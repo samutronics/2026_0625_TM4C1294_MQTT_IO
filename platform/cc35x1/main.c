@@ -25,6 +25,7 @@
 
 #include <stdbool.h>
 #include <stdint.h>
+#include <string.h>
 
 /* RTOS */
 #include <FreeRTOS.h>
@@ -37,8 +38,8 @@
 
 /* Platform */
 #include "net_wifi.h"
+#include "wifi_store.h"
 #include "pal_log.h"
-#include "wifi_credentials.h"   /* local, git-ignored: WIFI_SSID / WIFI_PASS */
 
 /* Portable application layer (shared with the TM4C build) */
 #include "config.h"
@@ -55,14 +56,17 @@
 #include "webui_platform.h"
 
 //
-// Wi-Fi station credentials (WIFI_SSID / WIFI_PASS) come from the local,
-// git-ignored wifi_credentials.h - create it from wifi_credentials.example.h so
-// real credentials are never committed.  (Provisioning/config-backed credentials
-// are a later step; the shared config carries the MQTT broker, not Wi-Fi, since
-// the TM4C build is wired for Ethernet.)
+// Optional compile-time Wi-Fi station credentials for bench/dev use.  If a local
+// (git-ignored) wifi_credentials.h exists and defines WIFI_SSID / WIFI_PASS, they
+// seed the credentials store on first boot so a freshly-flashed dev board joins
+// immediately.  In the field the credentials come from SoftAP provisioning (see
+// wifi_store), so the header is entirely optional: a fresh checkout without it
+// simply boots into the "MQTT-IO-Setup" access point for provisioning.
 //
-#if !defined(WIFI_SSID) || !defined(WIFI_PASS)
-#error "Create platform/cc35x1/wifi_credentials.h from wifi_credentials.example.h"
+#if defined(__has_include)
+#  if __has_include("wifi_credentials.h")
+#    include "wifi_credentials.h"
+#  endif
 #endif
 
 //
@@ -79,6 +83,7 @@
 #define WIFI_ATTEMPT_MS   12000U    // per-attempt wait for a DHCP lease
 #define WIFI_MAX_ATTEMPTS     3U    // association attempts during bring-up
 #define WIFI_RETRY_MS     15000U    // background reconnect interval (no IP yet)
+#define WIFI_FALLBACK_MS  45000U    // no-IP time in STA before falling back to AP
 
 //
 // Periodic liveness heartbeat.  The app otherwise logs only on state changes,
@@ -103,6 +108,11 @@ mainThread(void *pvArg0)
     uint32_t ui32HeartbeatMs = 0;
     bool     bMQTTStarted = false;
     bool     bTrialChecked = false;
+    char     pcSsid[WIFI_SSID_MAX + 1];
+    char     pcPass[WIFI_PASS_MAX + 1];
+    bool     bHaveCreds;
+    bool     bStaHadIp = false;    // a working STA link has been seen this session
+    uint32_t ui32NoIpMs = 0;       // time in STA with no IP (drives AP fallback)
 
     (void)pvArg0;
 
@@ -124,17 +134,35 @@ mainThread(void *pvArg0)
     WebPlatformOtaInit();
 
     //
-    // Start Wi-Fi and connect to the AP as a station; DHCP starts on link-up.
+    // Start the NWP, then bring up Wi-Fi.  Credentials come from the persistent
+    // store (filled by SoftAP provisioning); a compile-time wifi_credentials.h,
+    // if present, seeds them once for bench/dev use.  With no credentials the
+    // device brings up the open "MQTT-IO-Setup" AP so the user can provision it.
     //
-    NetWifiConnect(WIFI_SSID, WIFI_PASS);
+    NetWifiDriverStart();
 
-    //
-    // Wait for the DHCP lease, re-issuing the association up to WIFI_MAX_ATTEMPTS
-    // times if it does not complete.  Bring-up continues regardless so a missing
-    // AP does not wedge the gateway; the tick loop keeps retrying afterwards.
-    //
+    bHaveCreds = WifiStoreLoad(pcSsid, pcPass);
+#if defined(WIFI_SSID) && defined(WIFI_PASS)
+    if(!bHaveCreds)
+    {
+        strncpy(pcSsid, WIFI_SSID, WIFI_SSID_MAX); pcSsid[WIFI_SSID_MAX] = '\0';
+        strncpy(pcPass, WIFI_PASS, WIFI_PASS_MAX); pcPass[WIFI_PASS_MAX] = '\0';
+        bHaveCreds = true;
+        PalLog("wifi: using compile-time dev credentials for '%s'\n", pcSsid);
+    }
+#endif
+
+    if(bHaveCreds)
     {
         uint32_t ui32Attempt;
+
+        //
+        // Join as a station; DHCP starts on link-up.  Wait for the lease,
+        // re-issuing the association up to WIFI_MAX_ATTEMPTS times.  If it never
+        // completes (wrong password, AP gone, device moved), fall back to the
+        // setup AP so it can be re-provisioned without JTAG.
+        //
+        NetWifiStaUp(pcSsid, pcPass);
 
         for(ui32Attempt = 1U; ui32Attempt <= WIFI_MAX_ATTEMPTS; ui32Attempt++)
         {
@@ -150,8 +178,20 @@ mainThread(void *pvArg0)
             }
             PalLog("net: no IP after attempt %u/%u, reconnecting\n",
                    (unsigned)ui32Attempt, (unsigned)WIFI_MAX_ATTEMPTS);
-            NetWifiReconnect(WIFI_SSID, WIFI_PASS);
+            NetWifiReconnect(pcSsid, pcPass);
         }
+
+        if(!NetWifiIsIpAcquired())
+        {
+            PalLog("wifi: could not join '%s'; starting setup AP\n", pcSsid);
+            NetWifiStaDown();
+            NetWifiApUp();
+        }
+    }
+    else
+    {
+        PalLog("wifi: no stored credentials; starting setup AP\n");
+        NetWifiApUp();
     }
 
     //
@@ -289,17 +329,76 @@ mainThread(void *pvArg0)
         }
 
         //
-        // Keep retrying the Wi-Fi association in the background while we have no
-        // IP, so a late/briefly-absent AP eventually connects; each retry also
-        // emits a serial diagnostic (net: connecting... / disconnected reason N).
+        // Wi-Fi provisioning requests from the setup page (the CGIs run on the
+        // tcpip_thread and only set a flag).  Apply here so the HTTP response
+        // flushes first, then switch role live - a warm reboot would wedge the
+        // NWP.  A provision updates the active credentials (pcSsid/pcPass) so the
+        // background reconnect below uses them; a forget returns to the setup AP.
         //
-        if(!NetWifiIsIpAcquired())
+        if(WebUIWifiProvisionPending(pcSsid, (int)sizeof(pcSsid),
+                                     pcPass, (int)sizeof(pcPass)))
+        {
+            vTaskDelay(pdMS_TO_TICKS(300));
+            WifiStoreSave(pcSsid, pcPass);
+            PalLog("wifi: provisioning '%s', switching to station\n", pcSsid);
+            NetWifiSwitchToSta(pcSsid, pcPass);
+            bMQTTStarted = false;   // (re)start MQTT once the new link has an IP
+            ui32RetryMs = 0;
+            bStaHadIp = false;      // arm the no-IP AP fallback for the new creds
+            ui32NoIpMs = 0;
+        }
+        else if(WebUIWifiForgetPending())
+        {
+            vTaskDelay(pdMS_TO_TICKS(300));
+            WifiStoreClear();
+            pcSsid[0] = '\0';
+            pcPass[0] = '\0';
+            PalLog("wifi: credentials forgotten, starting setup AP\n");
+            NetWifiStaDown();
+            NetWifiApUp();
+            bMQTTStarted = false;
+        }
+
+        //
+        // Station link maintenance.  In the setup AP there is nothing to retry.
+        // In station mode: on an IP, remember we have had a working link this
+        // session; with no IP, keep re-issuing the association, and - if we have
+        // NEVER acquired an IP with the current credentials (a bad password or
+        // wrong network entered at provisioning) - fall back to the setup AP after
+        // WIFI_FALLBACK_MS so it can be re-provisioned live, no power-cycle.  A
+        // link that has worked before is left to reconnect rather than dropping to
+        // AP on a transient outage.
+        //
+        if(NetWifiIsAp())
+        {
+            /* setup AP active - nothing to retry */
+        }
+        else if(NetWifiIsIpAcquired())
+        {
+            bStaHadIp = true;
+            ui32NoIpMs = 0;
+        }
+        else
         {
             ui32RetryMs += SYSTICKMS;
             if(ui32RetryMs >= WIFI_RETRY_MS)
             {
                 ui32RetryMs = 0;
-                NetWifiReconnect(WIFI_SSID, WIFI_PASS);
+                NetWifiReconnect(pcSsid, pcPass);
+            }
+
+            if(!bStaHadIp)
+            {
+                ui32NoIpMs += SYSTICKMS;
+                if(ui32NoIpMs >= WIFI_FALLBACK_MS)
+                {
+                    ui32NoIpMs = 0;
+                    PalLog("wifi: no IP for %us, falling back to setup AP\n",
+                           (unsigned)(WIFI_FALLBACK_MS / 1000U));
+                    NetWifiStaDown();
+                    NetWifiApUp();
+                    bMQTTStarted = false;
+                }
             }
         }
 

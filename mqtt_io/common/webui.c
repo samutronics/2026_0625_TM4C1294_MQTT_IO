@@ -155,6 +155,11 @@ static char *RoomCfgCGIHandler(int32_t iIndex, int32_t i32NumParams,
 //*****************************************************************************
 static int32_t SSIHandler(int32_t iIndex, char *pcInsert, int32_t iInsertLen);
 
+static char *WifiCfgCGIHandler(int32_t iIndex, int32_t i32NumParams,
+                               char *pcParam[], char *pcValue[]);
+static char *WifiForgetCGIHandler(int32_t iIndex, int32_t i32NumParams,
+                                  char *pcParam[], char *pcValue[]);
+
 #define CGI_INDEX_MQTTCFG       0
 #define CGI_INDEX_IOCFG         1
 #define CGI_INDEX_FWCHUNK       2
@@ -168,6 +173,8 @@ static int32_t SSIHandler(int32_t iIndex, char *pcInsert, int32_t iInsertLen);
 #define CGI_INDEX_COVER         10
 #define CGI_INDEX_RELAYSET      11
 #define CGI_INDEX_ROOMCFG       12
+#define CGI_INDEX_WIFICFG       13
+#define CGI_INDEX_WIFIFORGET    14
 
 static const tCGI g_psConfigCGIURIs[] =
 {
@@ -183,7 +190,9 @@ static const tCGI g_psConfigCGIURIs[] =
     { "/outcfg.cgi",      (tCGIHandler)OutCfgCGIHandler         }, // CGI_INDEX_OUTCFG
     { "/cover.cgi",       (tCGIHandler)CoverCGIHandler          }, // CGI_INDEX_COVER
     { "/relayset.cgi",    (tCGIHandler)RelaySetCGIHandler       }, // CGI_INDEX_RELAYSET
-    { "/roomcfg.cgi",     (tCGIHandler)RoomCfgCGIHandler        }  // CGI_INDEX_ROOMCFG
+    { "/roomcfg.cgi",     (tCGIHandler)RoomCfgCGIHandler        }, // CGI_INDEX_ROOMCFG
+    { "/wificfg.cgi",     (tCGIHandler)WifiCfgCGIHandler        }, // CGI_INDEX_WIFICFG
+    { "/wififorget.cgi",  (tCGIHandler)WifiForgetCGIHandler     }  // CGI_INDEX_WIFIFORGET
 };
 
 //*****************************************************************************
@@ -231,6 +240,52 @@ void WebUIRequestMqttApply(void)     { g_bStartMQTT = true; }
 bool WebUIMqttApplyPending(void)     { bool b = g_bStartMQTT;    g_bStartMQTT = false;    return(b); }
 void WebUIRequestMqttRepublish(void) { g_bRepublishMQTT = true; }
 bool WebUIMqttRepublishPending(void) { bool b = g_bRepublishMQTT; g_bRepublishMQTT = false; return(b); }
+
+//
+// Wi-Fi provisioning request state (CC35x1 SoftAP flow).  Buffers sized locally:
+// webui.c is shared and cannot include the CC35x1 wifi_store.h.  32 SSID octets
+// + NUL, 63 WPA2 passphrase chars + NUL.
+//
+#define WEBUI_WIFI_SSID_LEN  33
+#define WEBUI_WIFI_PASS_LEN  64
+static volatile bool g_bWifiProvision;
+static volatile bool g_bWifiForget;
+static char          g_pcWifiSsid[WEBUI_WIFI_SSID_LEN];
+static char          g_pcWifiPass[WEBUI_WIFI_PASS_LEN];
+
+void
+WebUIRequestWifiProvision(const char *pcSsid, const char *pcPass)
+{
+    strncpy(g_pcWifiSsid, (pcSsid != NULL) ? pcSsid : "", WEBUI_WIFI_SSID_LEN - 1);
+    g_pcWifiSsid[WEBUI_WIFI_SSID_LEN - 1] = '\0';
+    strncpy(g_pcWifiPass, (pcPass != NULL) ? pcPass : "", WEBUI_WIFI_PASS_LEN - 1);
+    g_pcWifiPass[WEBUI_WIFI_PASS_LEN - 1] = '\0';
+    g_bWifiProvision = true;
+}
+
+bool
+WebUIWifiProvisionPending(char *pcSsid, int iSsidLen, char *pcPass, int iPassLen)
+{
+    if(!g_bWifiProvision)
+    {
+        return(false);
+    }
+    if((pcSsid != NULL) && (iSsidLen > 0))
+    {
+        strncpy(pcSsid, g_pcWifiSsid, (size_t)iSsidLen - 1);
+        pcSsid[iSsidLen - 1] = '\0';
+    }
+    if((pcPass != NULL) && (iPassLen > 0))
+    {
+        strncpy(pcPass, g_pcWifiPass, (size_t)iPassLen - 1);
+        pcPass[iPassLen - 1] = '\0';
+    }
+    g_bWifiProvision = false;
+    return(true);
+}
+
+void WebUIRequestWifiForget(void) { g_bWifiForget = true; }
+bool WebUIWifiForgetPending(void) { bool b = g_bWifiForget; g_bWifiForget = false; return(b); }
 
 // ---- handlers block 1: GetStringParam, MQTTConfig, HexNibble, IOConfig ----
 //*****************************************************************************
@@ -311,6 +366,60 @@ MQTTConfigCGIHandler(int32_t iIndex, int32_t i32NumParams, char *pcParam[],
     g_bStartMQTT = true;
 
     return(DEFAULT_CGI_RESPONSE);
+}
+
+//*****************************************************************************
+//
+// CGI handler for /wificfg.cgi (CC35x1 SoftAP provisioning).  Reads the SSID and
+// passphrase entered on the setup page and raises the provisioning request; the
+// main tick persists them and switches from the setup AP to station mode.  The
+// actual switch is deferred to the tick so this response flushes first (the AP -
+// and this connection - disappears once the device joins the target network).
+//
+//*****************************************************************************
+static char *
+WifiCfgCGIHandler(int32_t iIndex, int32_t i32NumParams, char *pcParam[],
+                  char *pcValue[])
+{
+    char pcSsid[WEBUI_WIFI_SSID_LEN];
+    char pcPass[WEBUI_WIFI_PASS_LEN];
+
+    (void)iIndex;
+
+    pcSsid[0] = '\0';
+    pcPass[0] = '\0';
+    GetStringParam("ssid", pcParam, pcValue, i32NumParams, pcSsid,
+                   WEBUI_WIFI_SSID_LEN);
+    GetStringParam("pass", pcParam, pcValue, i32NumParams, pcPass,
+                   WEBUI_WIFI_PASS_LEN);
+
+    if(pcSsid[0] == '\0')
+    {
+        return(PARAM_ERROR_RESPONSE);
+    }
+
+    WebUIRequestWifiProvision(pcSsid, pcPass);
+    return("/wifi_ok.html");
+}
+
+//*****************************************************************************
+//
+// CGI handler for /wififorget.cgi (CC35x1).  Clears the stored credentials and
+// returns the device to the setup AP so it can be re-provisioned.  Deferred to
+// the tick for the same flush-first reason as /wificfg.cgi.
+//
+//*****************************************************************************
+static char *
+WifiForgetCGIHandler(int32_t iIndex, int32_t i32NumParams, char *pcParam[],
+                     char *pcValue[])
+{
+    (void)iIndex;
+    (void)i32NumParams;
+    (void)pcParam;
+    (void)pcValue;
+
+    WebUIRequestWifiForget();
+    return("/wifi_forget.html");
 }
 
 //*****************************************************************************

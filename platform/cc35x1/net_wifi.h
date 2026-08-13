@@ -35,6 +35,58 @@ int NetWifiConnect(const char *pcSsid, const char *pcPass);
 //
 int NetWifiReconnect(const char *pcSsid, const char *pcPass);
 
+//*****************************************************************************
+//
+// Role-aware bring-up used by the SoftAP provisioning flow.  The NWP driver is
+// started once (NetWifiDriverStart); after that the station and access-point
+// roles are brought up and torn down independently and can be switched live -
+// no reboot - which is important because a warm SYSRESETREQ reboot wedges the
+// NWP on this board (see the cc35x1-nwp-reset notes).  STA and AP are mutually
+// exclusive: only one is active at a time.
+//
+//*****************************************************************************
+
+//
+// Start the NWP once: Wlan_Start, disable the auto/fast-connect policy, wipe any
+// stored profiles, set always-active power.  Idempotent.  Returns 0 on success.
+//
+int NetWifiDriverStart(void);
+
+//
+// Bring the station role up (adding the STA netif if needed) and issue the first
+// association to the given AP.  NetWifiDriverStart() must have run.  Returns 0 if
+// the connect request was issued.
+//
+int NetWifiStaUp(const char *pcSsid, const char *pcPass);
+
+//
+// Tear the station role down: disconnect, role-down, remove the STA netif.
+//
+void NetWifiStaDown(void);
+
+//
+// Bring the open setup access point up (SSID "MQTT-IO-Setup", 192.168.4.1/24)
+// and start its DHCP server so a client can join and load the provisioning page.
+// Returns 0 on success.
+//
+int NetWifiApUp(void);
+
+//
+// Tear the access point down: stop DHCP server, role-down, remove the AP netif.
+//
+void NetWifiApDown(void);
+
+//
+// Live switch from the setup AP to the station role: NetWifiApDown() followed by
+// NetWifiStaUp().  Returns 0 if the STA connect request was issued.
+//
+int NetWifiSwitchToSta(const char *pcSsid, const char *pcPass);
+
+//
+// Non-zero while the setup access point is the active role.
+//
+int NetWifiIsAp(void);
+
 //
 // Non-zero once DHCP has assigned the STA interface an IPv4 address.
 //

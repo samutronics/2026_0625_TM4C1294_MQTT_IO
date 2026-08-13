@@ -1,0 +1,37 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Wi-Fi Setup</title>
+<style>
+body{font-family:sans-serif;max-width:440px;margin:2em auto;padding:0 1em;color:#222}
+h2{margin-bottom:.2em}
+label{display:block;margin-top:1em;font-weight:bold}
+input{width:100%;padding:.55em;margin-top:.25em;box-sizing:border-box;font-size:1em}
+button{margin-top:1.2em;padding:.6em 1.4em;font-size:1em;cursor:pointer}
+.note{color:#555;font-size:.9em}
+hr{margin:2em 0;border:none;border-top:1px solid #ccc}
+.danger button{color:#a00}
+</style>
+</head>
+<body>
+<h2>Wi-Fi Setup</h2>
+<p class="note">Enter the name and password of the Wi-Fi network this device should
+join. It will connect, and this "MQTT-IO-Setup" network will disappear.</p>
+<form method="get" action="/wificfg.cgi">
+<label for="ssid">Network name (SSID)</label>
+<input id="ssid" type="text" name="ssid" maxlength="32" autofocus required>
+<label for="pass">Password</label>
+<input id="pass" type="password" name="pass" maxlength="63">
+<p class="note">Leave the password blank for an open network.</p>
+<button type="submit">Save &amp; Connect</button>
+</form>
+<hr>
+<form class="danger" method="get" action="/wififorget.cgi"
+      onsubmit="return confirm('Forget the saved network and return to setup mode?');">
+<p class="note">Clear the saved network and go back to the setup access point.</p>
+<button type="submit">Forget Wi-Fi</button>
+</form>
+</body>
+</html>

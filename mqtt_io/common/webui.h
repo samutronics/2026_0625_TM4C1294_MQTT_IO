@@ -58,6 +58,19 @@ void WebUIRequestMqttRepublish(void);
 bool WebUIMqttRepublishPending(void);
 
 //
+// Wi-Fi provisioning (CC35x1 SoftAP setup flow).  The /wificfg.cgi and
+// /wififorget.cgi handlers raise these; the CC35x1 tick polls the *Pending()
+// accessors to persist the entered credentials and switch Wi-Fi role live.  The
+// provision accessor copies the pending SSID/passphrase into the caller's
+// buffers and clears the request.  No-ops on the TM4C build (wired Ethernet).
+//
+void WebUIRequestWifiProvision(const char *pcSsid, const char *pcPass);
+bool WebUIWifiProvisionPending(char *pcSsid, int iSsidLen,
+                               char *pcPass, int iPassLen);
+void WebUIRequestWifiForget(void);
+bool WebUIWifiForgetPending(void);
+
+//
 // Platform-provided OTA chunk CGI (/fwchunk.cgi).  TM4C programs internal flash
 // (its former FwChunkCGIHandler); the CC35x1 stub reports "unsupported" (OTA
 // there is PSA FWU, out of scope for this slice).  Legacy signature kept so the
