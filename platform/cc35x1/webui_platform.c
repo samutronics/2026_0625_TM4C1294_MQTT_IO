@@ -32,6 +32,7 @@
 
 #include "pal_log.h"
 #include "pal_sys.h"
+#include "net_wifi.h"
 #include "webui.h"
 #include "webui_platform.h"
 
@@ -916,4 +917,92 @@ WebPlatformFinalizeReboot(void)
         psa_fwu_request_reboot();   // bootloader stages TRIAL; does not return
     }
     PalReboot();                    // normal reboot (/reboot.cgi, factory reset)
+}
+
+//*****************************************************************************
+//
+// WebPlatformWifiScanOptions - render the setup page's SSID dropdown from the
+// cached Wi-Fi scan (net_wifi).  Emits "<option>SSID</option>" per network, the
+// SSID HTML-escaped, appending only whole options that fit iInsertLen.  The
+// "wifiopts" SSI tag in the shared webui.c calls this; the scan is refreshed by
+// NetWifiScanCache() just before the setup AP comes up.
+//
+//*****************************************************************************
+void
+WebPlatformWifiScanOptions(char *pcInsert, int iInsertLen)
+{
+    int iCount = NetWifiScanCount();
+    int iPos   = 0;
+    int i;
+
+    if((pcInsert == NULL) || (iInsertLen <= 0))
+    {
+        return;
+    }
+    pcInsert[0] = '\0';
+
+    for(i = 0; i < iCount; i++)
+    {
+        char        pcSsid[33];              // WLAN_SSID_MAX_LENGTH + 1
+        char        pcEsc[33 * 6];           // worst case: every char -> "&quot;"
+        int         iEsc = 0;
+        int         iNeed;
+        const char *p;
+
+        if(!NetWifiScanGet(i, pcSsid, (int)sizeof(pcSsid), NULL))
+        {
+            continue;
+        }
+
+        //
+        // HTML-escape the SSID.  <option>TEXT</option> with no value attribute
+        // submits TEXT verbatim, so escaping the text is sufficient (and required:
+        // an SSID may legally contain & < > " ').
+        //
+        for(p = pcSsid; *p != '\0'; p++)
+        {
+            const char *pcRep;
+            int         iRepLen;
+
+            switch(*p)
+            {
+                case '&':  pcRep = "&amp;";  break;
+                case '<':  pcRep = "&lt;";   break;
+                case '>':  pcRep = "&gt;";   break;
+                case '"':  pcRep = "&quot;"; break;
+                case '\'': pcRep = "&#39;";  break;
+                default:   pcRep = NULL;     break;
+            }
+
+            iRepLen = (pcRep != NULL) ? (int)strlen(pcRep) : 1;
+            if((iEsc + iRepLen) > (int)sizeof(pcEsc))
+            {
+                break;                       // SSID too long to escape fully
+            }
+            if(pcRep != NULL)
+            {
+                memcpy(&pcEsc[iEsc], pcRep, (size_t)iRepLen);
+            }
+            else
+            {
+                pcEsc[iEsc] = *p;
+            }
+            iEsc += iRepLen;
+        }
+
+        //
+        // Append "<option>" + escaped SSID + "</option>" only if the whole option
+        // still fits (leaving room for the terminating NUL).
+        //
+        iNeed = 8 + iEsc + 9;                // strlen("<option>") + esc + "</option>"
+        if((iPos + iNeed) >= (iInsertLen - 1))
+        {
+            break;
+        }
+        memcpy(&pcInsert[iPos], "<option>", 8);       iPos += 8;
+        memcpy(&pcInsert[iPos], pcEsc, (size_t)iEsc); iPos += iEsc;
+        memcpy(&pcInsert[iPos], "</option>", 9);      iPos += 9;
+    }
+
+    pcInsert[iPos] = '\0';
 }

@@ -78,6 +78,7 @@
 #define SSI_INDEX_SHROOMS   27
 #define SSI_INDEX_OTAMAX    28
 #define SSI_INDEX_OTAPOST   29
+#define SSI_INDEX_WIFIOPTS  30
 
 static const char *g_pcConfigSSITags[] =
 {
@@ -110,7 +111,8 @@ static const char *g_pcConfigSSITags[] =
     "outrooms",      // SSI_INDEX_OUTROOMS  — room index per output (comma list)
     "shrooms",       // SSI_INDEX_SHROOMS   — room index per defined shutter (comma list)
     "otamax",        // SSI_INDEX_OTAMAX    — max OTA image size (bytes), per platform
-    "otapost"        // SSI_INDEX_OTAPOST   — 1: upload via streaming POST, 0: hex-GET
+    "otapost",       // SSI_INDEX_OTAPOST   — 1: upload via streaming POST, 0: hex-GET
+    "wifiopts"       // SSI_INDEX_WIFIOPTS  — setup-page SSID dropdown <option>s (CC35x1)
 };
 
 //*****************************************************************************
@@ -1664,6 +1666,15 @@ SSIHandler(int32_t iIndex, char *pcInsert, int32_t iInsertLen)
             //
             usnprintf(pcInsert, iInsertLen, "%u",
                       (unsigned)WebPlatformOtaUsePost());
+            break;
+
+        case SSI_INDEX_WIFIOPTS:
+            //
+            // SSID dropdown for the Wi-Fi setup page.  The list of nearby networks
+            // is platform-specific (CC35x1 renders its cached scan; TM4C has no
+            // Wi-Fi and returns nothing), so it comes from the platform seam.
+            //
+            WebPlatformWifiScanOptions(pcInsert, iInsertLen);
             break;
 
         default:

@@ -8,7 +8,7 @@
 body{font-family:sans-serif;max-width:440px;margin:2em auto;padding:0 1em;color:#222}
 h2{margin-bottom:.2em}
 label{display:block;margin-top:1em;font-weight:bold}
-input{width:100%;padding:.55em;margin-top:.25em;box-sizing:border-box;font-size:1em}
+input,select{width:100%;padding:.55em;margin-top:.25em;box-sizing:border-box;font-size:1em}
 button{margin-top:1.2em;padding:.6em 1.4em;font-size:1em;cursor:pointer}
 .note{color:#555;font-size:.9em}
 hr{margin:2em 0;border:none;border-top:1px solid #ccc}
@@ -17,11 +17,17 @@ hr{margin:2em 0;border:none;border-top:1px solid #ccc}
 </head>
 <body>
 <h2>Wi-Fi Setup</h2>
-<p class="note">Enter the name and password of the Wi-Fi network this device should
-join. It will connect, and this "MQTT-IO-Setup" network will disappear.</p>
+<p class="note">Choose the Wi-Fi network this device should join, or type its name.
+It will connect, and this "MQTT-IO-Setup" network will disappear.</p>
 <form method="get" action="/wificfg.cgi">
+<label for="pick">Detected networks</label>
+<select id="pick" onchange="if(this.value){document.getElementById('ssid').value=this.value;}">
+<option value="">-- select a network --</option>
+<!--#wifiopts-->
+</select>
 <label for="ssid">Network name (SSID)</label>
 <input id="ssid" type="text" name="ssid" maxlength="32" autofocus required>
+<p class="note">Pick from the list above, or type the name (e.g. for a hidden network).</p>
 <label for="pass">Password</label>
 <input id="pass" type="password" name="pass" maxlength="63">
 <p class="note">Leave the password blank for an open network.</p>

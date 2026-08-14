@@ -185,13 +185,14 @@ mainThread(void *pvArg0)
         if(!NetWifiIsIpAcquired())
         {
             PalLog("wifi: could not join '%s'; starting setup AP\n", pcSsid);
-            NetWifiStaDown();
+            NetWifiScanCache();     // scan (STA role) + drop STA, ready for AP
             NetWifiApUp();
         }
     }
     else
     {
         PalLog("wifi: no stored credentials; starting setup AP\n");
+        NetWifiScanCache();         // scan (STA role) + drop STA, ready for AP
         NetWifiApUp();
     }
 
@@ -355,7 +356,7 @@ mainThread(void *pvArg0)
             pcSsid[0] = '\0';
             pcPass[0] = '\0';
             PalLog("wifi: credentials forgotten, starting setup AP\n");
-            NetWifiStaDown();
+            NetWifiScanCache();     // scan (STA role) + drop STA, ready for AP
             NetWifiApUp();
             bMQTTStarted = false;
         }
@@ -409,7 +410,7 @@ mainThread(void *pvArg0)
                     bNoIpTiming = false;
                     PalLog("wifi: no IP for %us, falling back to setup AP\n",
                            (unsigned)(WIFI_FALLBACK_MS / 1000U));
-                    NetWifiStaDown();
+                    NetWifiScanCache(); // scan (STA role) + drop STA, ready for AP
                     NetWifiApUp();
                     bMQTTStarted = false;
                 }

@@ -14,6 +14,7 @@
 #define NET_WIFI_H
 
 #include <stdint.h>
+#include <stdbool.h>
 
 //
 // Bring up the lwIP TCP/IP thread (tcpip_init) and block until it is ready.
@@ -79,6 +80,17 @@ int NetWifiSwitchToSta(const char *pcSsid, const char *pcPass);
 // Non-zero while the setup access point is the active role.
 //
 int NetWifiIsAp(void);
+
+//
+// Provisioning scan support.  NetWifiScanCache() refreshes the cached SSID list
+// (brings the STA role up, scans, caches, drops the role) and must be called
+// before NetWifiApUp(), since scanning needs the station role.  The web UI reads
+// the cache back through NetWifiScanCount()/NetWifiScanGet() to populate the
+// wifi.shtml SSID dropdown.  Entries are ordered strongest-signal first.
+//
+void NetWifiScanCache(void);
+int  NetWifiScanCount(void);
+bool NetWifiScanGet(int iIndex, char *pcSsid, int iSsidLen, int8_t *pi8Rssi);
 
 //
 // Non-zero once DHCP has assigned the STA interface an IPv4 address.

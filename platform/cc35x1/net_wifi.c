@@ -88,6 +88,25 @@ static struct dhcp  g_sStaDhcp;
 static volatile int g_iIpAcquired;
 
 //
+// Cached Wi-Fi scan results for the provisioning page.  A scan is issued (STA
+// role) just before the setup AP comes up - scanning needs the station role,
+// which is torn down before the AP starts - and the result event fills this
+// cache, which the wifi.shtml SSID dropdown renders.  Entries are deduplicated
+// by SSID (strongest RSSI wins) and kept sorted by RSSI descending, so the
+// closest networks render first and the 800-byte SSI insert holds the best ones.
+//
+#define SCAN_CACHE_MAX      12
+#define SCAN_WAIT_MS        8000    // bounded wait for the async scan-result event
+typedef struct
+{
+    char   pcSsid[WLAN_SSID_MAX_LENGTH + 1];
+    int8_t i8Rssi;
+} tScanEntry;
+static tScanEntry    g_sScanCache[SCAN_CACHE_MAX];
+static int           g_iScanCount;
+static volatile bool g_bScanDone;
+
+//
 // Connection diagnostics (intentionally non-static so they can be read over the
 // debugger while the serial backchannel is unavailable): event counters plus
 // the reason/initiator of the most recent disconnect.  ReasonCode is the
@@ -335,6 +354,69 @@ NetWifiInit(void)
 
 //*****************************************************************************
 //
+// scan_cache_add - insert one scanned SSID into the RSSI-sorted cache, keeping
+// it deduplicated (a repeated SSID keeps the stronger RSSI) and bounded to the
+// SCAN_CACHE_MAX strongest.  Called from the scan-result event only.
+//
+//*****************************************************************************
+static void
+scan_cache_add(const char *pcSsid, int8_t i8Rssi)
+{
+    int i, iPos, iLast;
+
+    //
+    // Already cached?  Keep the stronger reading and we are done.  (Not re-sorted
+    // on an RSSI bump - close enough for a one-shot provisioning scan.)
+    //
+    for(i = 0; i < g_iScanCount; i++)
+    {
+        if(strcmp(g_sScanCache[i].pcSsid, pcSsid) == 0)
+        {
+            if(i8Rssi > g_sScanCache[i].i8Rssi)
+            {
+                g_sScanCache[i].i8Rssi = i8Rssi;
+            }
+            return;
+        }
+    }
+
+    //
+    // New SSID: find its RSSI-sorted slot (descending).  If the cache is full and
+    // this one is weaker than everything kept, drop it.
+    //
+    for(iPos = 0; iPos < g_iScanCount; iPos++)
+    {
+        if(i8Rssi > g_sScanCache[iPos].i8Rssi)
+        {
+            break;
+        }
+    }
+    if(iPos >= SCAN_CACHE_MAX)
+    {
+        return;
+    }
+
+    //
+    // Shift the tail down to open the slot, evicting the weakest when full.
+    //
+    iLast = (g_iScanCount < SCAN_CACHE_MAX) ? g_iScanCount : (SCAN_CACHE_MAX - 1);
+    for(i = iLast; i > iPos; i--)
+    {
+        g_sScanCache[i] = g_sScanCache[i - 1];
+    }
+
+    strncpy(g_sScanCache[iPos].pcSsid, pcSsid, WLAN_SSID_MAX_LENGTH);
+    g_sScanCache[iPos].pcSsid[WLAN_SSID_MAX_LENGTH] = '\0';
+    g_sScanCache[iPos].i8Rssi = i8Rssi;
+
+    if(g_iScanCount < SCAN_CACHE_MAX)
+    {
+        g_iScanCount++;
+    }
+}
+
+//*****************************************************************************
+//
 // WlanStackEventHandler - Wlan driver event callback (required by Wlan_Start).
 // On a successful STA connect, bring the STA netif up (which triggers DHCP via
 // link_callback).  Guarded by g_eRole so AP-mode peer events never touch the STA
@@ -391,6 +473,43 @@ WlanStackEventHandler(WlanEvent_t *psEvent)
             netif_set_link_down(&g_sStaIf);
             netif_set_down(&g_sStaIf);
             UNLOCK_TCPIP_CORE();
+            break;
+        }
+
+        case WLAN_EVENT_SCAN_RESULT:
+        {
+            //
+            // Async result of the provisioning scan.  Rebuild the cache from the
+            // reported networks (skip hidden/empty SSIDs) and signal the waiter.
+            // Touches no netif, so it needs neither the role guard nor the lock.
+            //
+            WlanEventScanResult_t *psScan = &psEvent->Data.ScanResult;
+            uint32_t ui32N = psScan->NetworkListResultLen;
+            uint32_t i;
+
+            if(ui32N > WLAN_MAX_SCAN_COUNT)
+            {
+                ui32N = WLAN_MAX_SCAN_COUNT;
+            }
+
+            g_iScanCount = 0;
+            for(i = 0; i < ui32N; i++)
+            {
+                WlanNetworkEntry_t *psE = &psScan->NetworkListResult[i];
+                char pcSsid[WLAN_SSID_MAX_LENGTH + 1];
+                int  iLen = (int)psE->SsidLen;
+
+                if((iLen <= 0) || (iLen > WLAN_SSID_MAX_LENGTH))
+                {
+                    continue;               // hidden or malformed
+                }
+                memcpy(pcSsid, psE->Ssid, (size_t)iLen);
+                pcSsid[iLen] = '\0';
+                scan_cache_add(pcSsid, psE->Rssi);
+            }
+
+            g_bScanDone = true;
+            PalLog("net: scan found %d network(s)\n", g_iScanCount);
             break;
         }
 
@@ -749,6 +868,91 @@ NetWifiSwitchToSta(const char *pcSsid, const char *pcPass)
 {
     NetWifiApDown();
     return(NetWifiStaUp(pcSsid, pcPass));
+}
+
+//*****************************************************************************
+//
+// NetWifiScanCache - refresh the cached SSID list for the provisioning page.
+// Scanning needs the station role, which is torn down before the setup AP comes
+// up, so this brings the STA role up (if not already), issues an asynchronous
+// Wlan_Scan, waits (bounded by SCAN_WAIT_MS) for WLAN_EVENT_SCAN_RESULT to fill
+// the cache, then drops the STA role so the caller can NetWifiApUp().  Best
+// effort: on any failure the cache is left as-is and the page falls back to
+// manual SSID entry.  Call from the app task (it blocks via sys_msleep).
+//
+//*****************************************************************************
+void
+NetWifiScanCache(void)
+{
+    scanCommon_t sScan;
+    int          iWaited;
+    int          iRc;
+
+    if(net_sta_role_up() != 0)
+    {
+        PalLog("net: scan skipped (STA role up failed)\n");
+        return;
+    }
+
+    g_bScanDone = false;
+
+    memset(&sScan, 0, sizeof(sScan));
+    sScan.Band = BAND_SEL_BOTH;             // list 2.4 GHz and 5 GHz networks
+
+    iRc = Wlan_Scan(WLAN_ROLE_STA, &sScan, (unsigned char)WLAN_MAX_SCAN_COUNT);
+    if(iRc < 0)
+    {
+        PalLog("net: Wlan_Scan failed (%d)\n", iRc);
+        NetWifiStaDown();
+        return;
+    }
+
+    for(iWaited = 0; !g_bScanDone && (iWaited < SCAN_WAIT_MS); iWaited += 100)
+    {
+        sys_msleep(100);
+    }
+    if(!g_bScanDone)
+    {
+        PalLog("net: scan timed out\n");
+    }
+
+    //
+    // Drop the STA role we brought up (or that the failed connect left up); the
+    // caller brings the AP up next, and the two roles are mutually exclusive.
+    //
+    NetWifiStaDown();
+}
+
+//*****************************************************************************
+//
+// NetWifiScanCount / NetWifiScanGet - read back the cached provisioning scan.
+// NetWifiScanGet copies entry iIndex's SSID (NUL-terminated, truncated to
+// iSsidLen) and, if pi8Rssi is non-NULL, its RSSI.  Returns false for an
+// out-of-range index.  Entries are ordered strongest-RSSI first.
+//
+//*****************************************************************************
+int
+NetWifiScanCount(void)
+{
+    return(g_iScanCount);
+}
+
+bool
+NetWifiScanGet(int iIndex, char *pcSsid, int iSsidLen, int8_t *pi8Rssi)
+{
+    if((iIndex < 0) || (iIndex >= g_iScanCount) ||
+       (pcSsid == NULL) || (iSsidLen <= 0))
+    {
+        return(false);
+    }
+
+    strncpy(pcSsid, g_sScanCache[iIndex].pcSsid, (size_t)(iSsidLen - 1));
+    pcSsid[iSsidLen - 1] = '\0';
+    if(pi8Rssi != NULL)
+    {
+        *pi8Rssi = g_sScanCache[iIndex].i8Rssi;
+    }
+    return(true);
 }
 
 //*****************************************************************************

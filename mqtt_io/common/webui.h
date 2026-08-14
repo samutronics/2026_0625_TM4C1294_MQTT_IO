@@ -93,6 +93,14 @@ extern uint32_t WebPlatformOtaMaxBytes(void);
 //
 extern uint32_t WebPlatformOtaUsePost(void);
 
+//
+// Render the setup page's SSID dropdown, emitted by the "wifiopts" SSI tag as a
+// run of <option> elements (already HTML-escaped, truncated to iInsertLen).  The
+// CC35x1 build fills it from its cached Wi-Fi scan; the TM4C build (wired
+// Ethernet, no scan) writes an empty string.  Always NUL-terminates pcInsert.
+//
+extern void WebPlatformWifiScanOptions(char *pcInsert, int iInsertLen);
+
 #ifdef __cplusplus
 }
 #endif
