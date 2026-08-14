@@ -111,8 +111,9 @@ mainThread(void *pvArg0)
     char     pcSsid[WIFI_SSID_MAX + 1];
     char     pcPass[WIFI_PASS_MAX + 1];
     bool     bHaveCreds;
-    bool     bStaHadIp = false;    // a working STA link has been seen this session
-    uint32_t ui32NoIpMs = 0;       // time in STA with no IP (drives AP fallback)
+    bool       bStaHadIp = false;  // a working STA link has been seen this session
+    bool       bNoIpTiming = false; // the no-IP -> AP fallback timer is running
+    TickType_t xNoIpStart = 0;     // wall-clock tick when the no-IP wait began
 
     (void)pvArg0;
 
@@ -345,7 +346,7 @@ mainThread(void *pvArg0)
             bMQTTStarted = false;   // (re)start MQTT once the new link has an IP
             ui32RetryMs = 0;
             bStaHadIp = false;      // arm the no-IP AP fallback for the new creds
-            ui32NoIpMs = 0;
+            bNoIpTiming = false;
         }
         else if(WebUIWifiForgetPending())
         {
@@ -376,7 +377,7 @@ mainThread(void *pvArg0)
         else if(NetWifiIsIpAcquired())
         {
             bStaHadIp = true;
-            ui32NoIpMs = 0;
+            bNoIpTiming = false;
         }
         else
         {
@@ -389,10 +390,23 @@ mainThread(void *pvArg0)
 
             if(!bStaHadIp)
             {
-                ui32NoIpMs += SYSTICKMS;
-                if(ui32NoIpMs >= WIFI_FALLBACK_MS)
+                //
+                // Time the no-IP interval in wall-clock ticks, not accumulated
+                // SYSTICKMS: a blocking Wlan retry can stall this loop so the
+                // tick-count underruns real time and the fallback fires minutes
+                // late.  xTaskGetTickCount() reflects true elapsed time and its
+                // unsigned subtraction is wrap-safe.
+                //
+                TickType_t xNow = xTaskGetTickCount();
+
+                if(!bNoIpTiming)
                 {
-                    ui32NoIpMs = 0;
+                    bNoIpTiming = true;
+                    xNoIpStart = xNow;
+                }
+                else if((xNow - xNoIpStart) >= pdMS_TO_TICKS(WIFI_FALLBACK_MS))
+                {
+                    bNoIpTiming = false;
                     PalLog("wifi: no IP for %us, falling back to setup AP\n",
                            (unsigned)(WIFI_FALLBACK_MS / 1000U));
                     NetWifiStaDown();
@@ -418,10 +432,17 @@ mainThread(void *pvArg0)
 
         //
         // Net-touching timers (SNTP UDP, MQTT keep-alive/reconnect) under lock.
+        // Only run them once DHCP has given us a route: without an IP (setup AP,
+        // or STA still associating) the MQTT reconnect attempt fails with -13
+        // (no route) every tick and spams the log, and SNTP requests cannot be
+        // sent either.  MQTT/SNTP resume automatically when the lease arrives.
         //
-        LOCK_TCPIP_CORE();
-        SntpTick(SYSTICKMS);
-        MQTTAppTick(SYSTICKMS);
-        UNLOCK_TCPIP_CORE();
+        if(NetWifiIsIpAcquired())
+        {
+            LOCK_TCPIP_CORE();
+            SntpTick(SYSTICKMS);
+            MQTTAppTick(SYSTICKMS);
+            UNLOCK_TCPIP_CORE();
+        }
     }
 }
