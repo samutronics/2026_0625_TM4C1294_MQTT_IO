@@ -79,6 +79,7 @@
 #define SSI_INDEX_OTAMAX    28
 #define SSI_INDEX_OTAPOST   29
 #define SSI_INDEX_WIFIOPTS  30
+#define SSI_INDEX_WIFITAB   31
 
 static const char *g_pcConfigSSITags[] =
 {
@@ -112,7 +113,8 @@ static const char *g_pcConfigSSITags[] =
     "shrooms",       // SSI_INDEX_SHROOMS   — room index per defined shutter (comma list)
     "otamax",        // SSI_INDEX_OTAMAX    — max OTA image size (bytes), per platform
     "otapost",       // SSI_INDEX_OTAPOST   — 1: upload via streaming POST, 0: hex-GET
-    "wifiopts"       // SSI_INDEX_WIFIOPTS  — setup-page SSID dropdown <option>s (CC35x1)
+    "wifiopts",      // SSI_INDEX_WIFIOPTS  — setup-page SSID dropdown <option>s (CC35x1)
+    "wifitab"        // SSI_INDEX_WIFITAB   — Settings MQTT/Wi-Fi sub-tab bar (CC35x1 only)
 };
 
 //*****************************************************************************
@@ -1675,6 +1677,16 @@ SSIHandler(int32_t iIndex, char *pcInsert, int32_t iInsertLen)
             // Wi-Fi and returns nothing), so it comes from the platform seam.
             //
             WebPlatformWifiScanOptions(pcInsert, iInsertLen);
+            break;
+
+        case SSI_INDEX_WIFITAB:
+            //
+            // Settings-page MQTT/Wi-Fi sub-tab bar, emitted only on the Wi-Fi
+            // platform (CC35x1) so the Wi-Fi provisioning pane is reachable there;
+            // the wired TM4C gets an empty string, leaving its Settings page with
+            // no sub-tabs.  Platform seam.
+            //
+            WebPlatformWifiTab(pcInsert, iInsertLen);
             break;
 
         default:

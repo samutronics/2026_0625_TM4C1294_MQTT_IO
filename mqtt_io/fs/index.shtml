@@ -59,6 +59,15 @@ main{padding:28px 24px;max-width:620px}
 .ti-note a:hover{text-decoration:underline}
 /* ── Footer ── */
 .ti-footer{margin-top:36px;padding:16px 24px;border-top:1px solid #d8d8d8;font-size:11px;color:#999;display:flex;justify-content:space-between}
+/* ── Settings sub-tabs (MQTT / Wi-Fi) ── */
+.set-subtabs{display:flex;border:1px solid #d0d0d0;border-radius:4px;overflow:hidden;margin-bottom:22px;width:max-content}
+.set-subtab{padding:7px 26px;background:#fff;border:none;border-right:1px solid #e0e0e0;font-size:12px;font-weight:700;letter-spacing:.5px;text-transform:uppercase;color:#666;cursor:pointer;font-family:inherit;transition:background .15s,color .15s}
+.set-subtab:last-child{border-right:none}
+.set-subtab.active{background:#cc0000;color:#fff}
+.set-subtab:not(.active):hover{background:#f3f3f3;color:#cc0000}
+/* ── Wi-Fi pane fields (select styled like the text inputs) ── */
+.ti-field select{width:100%;padding:8px 10px;border:1px solid #bbb;font-size:13px;font-family:inherit;color:#222;outline:none;background:#fff;transition:border-color .15s}
+.ti-field select:focus{border-color:#cc0000;box-shadow:0 0 0 2px rgba(204,0,0,.08)}
 </style>
 </head>
 <body>
@@ -87,6 +96,11 @@ main{padding:28px 24px;max-width:620px}
 </div>
 
 <main>
+
+  <!-- MQTT / Wi-Fi sub-tabs (Wi-Fi device only; empty on TM4C) -->
+  <!--#wifitab-->
+
+  <div id="set-mqtt">
   <div class="ti-card">
     <div class="ti-card-head">
       <h2>MQTT Broker Settings</h2>
@@ -181,6 +195,50 @@ main{padding:28px 24px;max-width:620px}
       </form>
     </div>
   </div>
+  </div><!-- /#set-mqtt -->
+
+  <div id="set-wifi" style="display:none">
+    <div class="ti-card">
+      <div class="ti-card-head"><h2>Wi-Fi Network</h2></div>
+      <div class="ti-card-body">
+        <form method="get" action="/wificfg.cgi">
+          <div class="ti-field">
+            <label>Detected Networks</label>
+            <select id="wpick" onchange="if(this.value){document.getElementById('wssid').value=this.value;}">
+              <option value="">&mdash; select a network &mdash;</option>
+              <!--#wifiopts-->
+            </select>
+          </div>
+          <div class="ti-field">
+            <label>Network Name (SSID)</label>
+            <input id="wssid" type="text" name="ssid" maxlength="32" autocomplete="off" required>
+          </div>
+          <div class="ti-field">
+            <label>Password</label>
+            <input id="wpass" type="password" name="pass" maxlength="63" autocomplete="off">
+          </div>
+          <div class="ti-btn-row">
+            <button type="submit" class="ti-btn">Save &amp; Connect</button>
+          </div>
+        </form>
+        <div class="ti-note">Pick a network from the list or type its name (e.g. a hidden
+          network). Leave the password blank for an open network. After you save, the device
+          joins that network and the "MQTT-IO-Setup" access point disappears.</div>
+      </div>
+    </div>
+
+    <div class="ti-card" style="margin-top:20px">
+      <div class="ti-card-head"><h2>Forget Wi-Fi</h2></div>
+      <div class="ti-card-body">
+        <form method="get" action="/wififorget.cgi"
+              onsubmit="return confirm('Forget the saved network and return to setup mode?');">
+          <p style="font-size:13px;color:#555;margin-bottom:14px">Clear the saved network and
+            bring the &quot;MQTT-IO-Setup&quot; access point back up for re-provisioning.</p>
+          <button type="submit" class="ti-btn" style="background:#555">Forget Wi-Fi</button>
+        </form>
+      </div>
+    </div>
+  </div><!-- /#set-wifi -->
 
   <div class="ti-card" style="border-color:#cc0000;margin-top:20px">
     <div class="ti-card-head" style="border-bottom-color:#cc0000;background:#fff8f8">
@@ -216,6 +274,17 @@ main{padding:28px 24px;max-width:620px}
 
 <script>
 (function(){var el=document.getElementById('ntptm');if(!el)return;var p=el.textContent.split(':');if(p.length!==3)return;var s=parseInt(p[0])*3600+parseInt(p[1])*60+parseInt(p[2]);if(isNaN(s))return;setInterval(function(){s=(s+1)%86400;var h=s/3600|0,m=s%3600/60|0,ss=s%60;el.textContent=(h<10?'0':'')+h+':'+(m<10?'0':'')+m+':'+(ss<10?'0':'')+ss;},1000);})();
+// Settings sub-tab switch (MQTT / Wi-Fi).  The sub-tab bar only renders on the
+// Wi-Fi platform, so on the TM4C these buttons never exist and this is inert.
+function showSet(which){
+  var mq=document.getElementById('set-mqtt'),wf=document.getElementById('set-wifi');
+  var bm=document.getElementById('st-mqtt'),bw=document.getElementById('st-wifi');
+  var wifi=(which==='wifi');
+  if(mq)mq.style.display=wifi?'none':'';
+  if(wf)wf.style.display=wifi?'':'none';
+  if(bm)bm.classList.toggle('active',!wifi);
+  if(bw)bw.classList.toggle('active',wifi);
+}
 </script>
 </body>
 </html>

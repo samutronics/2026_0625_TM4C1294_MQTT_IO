@@ -1006,3 +1006,34 @@ WebPlatformWifiScanOptions(char *pcInsert, int iInsertLen)
 
     pcInsert[iPos] = '\0';
 }
+
+//*****************************************************************************
+//
+// WebPlatformWifiTab - render the Settings-page MQTT/Wi-Fi sub-tab bar for the
+// "wifitab" SSI tag.  The CC35x1 is the Wi-Fi platform, so it always emits both
+// sub-tab buttons (index.shtml's showSet() JS toggles the panes); the TM4C stub
+// emits nothing, leaving its Settings page untabbed.
+//
+//*****************************************************************************
+void
+WebPlatformWifiTab(char *pcInsert, int iInsertLen)
+{
+    static const char pcBar[] =
+        "<div class=\"set-subtabs\">"
+        "<button type=\"button\" id=\"st-mqtt\" class=\"set-subtab active\" "
+        "onclick=\"showSet('mqtt')\">MQTT</button>"
+        "<button type=\"button\" id=\"st-wifi\" class=\"set-subtab\" "
+        "onclick=\"showSet('wifi')\">Wi-Fi</button>"
+        "</div>";
+
+    if((pcInsert == NULL) || (iInsertLen <= 0))
+    {
+        return;
+    }
+    if((int)sizeof(pcBar) > iInsertLen)
+    {
+        pcInsert[0] = '\0';         // will not fit (never happens: tag insert is 800)
+        return;
+    }
+    memcpy(pcInsert, pcBar, sizeof(pcBar));     // includes the NUL
+}

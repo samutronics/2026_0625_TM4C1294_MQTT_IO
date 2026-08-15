@@ -101,6 +101,15 @@ extern uint32_t WebPlatformOtaUsePost(void);
 //
 extern void WebPlatformWifiScanOptions(char *pcInsert, int iInsertLen);
 
+//
+// Render the Settings-page sub-tab bar, emitted by the "wifitab" SSI tag in
+// index.shtml.  The CC35x1 (Wi-Fi) build returns the MQTT/Wi-Fi sub-tab buttons
+// so the Wi-Fi provisioning pane is reachable; the TM4C build (wired Ethernet)
+// writes an empty string, so its Settings page keeps a single (untabbed) MQTT
+// pane.  Always NUL-terminates.
+//
+extern void WebPlatformWifiTab(char *pcInsert, int iInsertLen);
+
 #ifdef __cplusplus
 }
 #endif

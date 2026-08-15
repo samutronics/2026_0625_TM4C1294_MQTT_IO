@@ -86,7 +86,7 @@ int NetWifiIsAp(void);
 // (brings the STA role up, scans, caches, drops the role) and must be called
 // before NetWifiApUp(), since scanning needs the station role.  The web UI reads
 // the cache back through NetWifiScanCount()/NetWifiScanGet() to populate the
-// wifi.shtml SSID dropdown.  Entries are ordered strongest-signal first.
+// setup page's SSID dropdown.  Entries are ordered strongest-signal first.
 //
 void NetWifiScanCache(void);
 int  NetWifiScanCount(void);

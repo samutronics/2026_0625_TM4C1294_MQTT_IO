@@ -91,7 +91,7 @@ static volatile int g_iIpAcquired;
 // Cached Wi-Fi scan results for the provisioning page.  A scan is issued (STA
 // role) just before the setup AP comes up - scanning needs the station role,
 // which is torn down before the AP starts - and the result event fills this
-// cache, which the wifi.shtml SSID dropdown renders.  Entries are deduplicated
+// cache, which the setup page's SSID dropdown renders.  Entries are deduplicated
 // by SSID (strongest RSSI wins) and kept sorted by RSSI descending, so the
 // closest networks render first and the 800-byte SSI insert holds the best ones.
 //

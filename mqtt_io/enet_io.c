@@ -514,6 +514,22 @@ WebPlatformWifiScanOptions(char *pcInsert, int iInsertLen)
 
 //*****************************************************************************
 //
+// WebPlatformWifiTab - Settings sub-tab bar for the shared "wifitab" SSI tag.
+// The TM4C is wired Ethernet with no Wi-Fi provisioning pane, so it emits nothing
+// and its Settings page stays untabbed (the CC35x1 build returns the sub-tabs).
+//
+//*****************************************************************************
+void
+WebPlatformWifiTab(char *pcInsert, int iInsertLen)
+{
+    if((pcInsert != NULL) && (iInsertLen > 0))
+    {
+        pcInsert[0] = '\0';
+    }
+}
+
+//*****************************************************************************
+//
 // CheckHWFactoryReset - Check SW1 (PJ0) at startup.
 //
 // If SW1 is held continuously for 5 seconds, all EEPROM records are
