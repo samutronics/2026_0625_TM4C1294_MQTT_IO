@@ -38,3 +38,18 @@ TM4C's Stellaris-ICDI probe does not enumerate under `xdsdfu`, so the flash path
 cannot reach the M4 by construction. Run `preflight.sh` standalone anytime to
 re-print the debug checklist and re-verify probe identity.
 
+## CC35x1 Automatic Flashing (CCS Post-Build Step)
+
+To automatically flash the CC35x1 board immediately after every successful build in CCS:
+
+1. **Right-click the `mqtt_io_cc35x1` project** → **Properties**
+2. **Navigate to:** Build → Post-build Steps
+3. **In the "Post-build command(s)" field, add:**
+   ```
+   bash "${PROJECT_LOC}/platform/cc35x1/tools/flash.sh"
+   ```
+4. **Check:** "Run the post-build step only when the build succeeds" (already should be checked)
+5. **Click "Apply and Close"**
+
+After this setup, building the project will automatically compile, link, re-sign the flash images, and program the CC35x1 board via the XDS110 probe. The `flash.sh` script logs all steps (prefixed with `[flash.sh]`) to the CCS console, so you can watch progress without opening a separate terminal.
+
