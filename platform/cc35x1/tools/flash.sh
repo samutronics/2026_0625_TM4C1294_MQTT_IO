@@ -69,12 +69,24 @@ fw_fingerprint() {
     printf '%s%s%s%s%s\n' "$yr" "$mnum" "$day" "$hh" "$mm"
 }
 
-[ -x "$TOOLBOX_EXE" ] || { echo "error: toolbox not found: $TOOLBOX_EXE" >&2; exit 2; }
-[ -f "$BUILD_DIR/mqtt_io_cc35x1.out" ] || { echo "error: .out missing -- build the CCS project first." >&2; exit 2; }
-[ -f "$BUILD_DIR/syscfg/action_request_extra.txt" ] || { echo "error: Debug/syscfg missing -- build the CCS project first." >&2; exit 2; }
+echo "[flash.sh] Starting CC35x1 flash sequence..."
+echo "[flash.sh] Repo: $REPO"
+echo "[flash.sh] Build dir: $BUILD_DIR"
+echo
+
+[ -x "$TOOLBOX_EXE" ] || { echo "[flash.sh] ERROR: toolbox not found: $TOOLBOX_EXE" >&2; exit 2; }
+echo "[flash.sh] ✓ Toolbox found"
+[ -f "$BUILD_DIR/mqtt_io_cc35x1.out" ] || { echo "[flash.sh] ERROR: .out missing -- build the CCS project first." >&2; exit 2; }
+echo "[flash.sh] ✓ .out file found"
+[ -f "$BUILD_DIR/syscfg/action_request_extra.txt" ] || { echo "[flash.sh] ERROR: Debug/syscfg missing -- build the CCS project first." >&2; exit 2; }
+echo "[flash.sh] ✓ syscfg artifacts found"
+echo
 
 # --- Stage 1: re-sign the flash images from the current .out ------------------
-echo "=== re-signing flash images from current .out ==="
+echo "[flash.sh] =========================================="
+echo "[flash.sh] Stage 1: Re-signing flash images"
+echo "[flash.sh] =========================================="
+echo "[flash.sh] Invoking toolbox makefile to sign vendor image..."
 PATH="/c/ti/ccs2100/ccs/utils/bin:$PATH" \
 "$GMAKE" -s -f "$TOOLBOX/scripts/makefile" all \
     SDK_DIR="$SDK" \
@@ -83,11 +95,13 @@ PATH="/c/ti/ccs2100/ccs/utils/bin:$PATH" \
     BUILD_ARTIFACT="$OUT_WIN" \
     TOOLBOX_DIR="$TOOLBOX" > "$LOG.sign" 2>&1
 if [ $? -ne 0 ]; then
-    echo "error: image re-sign failed. Tail:" >&2; tail -15 "$LOG.sign" >&2; exit 3
+    echo "[flash.sh] ERROR: image re-sign failed. Log tail:" >&2; tail -15 "$LOG.sign" >&2; exit 3
 fi
-echo "  ok ($(ls -la --time-style=+%H:%M "$BUILD_DIR/toolbox/primary_vendor_image.sign.bin" | awk '{print $6}') vendor image)"
+echo "[flash.sh] ✓ Image re-signed successfully ($(ls -la --time-style=+%H:%M "$BUILD_DIR/toolbox/primary_vendor_image.sign.bin" | awk '{print $6}') vendor image)"
 
-[ -f "$TOOL_SETTINGS" ] || { echo "error: $TOOL_SETTINGS missing after re-sign." >&2; exit 3; }
+[ -f "$TOOL_SETTINGS" ] || { echo "[flash.sh] ERROR: $TOOL_SETTINGS missing after re-sign." >&2; exit 3; }
+echo "[flash.sh] ✓ Tool settings file ready"
+echo
 
 # --- Publish ONE clean OTA artifact: <build-fingerprint>.bin ------------------
 # The signed vendor image is the OTA payload.  Copy it to a dedicated Debug/ota/
@@ -95,21 +109,27 @@ echo "  ok ($(ls -la --time-style=+%H:%M "$BUILD_DIR/toolbox/primary_vendor_imag
 # and wipe any older artifact so exactly one uploadable file ever sits there.
 # NOTE: the toolbox/ intermediates are intentionally LEFT untouched -- the
 # cold-flash programmer (Stage 2) consumes the whole signed image set from there.
+echo "[flash.sh] Creating OTA artifact directory..."
 mkdir -p "$OTA_DIR"
 rm -f "$OTA_DIR"/*.bin
+echo "[flash.sh] ✓ OTA directory cleaned"
+
+echo "[flash.sh] Extracting firmware build fingerprint from buildinfo..."
 if OTA_FP="$(fw_fingerprint)"; then
     OTA_BIN="$OTA_DIR/$OTA_FP.bin"
+    echo "[flash.sh] ✓ Build fingerprint: $OTA_FP"
 else
     OTA_BIN="$OTA_DIR/primary_vendor_image.sign.bin"
-    echo "  warn: could not derive build fingerprint; used generic OTA name" >&2
+    echo "[flash.sh] ⚠ Could not derive build fingerprint; using generic OTA name" >&2
 fi
+echo "[flash.sh] Copying signed image to OTA directory..."
 cp "$BUILD_DIR/toolbox/primary_vendor_image.sign.bin" "$OTA_BIN"
-echo "  OTA image: $OTA_BIN"
+echo "[flash.sh] ✓ OTA image ready: $OTA_BIN"
+echo
 
 if [ "$SIGN_ONLY" -eq 1 ]; then
-    echo ">>> sign-only OTA image ready: $OTA_BIN"
-    echo ">>> push it over the air: python platform/cc35x1/tools/ota_push.py --post <ip> \\"
-    echo "        \"$OTA_BIN\""
+    echo "[flash.sh] >>> Sign-only mode: OTA image ready (no hardware flashing)"
+    echo "[flash.sh] >>> To push over-the-air: python platform/cc35x1/tools/ota_push.py --post <ip> \"$OTA_BIN\""
     exit 0
 fi
 
@@ -118,40 +138,59 @@ fi
 # its SN matches the pinned CC35x1 bench probe (CC35_PROBE_SN). This is what makes
 # the M4/M33 mix-up impossible on the flash path -- the TM4C's ICDI probe never
 # even enumerates here, and a stray second XDS110 hard-fails instead of guessing.
+echo "[flash.sh] =========================================="
+echo "[flash.sh] Stage 2: Hardware programming"
+echo "[flash.sh] =========================================="
+echo "[flash.sh] Detecting XDS110 probe and verifying pinned SN..."
 source "$HERE/preflight.sh"
 SN="$(cc35_probe_sn)" || exit $?
-cc35_check_out_fresh || true   # stale-.out is a warning, not a flash blocker
+echo "[flash.sh] ✓ Probe detected and verified"
 
-echo "probe SN: $SN"
-echo "settings: $TOOL_SETTINGS"
+echo "[flash.sh] Checking if built image is fresh..."
+cc35_check_out_fresh || true   # stale-.out is a warning, not a flash blocker
+echo
+
+echo "[flash.sh] Probe SN: $SN"
+echo "[flash.sh] Tool settings: $TOOL_SETTINGS"
 echo
 
 # The 'programming' loader inflates the ~1.2 MB vendor image in RAM and can throw
 # a transient Python MemoryError under memory pressure -- non-deterministic; retry.
+echo "[flash.sh] Starting programming sequence (up to 3 attempts)..."
 rc=1
 for attempt in 1 2 3; do
-    echo "=== programming attempt $attempt/3 ==="
+    echo "[flash.sh] --- Programming attempt $attempt/3 ---"
+    echo "[flash.sh] Invoking toolbox programmer..."
     "$TOOLBOX_EXE" programmer -i XDS110 -param1 "$SN" programming \
         --tool_settings "$TOOL_SETTINGS" \
         --report_file_name_path "$REPORT" \
         --verbose > "$LOG" 2>&1
     rc=$?
     if [ "$rc" -eq 0 ]; then
-        echo "OK: programming succeeded on attempt $attempt."
+        echo "[flash.sh] ✓ Programming succeeded on attempt $attempt"
         break
     fi
     if grep -q "MemoryError" "$LOG"; then
-        echo "  transient MemoryError (memory pressure) -- retrying (close a browser/Word/CCS to free RAM)."
+        echo "[flash.sh] ⚠ Transient MemoryError (memory pressure) -- retrying"
+        echo "[flash.sh]   Tip: close a browser/Word/CCS tab to free RAM"
         sleep 3
         continue
     fi
-    echo "FAILED (rc=$rc), not a MemoryError. Last lines:"; tail -15 "$LOG"; break
+    echo "[flash.sh] ✗ Programming FAILED (rc=$rc), not a MemoryError. Log tail:"
+    tail -15 "$LOG"
+    break
 done
 
 echo
 if [ "$rc" -eq 0 ]; then
-    echo ">>> Now USB power-cycle the board for a clean Wi-Fi NWP boot."
+    echo "[flash.sh] =========================================="
+    echo "[flash.sh] ✓ FLASH COMPLETE"
+    echo "[flash.sh] =========================================="
+    echo "[flash.sh] >>> Now USB power-cycle the board for a clean Wi-Fi NWP boot."
 else
-    echo ">>> Flash did not complete (rc=$rc). See $LOG."
+    echo "[flash.sh] =========================================="
+    echo "[flash.sh] ✗ FLASH FAILED (rc=$rc)"
+    echo "[flash.sh] =========================================="
+    echo "[flash.sh] >>> See detailed log: $LOG"
 fi
 exit "$rc"
