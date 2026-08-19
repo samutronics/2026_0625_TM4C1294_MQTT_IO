@@ -22,6 +22,8 @@
 #include "lwip/tcpip.h"
 #else
 #include "httpserver_raw/httpd.h"
+#define LOCK_TCPIP_CORE()
+#define UNLOCK_TCPIP_CORE()
 #endif
 
 #include "config.h"
