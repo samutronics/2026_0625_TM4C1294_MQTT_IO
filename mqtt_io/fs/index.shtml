@@ -1,4 +1,4 @@
-<!DOCTYPE html>
+!<!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="utf-8">
@@ -98,8 +98,11 @@ main{padding:28px 24px;max-width:620px}
 
 <main>
 
-  <!-- MQTT / Wi-Fi sub-tabs (Wi-Fi device only; empty on TM4C) -->
-  <!--#wifitab-->
+  <!-- MQTT / Wi-Fi sub-tabs -->
+  <div class="set-subtabs">
+    <button type="button" id="st-mqtt" class="set-subtab active" onclick="showSet('mqtt')">MQTT</button>
+    <button type="button" id="st-wifi" class="set-subtab" onclick="showSet('wifi')">Wi-Fi</button>
+  </div>
 
   <div id="set-mqtt">
   <div class="ti-card">
