@@ -19,6 +19,7 @@
 
 #ifdef CC35XX
 #include "lwip/apps/httpd.h"
+#include "lwip/tcpip.h"
 #else
 #include "httpserver_raw/httpd.h"
 #endif
@@ -370,8 +371,11 @@ MQTTConfigCGIHandler(int32_t iIndex, int32_t i32NumParams, char *pcParam[],
 
     //
     // Persist and ask the main loop to apply the new settings.
+    // Release the tcpip_thread lock around config save so PalLog can run safely.
     //
+    UNLOCK_TCPIP_CORE();
     ConfigSave();
+    LOCK_TCPIP_CORE();
     g_bStartMQTT = true;
 
     return(DEFAULT_CGI_RESPONSE);
@@ -542,10 +546,13 @@ IOConfigCGIHandler(int32_t iIndex, int32_t i32NumParams, char *pcParam[],
 
     //
     // Persist all three records and request chain + discovery update.
+    // Release the tcpip_thread lock around config saves so PalLog can run safely.
     //
+    UNLOCK_TCPIP_CORE();
     ConfigSave();
     ConfigIOSave();
     ConfigBindingSave();
+    LOCK_TCPIP_CORE();
     g_bStartMQTT = true;
     g_bRepublishMQTT = true;
 
@@ -685,8 +692,10 @@ NtpCfgCGIHandler(int32_t iIndex, int32_t i32NumParams,
         ConfigNtpSetTz((int8_t)i32Tz);
     }
 
+    UNLOCK_TCPIP_CORE();
     ConfigNtpSave();
     SntpInit();
+    LOCK_TCPIP_CORE();
     UARTprintf("NTP: config updated, re-syncing.\n");
     return(DEFAULT_CGI_RESPONSE);
 }
@@ -807,7 +816,9 @@ CfgRestoreCGIHandler(int32_t iIndex, int32_t i32NumParams,
         if(i32Val >= 0) { ConfigSetDinDevices((uint8_t)i32Val); }
         i32Val = CfgJsonGetInt(g_acCfgRestoreBuf, "relay");
         if(i32Val >= 0) { ConfigSetRelayDevices((uint8_t)i32Val); }
+        UNLOCK_TCPIP_CORE();
         ConfigSave();
+        LOCK_TCPIP_CORE();
     }
 
     //
@@ -820,7 +831,9 @@ CfgRestoreCGIHandler(int32_t iIndex, int32_t i32NumParams,
         { ConfigNtpSetServer(acTmp); }
         i32Val = CfgJsonGetInt(g_acCfgRestoreBuf, "tz");
         if(i32Val >= -12 && i32Val <= 14) { ConfigNtpSetTz((int8_t)i32Val); }
+        UNLOCK_TCPIP_CORE();
         ConfigNtpSave();
+        LOCK_TCPIP_CORE();
     }
 
     //
@@ -843,7 +856,9 @@ CfgRestoreCGIHandler(int32_t iIndex, int32_t i32NumParams,
                                              (ui8Val >> bit) & 1 ? true : false);
                 }
             }
+            UNLOCK_TCPIP_CORE();
             ConfigIOSave();
+            LOCK_TCPIP_CORE();
             UARTprintf("CfgRestore: input types restored.\n");
         }
     }
@@ -884,7 +899,9 @@ CfgRestoreCGIHandler(int32_t iIndex, int32_t i32NumParams,
                 }
             }
             done_binds:
+            UNLOCK_TCPIP_CORE();
             ConfigBindingSave();
+            LOCK_TCPIP_CORE();
             UARTprintf("CfgRestore: bindings restored.\n");
         }
     }
@@ -1081,7 +1098,9 @@ OutCfgCGIHandler(int32_t iIndex, int32_t i32NumParams, char *pcParam[],
         }
     }
 
+    UNLOCK_TCPIP_CORE();
     ConfigOutputSave();
+    LOCK_TCPIP_CORE();
     OutputCtrlReload();
     g_bRepublishMQTT = true;   // refresh HA discovery (covers vs switches)
     UARTprintf("Output config saved via web UI.\n");
@@ -1255,7 +1274,9 @@ RoomCfgCGIHandler(int32_t iIndex, int32_t i32NumParams, char *pcParam[],
         }
     }
 
+    UNLOCK_TCPIP_CORE();
     ConfigRoomSave();
+    LOCK_TCPIP_CORE();
     UARTprintf("Room config saved via web UI.\n");
     return(IOCFG_CGI_RESPONSE);
 }
