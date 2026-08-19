@@ -495,7 +495,7 @@ MQTTAppMsgCB(const char *pcTopic, uint16_t ui16TopicLen,
     //
     if(MQTTAppParseRelaySet(pcTopic, ui16TopicLen, &iRelay))
     {
-        if((uint16_t)iRelay >= RelayChainCount())
+        if((uint16_t)iRelay >= (uint16_t)ConfigGetRelayDevices() * 8)
         {
             return;
         }
@@ -532,7 +532,7 @@ MQTTAppMsgCB(const char *pcTopic, uint16_t ui16TopicLen,
     {
         uint32_t ui32Ms;
         char acNum[12];
-        if((uint16_t)iRelay >= RelayChainCount())
+        if((uint16_t)iRelay >= (uint16_t)ConfigGetRelayDevices() * 8)
         {
             return;
         }
@@ -650,7 +650,7 @@ MQTTAppStop(void)
 static void
 MQTTAppPostConnect(int iStep)
 {
-    int iRelays = (int)RelayChainCount();
+    int iRelays = (int)ConfigGetRelayDevices() * 8;
     int iInputs = (int)IOInputCount();
     int iShut   = CFG_MAX_SHUTTERS;
     int iSub    = 2 + (2 * iRelays);        // relay command-topic subscribe step
@@ -758,7 +758,7 @@ MQTTAppTick(uint32_t ui32ElapsedMs)
         // snapshot the inputs so their initial retained state is published.
         //
         g_iPubStep = 1;
-        g_iPubMax = 2 + (2 * (int)RelayChainCount()) +
+        g_iPubMax = 2 + (2 * (int)ConfigGetRelayDevices() * 8) +
                     (2 * (int)IOInputCount()) +
                     (2 * CFG_MAX_SHUTTERS) + 1 + // + cover disc/state + cover sub
                     (WebPlatformHasTempSensor() ? 1 : 0);  // + temp discovery
@@ -789,7 +789,7 @@ MQTTAppTick(uint32_t ui32ElapsedMs)
 void
 MQTTAppSetRelay(int iRelay, bool bOn)
 {
-    if((iRelay < 0) || ((uint16_t)iRelay >= RelayChainCount()))
+    if((iRelay < 0) || ((uint16_t)iRelay >= (uint16_t)ConfigGetRelayDevices() * 8))
     {
         return;
     }
