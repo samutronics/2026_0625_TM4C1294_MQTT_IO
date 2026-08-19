@@ -27,9 +27,9 @@
 #
 set -uo pipefail
 
-# The CC35x1 bench probe (the XDS110 wired to the LP-EM-CC35X1). Override via env
-# if you move to another bench. Empty accepts any single XDS110.
-CC35_PROBE_SN="${CC35_PROBE_SN:-E10000H6}"
+# The CC35x1 probe SN. Empty (default) accepts any single XDS110. Set CC35_PROBE_SN=<sn>
+# to pin a specific probe (e.g., when multiple boards are connected).
+CC35_PROBE_SN="${CC35_PROBE_SN:-}"
 CC35_PROJECT="mqtt_io_cc35x1"          # the ONLY project that may be active for a CC35x1 debug/flash
 CC35_CORE="APP_MCU"                    # the M33 core name that listCores must report
 
