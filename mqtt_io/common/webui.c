@@ -27,6 +27,7 @@
 #include "cgifuncs.h"
 #include "mqtt_app.h"
 #include "din_chain.h"
+#include "io_scan.h"
 #include "relay_chain.h"
 #include "input_events.h"
 #include "relay_pulse.h"
@@ -80,6 +81,8 @@
 #define SSI_INDEX_OTAPOST   29
 #define SSI_INDEX_WIFIOPTS  30
 #define SSI_INDEX_WIFITAB   31
+#define SSI_INDEX_NLOC      32
+#define SSI_INDEX_TEMP      33
 
 static const char *g_pcConfigSSITags[] =
 {
@@ -114,7 +117,9 @@ static const char *g_pcConfigSSITags[] =
     "otamax",        // SSI_INDEX_OTAMAX    — max OTA image size (bytes), per platform
     "otapost",       // SSI_INDEX_OTAPOST   — 1: upload via streaming POST, 0: hex-GET
     "wifiopts",      // SSI_INDEX_WIFIOPTS  — setup-page SSID dropdown <option>s (CC35x1)
-    "wifitab"        // SSI_INDEX_WIFITAB   — Settings MQTT/Wi-Fi sub-tab bar (CC35x1 only)
+    "wifitab",       // SSI_INDEX_WIFITAB   — Settings MQTT/Wi-Fi sub-tab bar (CC35x1 only)
+    "nloc",          // SSI_INDEX_NLOC      — count of platform-local inputs (CC35x1 buttons)
+    "temp"           // SSI_INDEX_TEMP      — on-board temperature reading (CC35x1)
 };
 
 //*****************************************************************************
@@ -232,7 +237,7 @@ static const tCGI g_psConfigCGIURIs[] =
 //
 //*****************************************************************************
 uint32_t g_ui32IPAddress;
-uint8_t  g_pui8LiveInState[DIN_MAX_BYTES];
+uint8_t  g_pui8LiveInState[IO_MAX_BYTES];
 
 static volatile bool g_bStartMQTT;
 static volatile bool g_bRepublishMQTT;
@@ -512,7 +517,7 @@ IOConfigCGIHandler(int32_t iIndex, int32_t i32NumParams, char *pcParam[],
     {
         const char *pcB = pcValue[i32Idx];
         int iLen = (int)strlen(pcB);
-        int iMaxIn = (int)ConfigGetDinDevices() * 8;
+        int iMaxIn = (int)IOInputCount();
         int iInput, iSlot, iPos = 0;
         if(iMaxIn > CFG_MAX_INPUTS) { iMaxIn = CFG_MAX_INPUTS; }
         for(iInput = 0; (iInput < iMaxIn) && ((iPos + 2) < iLen); iInput++)
@@ -1291,6 +1296,24 @@ SSIHandler(int32_t iIndex, char *pcInsert, int32_t iInsertLen)
             usnprintf(pcInsert, iInsertLen, "%d", ConfigGetDinDevices());
             break;
 
+        case SSI_INDEX_NLOC:
+            //
+            // Count of platform-local inputs appended after the SPI chain (the
+            // CC35x1 on-board buttons; 0 on the TM4C).  The I/O config page adds
+            // this to D*8 to size its Inputs table.
+            //
+            usnprintf(pcInsert, iInsertLen, "%d", WebPlatformLocalInputCount());
+            break;
+
+        case SSI_INDEX_TEMP:
+            //
+            // On-board temperature reading, rendered by the platform (CC35x1
+            // TMP1075; "n/a" on the TM4C).  Also served on its own at /temp.ssi
+            // for the status bar's live poll.
+            //
+            WebPlatformTempStr(pcInsert, iInsertLen);
+            break;
+
         case SSI_INDEX_RELAY:
             usnprintf(pcInsert, iInsertLen, "%d", ConfigGetRelayDevices());
             break;
@@ -1314,14 +1337,16 @@ SSIHandler(int32_t iIndex, char *pcInsert, int32_t iInsertLen)
         case SSI_INDEX_IOTYPES:
         {
             //
-            // Emit one byte (2 hex chars) per DIN device, LSB = input 0 of
-            // that device.  The I/O config page uses this to seed each select.
+            // Emit one byte (2 hex chars) per input byte, LSB = input 0 of that
+            // byte.  Covers the whole logical input space (SPI chain + the
+            // appended platform-local inputs), so the button byte is included.
+            // The I/O config page uses this to seed each Type select.
             //
             static const char pcHex[] = "0123456789abcdef";
-            int iDin = (int)ConfigGetDinDevices();
+            int iBytes = ((int)IOInputCount() + 7) / 8;
             int iByte, iBit;
             int iPos = 0;
-            for(iByte = 0; (iByte < iDin) && ((iPos + 2) < iInsertLen);
+            for(iByte = 0; (iByte < iBytes) && ((iPos + 2) < iInsertLen);
                 iByte++)
             {
                 uint8_t ui8Val = 0;
@@ -1349,8 +1374,7 @@ SSIHandler(int32_t iIndex, char *pcInsert, int32_t iInsertLen)
             // "000" = unused slot.
             //
             static const char pcHexB[] = "0123456789abcdef";
-            int iDin = (int)ConfigGetDinDevices();
-            int iMaxIn = iDin * 8;
+            int iMaxIn = (int)IOInputCount();
             int iInput, iSlot, iPos = 0;
             if(iMaxIn > CFG_MAX_INPUTS) { iMaxIn = CFG_MAX_INPUTS; }
             for(iInput = 0; (iInput < iMaxIn) && ((iPos + 3) < iInsertLen);
@@ -1442,7 +1466,7 @@ SSIHandler(int32_t iIndex, char *pcInsert, int32_t iInsertLen)
             //
             bool bIn = (iIndex == SSI_INDEX_INNAMES);
             int iMax = bIn ? CFG_NAMES_MAX_INPUTS : CFG_NAMES_MAX_OUTPUTS;
-            int iCount = bIn ? (int)ConfigGetDinDevices() * 8
+            int iCount = bIn ? (int)IOInputCount()
                              : (int)ConfigGetRelayDevices() * 8;
             int i, j, iPos = 0;
             if(iCount > iMax) { iCount = iMax; }
@@ -1469,7 +1493,7 @@ SSIHandler(int32_t iIndex, char *pcInsert, int32_t iInsertLen)
             //
             static const char pcH[] = "0123456789abcdef";
             bool bIn   = (iIndex == SSI_INDEX_INSTATES);
-            int  nDev  = bIn ? (int)ConfigGetDinDevices()
+            int  nDev  = bIn ? (((int)IOInputCount() + 7) / 8)
                               : (int)ConfigGetRelayDevices();
             int  iPos = 0, d, b;
             if(nDev > 8) { nDev = 8; }  // cap: 8 devices = 64 channels

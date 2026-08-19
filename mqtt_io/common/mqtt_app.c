@@ -23,6 +23,8 @@
 #include "config.h"
 #include "relay_chain.h"
 #include "din_chain.h"
+#include "io_scan.h"
+#include "webui.h"
 #include "mqtt_client.h"
 #include "mqtt_app.h"
 #include "input_events.h"
@@ -67,7 +69,7 @@ static char g_pcDiscPayload[512];
 // Snapshot of the input chain taken at connect, used to publish the initial
 // retained state of every input during the post-connect sequence.
 //
-static uint8_t g_pui8InSnap[DIN_MAX_BYTES];
+static uint8_t g_pui8InSnap[IO_MAX_BYTES];
 
 //*****************************************************************************
 //
@@ -281,6 +283,57 @@ MQTTAppPublishInputEvent(int iInput, const char *pcEvt)
     PalSnprintf(pcPayload, sizeof(pcPayload), "{\"event_type\":\"%s\"}", pcEvt);
     MQTTClientPublish(g_pcScratchTopic, (const uint8_t *)pcPayload,
                       (uint16_t)strlen(pcPayload), 0);
+}
+
+//*****************************************************************************
+//
+// Publish the on-board temperature sensor's Home Assistant discovery config as a
+// numeric temperature sensor entity (retained).  Called once from the post-connect
+// sequence on platforms that have a sensor (WebPlatformHasTempSensor()).
+//
+//*****************************************************************************
+static void
+MQTTAppPublishTempDiscovery(void)
+{
+    PalSnprintf(g_pcDiscTopic, sizeof(g_pcDiscTopic),
+              HA_PREFIX "/sensor/%s/temp/config", g_pcDevId);
+    PalSnprintf(g_pcDiscPayload, sizeof(g_pcDiscPayload),
+              "{\"~\":\"%s\",\"name\":\"Temperature\",\"uniq_id\":\"%s_temp\","
+              "\"stat_t\":\"~/temperature/state\",\"dev_cla\":\"temperature\","
+              "\"unit_of_meas\":\"\xC2\xB0" "C\",\"stat_cla\":\"measurement\","
+              "\"avty_t\":\"~/status\",\"dev\":{\"ids\":[\"%s\"],"
+              "\"name\":\"SaKaHub\",\"mdl\":\"%s\",\"mf\":\"TomArts\"}}",
+              g_pcBase, g_pcDevId, g_pcDevId, ConfigGet()->pcClientID);
+    MQTTClientPublish(g_pcDiscTopic, (const uint8_t *)g_pcDiscPayload,
+                      (uint16_t)strlen(g_pcDiscPayload), 1);
+}
+
+//*****************************************************************************
+//
+// Publish the current temperature (retained) to "<base>/temperature/state" as a
+// decimal string, e.g. "23.44".  Skipped when the reading is invalid or the
+// client is not connected.  Driven by the platform's 5 s poll in its main loop;
+// i32CentiC is centi-degrees Celsius.
+//
+//*****************************************************************************
+void
+MQTTAppPublishTemp(int32_t i32CentiC, bool bValid)
+{
+    char    pcPayload[16];
+    int32_t i32Abs;
+
+    if(!bValid || !MQTTClientIsReady())
+    {
+        return;
+    }
+    i32Abs = (i32CentiC < 0) ? -i32CentiC : i32CentiC;
+    PalSnprintf(pcPayload, sizeof(pcPayload), "%s%d.%02d",
+                (i32CentiC < 0) ? "-" : "",
+                (int)(i32Abs / 100), (int)(i32Abs % 100));
+    PalSnprintf(g_pcScratchTopic, sizeof(g_pcScratchTopic),
+                "%s/temperature/state", g_pcBase);
+    MQTTClientPublish(g_pcScratchTopic, (const uint8_t *)pcPayload,
+                      (uint16_t)strlen(pcPayload), 1);
 }
 
 //*****************************************************************************
@@ -598,7 +651,7 @@ static void
 MQTTAppPostConnect(int iStep)
 {
     int iRelays = (int)RelayChainCount();
-    int iInputs = (int)DINChainInputCount();
+    int iInputs = (int)IOInputCount();
     int iShut   = CFG_MAX_SHUTTERS;
     int iSub    = 2 + (2 * iRelays);        // relay command-topic subscribe step
     int iInBase = iSub;                     // input block starts after iSub
@@ -676,6 +729,12 @@ MQTTAppPostConnect(int iStep)
                   "%s/cover/+/set", g_pcBase);
         MQTTClientSubscribe(g_pcScratchTopic);
     }
+    else if(WebPlatformHasTempSensor() && (iStep == (iCvSub + 1)))
+    {
+        // Optional trailing step: on-board temperature sensor discovery.  The
+        // 5 s state publishes (MQTTAppPublishTemp) populate it thereafter.
+        MQTTAppPublishTempDiscovery();
+    }
 }
 
 //*****************************************************************************
@@ -700,9 +759,10 @@ MQTTAppTick(uint32_t ui32ElapsedMs)
         //
         g_iPubStep = 1;
         g_iPubMax = 2 + (2 * (int)RelayChainCount()) +
-                    (2 * (int)DINChainInputCount()) +
-                    (2 * CFG_MAX_SHUTTERS) + 1;   // + cover disc/state + cover sub
-        DINChainRead(g_pui8InSnap, sizeof(g_pui8InSnap));
+                    (2 * (int)IOInputCount()) +
+                    (2 * CFG_MAX_SHUTTERS) + 1 + // + cover disc/state + cover sub
+                    (WebPlatformHasTempSensor() ? 1 : 0);  // + temp discovery
+        IOInputReadAll(g_pui8InSnap, sizeof(g_pui8InSnap));
     }
     if(!bConnected)
     {
@@ -751,7 +811,7 @@ MQTTAppRepublish(void)
     {
         return;
     }
-    DINChainRead(g_pui8InSnap, sizeof(g_pui8InSnap));
+    IOInputReadAll(g_pui8InSnap, sizeof(g_pui8InSnap));
     g_iPubStep = 1;
 }
 

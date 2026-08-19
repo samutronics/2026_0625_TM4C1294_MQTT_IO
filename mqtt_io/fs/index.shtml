@@ -92,6 +92,7 @@ main{padding:28px 24px;max-width:620px}
   <div class="ti-status-item"><span class="ti-dot"></span><b>IP&nbsp;</b><!--#ipaddr--></div>
   <div class="ti-status-item"><b>MQTT&nbsp;</b><!--#mqstatus--></div>
   <div class="ti-status-item"><b>Time&nbsp;</b><span id="ntptm"><!--#ntptime--></span></div>
+  <div class="ti-status-item" id="tempitem"><b>Temp&nbsp;</b><span id="tempv"><!--#temp--></span></div>
 </div>
 </div>
 
@@ -286,5 +287,6 @@ function showSet(which){
   if(bw)bw.classList.toggle('active',wifi);
 }
 </script>
+<script>(function(){var tv=document.getElementById('tempv'),ti=document.getElementById('tempitem');if(!tv)return;if(tv.textContent.trim()==='n/a'){if(ti)ti.style.display='none';return;}setInterval(function(){fetch('/temp.ssi',{cache:'no-store'}).then(function(r){return r.text();}).then(function(t){t=t.trim();if(t)tv.innerHTML=t;}).catch(function(){});},5000);})();</script>
 </body>
 </html>

@@ -54,6 +54,8 @@
 #include "sntp_client.h"
 #include "webui.h"
 #include "webui_platform.h"
+#include "buttons.h"
+#include "temp_sensor.h"
 
 //
 // Optional compile-time Wi-Fi station credentials for bench/dev use.  If a local
@@ -93,6 +95,11 @@
 //
 #define HEARTBEAT_MS      10000U
 
+//
+// On-board temperature sensor: poll the TMP1075 and publish over MQTT this often.
+//
+#define TEMP_PUBLISH_MS   5000U
+
 //*****************************************************************************
 //
 // mainThread - application task entry (invoked by main_freertos.c).
@@ -106,6 +113,7 @@ mainThread(void *pvArg0)
     uint32_t ui32RetryMs = 0;
     uint32_t ui32UptimeMs = 0;
     uint32_t ui32HeartbeatMs = 0;
+    uint32_t ui32TempMs = 0;
     bool     bMQTTStarted = false;
     bool     bTrialChecked = false;
     char     pcSsid[WIFI_SSID_MAX + 1];
@@ -218,9 +226,12 @@ mainThread(void *pvArg0)
     //
     DINChainInit(ConfigGetDinDevices());
     RelayChainInit(ConfigGetRelayDevices());
+    ButtonsInit();          // on-board SW1/SW2, exposed as inputs after the chain
+    TempSensorInit();       // on-board TMP1075 (bit-banged I2C on GPIO10/11)
     OutputCtrlReload();
-    PalLog("io: %u input dev, %u relay dev\n",
-           ConfigGetDinDevices(), ConfigGetRelayDevices());
+    PalLog("io: %u input dev, %u relay dev, %d local btn\n",
+           ConfigGetDinDevices(), ConfigGetRelayDevices(),
+           WebPlatformLocalInputCount());
 
     //
     // MQTT client subsystem; start publishing once we have an IP.
@@ -260,13 +271,17 @@ mainThread(void *pvArg0)
         ui32HeartbeatMs += SYSTICKMS;
         if(ui32HeartbeatMs >= HEARTBEAT_MS)
         {
-            char pcIp[16];
+            char    pcIp[16];
+            int32_t i32Temp = 0;
+            bool    bTemp = TempSensorGet(&i32Temp);
 
             ui32HeartbeatMs = 0;
             NetWifiGetIp(pcIp, (int)sizeof(pcIp));
-            PalLog("hb: up %us ip %s mqtt %d conn %d disc %d rsn %d\n",
+            PalLog("hb: up %us ip %s mqtt %d conn %d disc %d rsn %d temp %d.%02dC\n",
                    (unsigned)(ui32UptimeMs / 1000U), pcIp, (int)bMQTTStarted,
-                   g_iNetConnects, g_iNetDisconnects, g_iLastDiscReason);
+                   g_iNetConnects, g_iNetDisconnects, g_iLastDiscReason,
+                   bTemp ? (int)(i32Temp / 100) : 0,
+                   bTemp ? (int)((i32Temp < 0 ? -i32Temp : i32Temp) % 100) : 0);
         }
 
         //
@@ -418,18 +433,37 @@ mainThread(void *pvArg0)
         }
 
         //
-        // Pure-logic / GPIO timers (no lwIP) run outside the core lock.
+        // Input/relay scan + event + output timers.  These bit-bang GPIO, but
+        // on a state change they ALSO publish over MQTT (input events/state in
+        // io_scan.c, cover state in output_ctrl.c), which touches lwIP.  With
+        // LWIP_TCPIP_CORE_LOCKING every lwIP call must hold the core lock, so
+        // this whole group runs inside LOCK/UNLOCK -- otherwise the first input
+        // event (e.g. an on-board button press) trips the "Function called
+        // without core lock" assertion.  They still run every tick regardless of
+        // IP so local relay bindings keep working offline; the publishes simply
+        // no-op while MQTT is disconnected.  (The relay-actuation CGI handlers
+        // bit-bang the same chains on tcpip_thread -- that cross-thread GPIO
+        // race is the deferred concurrency-hardening step.)
         //
-        // Poll the input chain and relay fault line: publish changes over MQTT,
-        // run bindings, log transitions.  Bit-bangs GPIO only (no lwIP), so it
-        // stays outside the core lock alongside the other GPIO timers.  (The
-        // relay-actuation CGI handlers bit-bang the same chains on tcpip_thread;
-        // that cross-thread GPIO race is the deferred concurrency-hardening step.)
-        //
+        LOCK_TCPIP_CORE();
         IOScanTick();
         InputEventsTick(SYSTICKMS);
         RelayPulseTick(SYSTICKMS);
         OutputCtrlTick(SYSTICKMS);
+        UNLOCK_TCPIP_CORE();
+
+        //
+        // On-board temperature: every 5 s bit-bang the TMP1075 read (GPIO only,
+        // no lwIP -> outside the core lock, like the other GPIO timers).  The MQTT
+        // publish of the fresh reading happens below, inside the core lock.
+        //
+        ui32TempMs += SYSTICKMS;
+        bool bTempTick = (ui32TempMs >= TEMP_PUBLISH_MS);
+        if(bTempTick)
+        {
+            ui32TempMs = 0;
+            TempSensorPoll();
+        }
 
         //
         // Net-touching timers (SNTP UDP, MQTT keep-alive/reconnect) under lock.
@@ -443,6 +477,12 @@ mainThread(void *pvArg0)
             LOCK_TCPIP_CORE();
             SntpTick(SYSTICKMS);
             MQTTAppTick(SYSTICKMS);
+            if(bTempTick)
+            {
+                int32_t i32CentiC = 0;
+                bool    bValid = TempSensorGet(&i32CentiC);
+                MQTTAppPublishTemp(i32CentiC, bValid);
+            }
             UNLOCK_TCPIP_CORE();
         }
     }

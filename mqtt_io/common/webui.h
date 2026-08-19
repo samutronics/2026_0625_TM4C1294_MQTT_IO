@@ -36,7 +36,7 @@ void WebUIRegister(void);
 // per byte).  Written by the platform input scan (DINChainScan); reads as zero
 // until that scan runs.
 //
-extern uint8_t g_pui8LiveInState[DIN_MAX_BYTES];
+extern uint8_t g_pui8LiveInState[IO_MAX_BYTES];
 
 //
 // Current STA IPv4 address as a raw lwIP u32 (network order on little-endian),
@@ -92,6 +92,29 @@ extern uint32_t WebPlatformOtaMaxBytes(void);
 // 0 = legacy hex-encoded GET chunk loop (TM4C internal-flash programming).
 //
 extern uint32_t WebPlatformOtaUsePost(void);
+
+//
+// Platform-local digital inputs (beyond the SN65HVS882 SPI chain), appended to
+// the input index space immediately after the SPI inputs by the io_scan
+// aggregation layer (IOInputCount / IOInputReadAll).  On the CC35x1 these are the
+// two on-board LaunchPad buttons (SW1, SW2); the TM4C build has none (wired
+// Ethernet field-I/O only) and returns 0.  WebPlatformLocalInputRead() packs the
+// local inputs LSB-first into one byte (bit0 = first local input), matching the
+// per-byte bit order of the SPI live-state matrix.
+//
+extern int     WebPlatformLocalInputCount(void);
+extern uint8_t WebPlatformLocalInputRead(void);
+
+//
+// On-board temperature sensor seam.  WebPlatformHasTempSensor() is non-zero on
+// platforms with a sensor (the CC35x1's TMP1075); the TM4C has none and returns
+// 0, which suppresses the MQTT temperature entity and the web status item.
+// WebPlatformTempStr() renders the current reading for the "temp" SSI tag as a
+// short HTML string (e.g. "23.4 &deg;C", or "&mdash;" / "n/a" when unavailable);
+// it always NUL-terminates.
+//
+extern int  WebPlatformHasTempSensor(void);
+extern void WebPlatformTempStr(char *pcInsert, int iInsertLen);
 
 //
 // Render the setup page's SSID dropdown, emitted by the "wifiopts" SSI tag as a

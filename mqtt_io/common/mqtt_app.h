@@ -52,6 +52,14 @@ void MQTTAppPublishInput(int iInput, bool bOn);
 void MQTTAppPublishInputEvent(int iInput, const char *pcEvt);
 
 //
+// Publish the on-board temperature (retained) to "<base>/temperature/state" as a
+// decimal string in degrees Celsius.  i32CentiC is centi-degrees; bValid=false
+// (no reading yet) or a disconnected client skips the publish.  Called from the
+// platform main loop's periodic (5 s) temperature poll.
+//
+void MQTTAppPublishTemp(int32_t i32CentiC, bool bValid);
+
+//
 // Re-run the post-connect publish sequence without reconnecting.  Call after
 // I/O configuration changes to push updated HA discovery and state.
 //

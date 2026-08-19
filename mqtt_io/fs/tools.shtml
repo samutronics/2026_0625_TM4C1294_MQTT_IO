@@ -87,6 +87,7 @@ textarea.drag-over{border-color:#cc0000;background:#fff5f5}
   <div class="ti-status-item"><span class="ti-dot"></span><b>IP&nbsp;</b><!--#ipaddr--></div>
   <div class="ti-status-item"><b>MQTT&nbsp;</b><!--#mqstatus--></div>
   <div class="ti-status-item"><b>Time&nbsp;</b><span id="ntptm"><!--#ntptime--></span></div>
+  <div class="ti-status-item" id="tempitem"><b>Temp&nbsp;</b><span id="tempv"><!--#temp--></span></div>
 </div>
 </div>
 
@@ -454,5 +455,6 @@ function doReboot() {
 <script>
 (function(){var el=document.getElementById('ntptm');if(!el)return;var p=el.textContent.split(':');if(p.length!==3)return;var s=parseInt(p[0])*3600+parseInt(p[1])*60+parseInt(p[2]);if(isNaN(s))return;setInterval(function(){s=(s+1)%86400;var h=s/3600|0,m=s%3600/60|0,ss=s%60;el.textContent=(h<10?'0':'')+h+':'+(m<10?'0':'')+m+':'+(ss<10?'0':'')+ss;},1000);})();
 </script>
+<script>(function(){var tv=document.getElementById('tempv'),ti=document.getElementById('tempitem');if(!tv)return;if(tv.textContent.trim()==='n/a'){if(ti)ti.style.display='none';return;}setInterval(function(){fetch('/temp.ssi',{cache:'no-store'}).then(function(r){return r.text();}).then(function(t){t=t.trim();if(t)tv.innerHTML=t;}).catch(function(){});},5000);})();</script>
 </body>
 </html>

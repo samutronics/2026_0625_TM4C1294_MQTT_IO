@@ -32,6 +32,14 @@ extern "C"
 #define DIN_MAX_BYTES       DIN_MAX_DEVICES
 
 //
+// Input-buffer sizing for the field-I/O aggregation layer (io_scan): the SPI
+// chain bytes plus one extra byte for the platform-local inputs (e.g. the CC35x1
+// on-board buttons) that IOInputReadAll() appends after the SPI inputs.  Sizes
+// the scan/snapshot/live-state buffers so that appended byte never overruns.
+//
+#define IO_MAX_BYTES        (DIN_MAX_BYTES + 1)
+
+//
 // Configure the chain GPIO and set the number of cascaded devices.
 //
 void DINChainInit(uint8_t ui8Devices);

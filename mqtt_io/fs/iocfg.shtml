@@ -92,6 +92,7 @@ select.sel-act{min-width:76px}
   <div class="ti-status-item"><span class="ti-dot"></span><b>IP&nbsp;</b><!--#ipaddr--></div>
   <div class="ti-status-item"><b>MQTT&nbsp;</b><!--#mqstatus--></div>
   <div class="ti-status-item"><b>Time&nbsp;</b><span id="ntptm"><!--#ntptime--></span></div>
+  <div class="ti-status-item" id="tempitem"><b>Temp&nbsp;</b><span id="tempv"><!--#temp--></span></div>
 </div>
 <div class="ti-save-bar">
   <div class="io-subtabs">
@@ -239,6 +240,9 @@ function showIOPage(which){
 }
 
 var D=<!--#mqdin-->, R=<!--#mqrelay-->;
+// Platform-local inputs (CC35x1 on-board buttons) appended after the SPI inputs;
+// 0 on the TM4C.  The Inputs table spans D*8 SPI inputs + NLOC local inputs.
+var NLOC=<!--#nloc-->;
 var T="<!--#iotypes-->";
 var B="<!--#iobinds-->";
 var INAMES="<!--#innames-->";
@@ -300,7 +304,7 @@ async function liveUpdate(){
     if(p.length===2){IS=p[0].trim();OS=p[1].trim();}
   }catch(e){return;}
   // Update input status dots + text and the status matrix
-  var n=D*8;
+  var n=D*8+NLOC;
   for(var i=0;i<n;i++){
     var on=getInBit(i);
     var cell=document.getElementById('imx_'+i);
@@ -383,9 +387,10 @@ function updateTrig(i){
 
 // Dense live status matrix — one cell per input, number only, colour = state.
 function buildInputMatrix(){
-  var n=D*8,h="",i;
+  var n=D*8+NLOC,h="",i;
   for(i=0;i<n;i++){
-    h+="<div class='cell"+(getInBit(i)?" on":"")+"' id='imx_"+i+"' title='Input "+(i+1)+"'>"+pad2(i+1)+"</div>";
+    var lbl=(i>=D*8)?('SW'+(i-D*8+1)):('Input '+(i+1));
+    h+="<div class='cell"+(getInBit(i)?" on":"")+"' id='imx_"+i+"' title='"+lbl+"'>"+pad2(i+1)+"</div>";
   }
   document.getElementById("imx").innerHTML=n?h:"<span class='imx-empty'>No inputs configured.</span>";
 }
@@ -416,7 +421,7 @@ function buildTable(){
   if(nd>=0&&nd<=15)D=nd;
   buildInputMatrix();
   buildRelayOpts();
-  var n=D*8;
+  var n=D*8+NLOC;
   var h="<table><thead><tr>"
     +"<th>#</th><th>Input</th><th>Type</th>"
     +"<th>Slot</th><th>Output</th><th>Trigger</th><th>Action</th>"
@@ -424,8 +429,9 @@ function buildTable(){
 
   for(var i=0;i<n;i++){
     var pb=isPB(i);
-    /* first slot row: also contains editable name + Type select (rowspan=4) */
-    var iname=getInName(i)||('In'+pad2(i+1));
+    /* first slot row: also contains editable name + Type select (rowspan=4).
+       Local inputs (i>=D*8) are the on-board buttons; default their name to SWn. */
+    var iname=getInName(i)||((i>=D*8)?('SW'+(i-D*8+1)):('In'+pad2(i+1)));
     h+="<tr class='input-row'>"
       +"<td rowspan='4' style='padding:5px 8px;width:30px;font-weight:700;color:#555;vertical-align:top'>"+pad2(i+1)+"</td>"
       +"<td rowspan='4' style='padding:4px 6px'>"
@@ -472,15 +478,25 @@ function buildTable(){
     }
   }
   h+="</tbody></table>";
+  if(NLOC>0){
+    var lo=D*8+1, hi=D*8+NLOC;
+    h+="<div class='ti-note'><b>On-board buttons:</b> input"+(NLOC>1?"s":"")+" "
+      +lo+(hi>lo?("&ndash;"+hi):"")+" ("+(NLOC>1?"SW1&hellip;SW"+NLOC:"SW1")
+      +") "+(NLOC>1?"are":"is")+" the LaunchPad&rsquo;s on-board push-button"
+      +(NLOC>1?"s":"")+", configurable exactly like the SPI inputs. Changing the "
+      +"input-device count above shifts their row position &mdash; re-check their "
+      +"type and bindings if you do.</div>";
+  }
   document.getElementById("tbl").innerHTML=h;
 }
 
 function serialize(){
   var nd=parseInt(document.getElementById("din").value);
   if(nd>=0&&nd<=15)D=nd;
-  /* types */
-  var types="";
-  for(var b=0;b<D;b++){
+  /* types: one hex byte per input byte, covering the SPI inputs plus the
+     appended local-input (button) byte so button types persist too. */
+  var types="", nbytes=Math.ceil((D*8+NLOC)/8);
+  for(var b=0;b<nbytes;b++){
     var v=0;
     for(var bit=0;bit<8;bit++){
       var el=document.getElementById("t"+(b*8+bit));
@@ -492,7 +508,7 @@ function serialize(){
   /* binds: pack every configured input (3 hex/slot x 4 slots).  method=get,
      so the URL carries D*8*12 chars of binds (<=768 for 64 inputs) under the
      2048 B request limit. */
-  var maxIn=D*8,binds="";
+  var maxIn=D*8+NLOC,binds="";
   for(var i=0;i<maxIn;i++){
     for(var s=0;s<4;s++){
       var os=document.getElementById("bout_"+i+"_"+s);
@@ -791,13 +807,14 @@ function roomCfgQuery(){
 async function doSaveNamesAndSubmit() {
   var i, k, el, v, orig;
 
-  for(i=0; i<D*8; i++) {
+  for(i=0; i<D*8+NLOC; i++) {
     el = document.getElementById('iname_'+i);
     if(!el) continue;
     v    = el.value.trim();
-    orig = getInName(i) || ('In'+pad2(i+1));
+    var dflt = (i>=D*8)?('SW'+(i-D*8+1)):('In'+pad2(i+1));
+    orig = getInName(i) || dflt;
     if(v === orig) continue;                            // unchanged — skip
-    await saveName('in', i, v===('In'+pad2(i+1)) ? '' : v);
+    await saveName('in', i, v===dflt ? '' : v);
   }
 
   for(k=0; k<R*8; k++) {
@@ -834,5 +851,6 @@ async function doSaveNamesAndSubmit() {
 <script>
 (function(){var el=document.getElementById('ntptm');if(!el)return;var p=el.textContent.split(':');if(p.length!==3)return;var s=parseInt(p[0])*3600+parseInt(p[1])*60+parseInt(p[2]);if(isNaN(s))return;setInterval(function(){s=(s+1)%86400;var h=s/3600|0,m=s%3600/60|0,ss=s%60;el.textContent=(h<10?'0':'')+h+':'+(m<10?'0':'')+m+':'+(ss<10?'0':'')+ss;},1000);})();
 </script>
+<script>(function(){var tv=document.getElementById('tempv'),ti=document.getElementById('tempitem');if(!tv)return;if(tv.textContent.trim()==='n/a'){if(ti)ti.style.display='none';return;}setInterval(function(){fetch('/temp.ssi',{cache:'no-store'}).then(function(r){return r.text();}).then(function(t){t=t.trim();if(t)tv.innerHTML=t;}).catch(function(){});},5000);})();</script>
 </body>
 </html>

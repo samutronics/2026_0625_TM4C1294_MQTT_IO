@@ -530,6 +530,49 @@ WebPlatformWifiTab(char *pcInsert, int iInsertLen)
 
 //*****************************************************************************
 //
+// WebPlatformLocalInputCount / WebPlatformLocalInputRead - platform-local inputs
+// appended after the SPI chain by io_scan.  The TM4C exposes none (its field-I/O
+// is entirely on the SN65HVS882 chain), so it reports 0 and reads back 0.  (The
+// on-board USR_SW1/SW2 buttons are reserved for the hold-to-factory-reset gesture
+// below, not exposed as MQTT inputs; the CC35x1 build maps its two buttons here.)
+//
+//*****************************************************************************
+int
+WebPlatformLocalInputCount(void)
+{
+    return(0);
+}
+
+uint8_t
+WebPlatformLocalInputRead(void)
+{
+    return(0u);
+}
+
+//*****************************************************************************
+//
+// WebPlatformHasTempSensor / WebPlatformTempStr - the TM4C build has no on-board
+// temperature sensor, so it reports none (suppressing the MQTT entity + web item)
+// and renders "n/a" if the tag is ever queried.
+//
+//*****************************************************************************
+int
+WebPlatformHasTempSensor(void)
+{
+    return(0);
+}
+
+void
+WebPlatformTempStr(char *pcInsert, int iInsertLen)
+{
+    if((pcInsert != NULL) && (iInsertLen > 0))
+    {
+        usnprintf(pcInsert, iInsertLen, "n/a");
+    }
+}
+
+//*****************************************************************************
+//
 // CheckHWFactoryReset - Check SW1 (PJ0) at startup.
 //
 // If SW1 is held continuously for 5 seconds, all EEPROM records are

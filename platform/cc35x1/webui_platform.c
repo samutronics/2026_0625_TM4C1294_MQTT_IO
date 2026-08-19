@@ -31,8 +31,11 @@
 #include <string.h>
 
 #include "pal_log.h"
+#include "pal_str.h"
 #include "pal_sys.h"
 #include "net_wifi.h"
+#include "buttons.h"
+#include "temp_sensor.h"
 #include "webui.h"
 #include "webui_platform.h"
 
@@ -1036,4 +1039,60 @@ WebPlatformWifiTab(char *pcInsert, int iInsertLen)
         return;
     }
     memcpy(pcInsert, pcBar, sizeof(pcBar));     // includes the NUL
+}
+
+//*****************************************************************************
+//
+// WebPlatformLocalInputCount / WebPlatformLocalInputRead - the platform-local
+// digital inputs the shared io_scan layer appends after the SPI chain.  On the
+// CC35x1 these are the two on-board LaunchPad buttons (SW1, SW2); ButtonsInit()
+// is called from main.c at startup.  See buttons.c for the GPIO details.
+//
+//*****************************************************************************
+int
+WebPlatformLocalInputCount(void)
+{
+    return(ButtonsCount());
+}
+
+uint8_t
+WebPlatformLocalInputRead(void)
+{
+    return(ButtonsReadByte());
+}
+
+//*****************************************************************************
+//
+// WebPlatformHasTempSensor / WebPlatformTempStr - on-board TMP1075 temperature
+// sensor.  The reading is taken (bit-banged I2C) from the app tick in main.c and
+// cached in temp_sensor; here we just render the cached value for the "temp" SSI
+// tag as "23.4 &deg;C" (one decimal), or an em dash until the first good read.
+//
+//*****************************************************************************
+int
+WebPlatformHasTempSensor(void)
+{
+    return(1);
+}
+
+void
+WebPlatformTempStr(char *pcInsert, int iInsertLen)
+{
+    int32_t i32CentiC;
+
+    if((pcInsert == NULL) || (iInsertLen <= 0))
+    {
+        return;
+    }
+    if(TempSensorGet(&i32CentiC))
+    {
+        int32_t i32Abs = (i32CentiC < 0) ? -i32CentiC : i32CentiC;
+        PalSnprintf(pcInsert, iInsertLen, "%s%d.%d &deg;C",
+                    (i32CentiC < 0) ? "-" : "",
+                    (int)(i32Abs / 100), (int)((i32Abs % 100) / 10));
+    }
+    else
+    {
+        PalSnprintf(pcInsert, iInsertLen, "&mdash;");
+    }
 }

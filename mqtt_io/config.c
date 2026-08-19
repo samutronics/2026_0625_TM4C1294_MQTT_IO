@@ -13,6 +13,15 @@
 #include "ota.h"
 
 //
+// Platform seam (implemented in webui_platform.c on the CC35x1 / enet_io.c on the
+// TM4C): number of platform-local digital inputs appended after the SPI chain -
+// the CC35x1's two on-board buttons, or 0 on the TM4C.  Declared locally so this
+// low-level persistence module needn't pull in the web-UI header; used only to
+// default those inputs to Pushbutton on a fresh I/O settings record.
+//
+extern int WebPlatformLocalInputCount(void);
+
+//
 // Marker identifying a valid configuration record ("MQT1").
 //
 #define CFG_MAGIC               0x4D515431
@@ -184,9 +193,25 @@ ConfigInit(void)
     if((g_sIOSettings.ui32Magic != CFG_IO_MAGIC) ||
        (g_sIOSettings.ui32Crc != ui32Crc))
     {
+        int iBase = (int)ConfigGetDinDevices() * 8;
+        int iLoc  = WebPlatformLocalInputCount();
+        int i;
+
         memset(&g_sIOSettings, 0, sizeof(tIOSettings));
         g_sIOSettings.ui32Magic = CFG_IO_MAGIC;
-        PalLog("No I/O settings in EEPROM; all inputs default to switch.\n");
+
+        //
+        // The platform-local inputs (CC35x1 on-board buttons) sit right after the
+        // SPI inputs and are momentary, so default them to Pushbutton (single/
+        // double-click events) rather than the all-switch default.  Still fully
+        // user-changeable on the I/O Config page.
+        //
+        for(i = 0; (i < iLoc) && ((iBase + i) < CFG_MAX_INPUTS); i++)
+        {
+            ConfigSetInputPushbutton(iBase + i, true);
+        }
+        PalLog("No I/O settings in EEPROM; SPI inputs default to switch"
+               "%s.\n", (iLoc > 0) ? ", local buttons to pushbutton" : "");
     }
 
     //
