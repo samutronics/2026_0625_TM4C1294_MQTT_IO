@@ -125,6 +125,8 @@ mainThread(void *pvArg0)
 
     (void)pvArg0;
 
+    PalLog("\n\n[BOOT] CC35x1 MQTT-IO Firmware built %s %s\n\n", __DATE__, __TIME__);
+
     //
     // Bring up the lwIP TCP/IP thread.
     //
@@ -289,7 +291,9 @@ mainThread(void *pvArg0)
         //
         if(!bMQTTStarted && NetWifiIsIpAcquired())
         {
+            LOCK_TCPIP_CORE();
             MQTTAppStart();
+            UNLOCK_TCPIP_CORE();
             bMQTTStarted = true;
         }
 
@@ -336,7 +340,9 @@ mainThread(void *pvArg0)
                 RelayChainSetDevices(ConfigGetRelayDevices());
             }
             OutputCtrlReload();
+            LOCK_TCPIP_CORE();
             MQTTAppStart();
+            UNLOCK_TCPIP_CORE();
             bMQTTStarted = true;
         }
 
