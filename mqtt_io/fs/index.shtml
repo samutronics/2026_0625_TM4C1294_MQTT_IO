@@ -203,8 +203,13 @@ main{padding:28px 24px;max-width:620px}
 
   <div id="set-wifi" style="display:none">
     <div class="ti-card">
-      <div class="ti-card-head"><h2>Wi-Fi Network</h2></div>
+      <div class="ti-card-head"><h2>Wi-Fi Network (Primary)</h2></div>
       <div class="ti-card-body">
+        <div style="margin-bottom:14px">
+          <button type="button" class="ti-btn" style="background:#999" onclick="window.location.href='/wifiscan.cgi'">
+            Scan Networks
+          </button>
+        </div>
         <form method="get" action="/wificfg.cgi">
           <div class="ti-field">
             <label>Detected Networks</label>
@@ -215,19 +220,66 @@ main{padding:28px 24px;max-width:620px}
           </div>
           <div class="ti-field">
             <label>Network Name (SSID)</label>
-            <input id="wssid" type="text" name="ssid" maxlength="32" autocomplete="off" required>
+            <input id="wssid" type="text" name="ssid" value="<!--#wssid1-->" maxlength="32" autocomplete="off" required>
           </div>
           <div class="ti-field">
             <label>Password</label>
-            <input id="wpass" type="password" name="pass" maxlength="63" autocomplete="off">
+            <div style="position:relative">
+              <input id="wpass" type="password" name="pass" value="<!--#wpass1-->" maxlength="63" autocomplete="off" style="width:100%;padding-right:58px">
+              <button type="button" id="wpass-btn"
+                      onclick="var i=document.getElementById('wpass');var b=document.getElementById('wpass-btn');i.type=i.type==='password'?'text':'password';b.textContent=i.type==='password'?'SHOW':'HIDE';"
+                      style="position:absolute;right:0;top:0;bottom:0;border:none;border-left:1px solid #bbb;background:#f7f7f7;color:#cc0000;cursor:pointer;font-size:10px;font-weight:700;letter-spacing:.5px;padding:0 10px;font-family:inherit">
+                SHOW
+              </button>
+            </div>
           </div>
           <div class="ti-btn-row">
             <button type="submit" class="ti-btn">Save &amp; Connect</button>
           </div>
         </form>
         <div class="ti-note">Pick a network from the list or type its name (e.g. a hidden
-          network). Leave the password blank for an open network. After you save, the device
-          joins that network and the "MQTT-IO-Setup" access point disappears.</div>
+          network). Leave the password blank for an open network. The device will attempt to join this
+          network and fall back to the backup network if this one is not found.</div>
+      </div>
+    </div>
+
+    <div class="ti-card" style="margin-top:20px">
+      <div class="ti-card-head"><h2>Wi-Fi Network (Backup)</h2></div>
+      <div class="ti-card-body">
+        <div style="margin-bottom:14px">
+          <button type="button" class="ti-btn" style="background:#999" onclick="window.location.href='/wifiscan.cgi'">
+            Scan Networks
+          </button>
+        </div>
+        <form method="get" action="/wificfg.cgi?slot=1">
+          <div class="ti-field">
+            <label>Detected Networks</label>
+            <select id="wpick2" onchange="if(this.value){document.getElementById('wssid2').value=this.value;}">
+              <option value="">&mdash; select a network &mdash;</option>
+              <!--#wifiopts-->
+            </select>
+          </div>
+          <div class="ti-field">
+            <label>Network Name (SSID)</label>
+            <input id="wssid2" type="text" name="ssid" value="<!--#wssid2-->" maxlength="32" autocomplete="off">
+          </div>
+          <div class="ti-field">
+            <label>Password</label>
+            <div style="position:relative">
+              <input id="wpass2" type="password" name="pass" value="<!--#wpass2-->" maxlength="63" autocomplete="off" style="width:100%;padding-right:58px">
+              <button type="button" id="wpass2-btn"
+                      onclick="var i=document.getElementById('wpass2');var b=document.getElementById('wpass2-btn');i.type=i.type==='password'?'text':'password';b.textContent=i.type==='password'?'SHOW':'HIDE';"
+                      style="position:absolute;right:0;top:0;bottom:0;border:none;border-left:1px solid #bbb;background:#f7f7f7;color:#cc0000;cursor:pointer;font-size:10px;font-weight:700;letter-spacing:.5px;padding:0 10px;font-family:inherit">
+                SHOW
+              </button>
+            </div>
+          </div>
+          <div class="ti-btn-row">
+            <button type="submit" class="ti-btn">Save Backup Network</button>
+          </div>
+        </form>
+        <div class="ti-note">Configure a second Wi-Fi network. If the primary network is unavailable,
+          the device will automatically try this one. Both networks must be saved for dual-network support.</div>
       </div>
     </div>
 

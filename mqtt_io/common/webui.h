@@ -63,12 +63,16 @@ bool WebUIMqttRepublishPending(void);
 // accessors to persist the entered credentials and switch Wi-Fi role live.  The
 // provision accessor copies the pending SSID/passphrase into the caller's
 // buffers and clears the request.  No-ops on the TM4C build (wired Ethernet).
+// Slot parameter (0 or 1) selects which credential slot to target; slot 0 is the
+// primary network (triggers live STA switch), slot 1 is the backup (saves only).
 //
-void WebUIRequestWifiProvision(const char *pcSsid, const char *pcPass);
+void WebUIRequestWifiProvision(int iSlot, const char *pcSsid, const char *pcPass);
 bool WebUIWifiProvisionPending(char *pcSsid, int iSsidLen,
-                               char *pcPass, int iPassLen);
+                               char *pcPass, int iPassLen, int *piSlot);
 void WebUIRequestWifiForget(void);
 bool WebUIWifiForgetPending(void);
+void WebUIRequestWifiScan(void);
+bool WebUIWifiScanPending(void);
 
 //
 // Platform-provided OTA chunk CGI (/fwchunk.cgi).  TM4C programs internal flash
@@ -132,6 +136,22 @@ extern void WebPlatformWifiScanOptions(char *pcInsert, int iInsertLen);
 // pane.  Always NUL-terminates.
 //
 extern void WebPlatformWifiTab(char *pcInsert, int iInsertLen);
+
+//
+// Retrieve and return the saved SSID from the given slot (0 or 1), HTML-attribute-
+// escaped for safe embedding in HTML attributes.  The CC35x1 build loads from
+// persistent storage; the TM4C build (wired Ethernet) returns 0 / empty string.
+// Returns the length written (excluding NUL).
+//
+extern int WebPlatformWifiSsid(int iSlot, char *pcBuf, int iLen);
+
+//
+// Retrieve and return the saved Wi-Fi password from the given slot (0 or 1),
+// HTML-attribute-escaped for safe embedding in HTML attributes.  The CC35x1 build
+// loads from persistent storage; the TM4C build returns 0 / empty string.
+// Returns the length written (excluding NUL).
+//
+extern int WebPlatformWifiPass(int iSlot, char *pcBuf, int iLen);
 
 #ifdef __cplusplus
 }

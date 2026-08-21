@@ -506,10 +506,11 @@ WlanStackEventHandler(WlanEvent_t *psEvent)
                 memcpy(pcSsid, psE->Ssid, (size_t)iLen);
                 pcSsid[iLen] = '\0';
                 scan_cache_add(pcSsid, psE->Rssi);
+                PalLog("net: scan found SSID '%s' (RSSI %d)\n", pcSsid, (int)psE->Rssi);
             }
 
             g_bScanDone = true;
-            PalLog("net: scan found %d network(s)\n", g_iScanCount);
+            PalLog("net: scan complete, %d network(s) cached\n", g_iScanCount);
             break;
         }
 
