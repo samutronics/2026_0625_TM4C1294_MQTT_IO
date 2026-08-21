@@ -1,24 +1,35 @@
 # Plan: Dual Wi-Fi credentials + saved-network display + AP-mode reboot watchdog (CC35x1)
 
-## Status
+## Status — TASK CLOSED (code complete, pending commit + HW verification)
 
 **Last Updated:** 2026-08-21
 
-### Completed (this session)
-- ✅ **On-demand WiFi scan feature** (not in original plan, added as prerequisite)
-  - `/wifiscan.cgi` CGI endpoint with WebUIRequestWifiScan() handler
-  - "Scan Networks" button on both Primary and Backup WiFi sections
-  - `wifi_scanning.html` with spinner UI and 7-second auto-refresh
-  - Safe STA mode disconnect/reconnect: scan tears down STA, then immediately brings it back up with saved credentials
-  - UART logging of discovered SSIDs with RSSI values
-  - Works in both AP mode (provisioning) and STA mode (connected)
-  - Commit: `c9ba1e9`
+### Completed
+- ✅ **On-demand WiFi scan** (prerequisite, not in original plan) — commit `c9ba1e9`
+  - `/wifiscan.cgi` + `WebUIRequestWifiScan()`; "Scan Networks" button on both WiFi sections;
+    `wifi_scanning.html` spinner w/ 7 s auto-refresh; safe STA teardown→re-up with saved creds;
+    RSSI logged over UART; works in AP (provisioning) and STA (connected) modes.
+- ✅ **Feature 1 — Dual credentials + RSSI-ranked join** (committed: `main.c`)
+  - `wifi_store` API now slot-based (`WifiStoreLoad/Save/Clear(int iSlot, …)`), `WIFI_STORE_SLOTS 2`,
+    address table `{CFG_WIFI_EEPROM_ADDR, CFG_WIFI2_EEPROM_ADDR}` + extended `_Static_assert`s.
+  - `main.c`: `wifi_rank_candidates()` (line ~137), boot flow ranks both slots and joins the
+    stronger, cascades to the other, then provisioning AP if both fail.
+- ✅ **Feature 2 — Show saved SSID + masked/revealable password** (committed: `webui.c/.h`, `index.shtml`)
+  - SSI tags `wssid1/wpass1/wssid2/wpass2` → `WebPlatformWifiSsid/Pass()` seam; primary + backup
+    (`/wificfg.cgi?slot=1`) forms prefill from store; TM4C stubs in `enet_io.c`.
+- ✅ **Feature 3 — AP-mode 5-minute reboot watchdog** (committed: `main.c`)
+  - `AP_REBOOT_MS` = 5 min; `ui32ApRebootMs` accumulator in the `NetWifiIsAp()` branch,
+    guarded by `bHaveCreds` (never reboots the provisioning AP); reset on IP-acquired / provision / forget.
 
-### Pending (next phases)
+### ⚠️ Uncommitted working-tree changes that complete the build
+HEAD (`534dcb8`) references the new slot-based API + `WebPlatformWifiSsid/Pass` whose **definitions
+live only in the working tree** — the tree must be committed for a coherent build:
+`platform/cc35x1/wifi_store.c` / `.h`, `platform/cc35x1/webui_platform.c`, `mqtt_io/enet_io.c`,
+`mqtt_io/config.h` (adds `CFG_WIFI2_EEPROM_ADDR 4720u`).
+The `mqtt_io_cc35x1/wifi_store.c` copy already matches (line-ending diff only — benign).
 
-**Feature 1** — Dual credentials + RSSI-ranked join: NOT STARTED (but scan cache ready)
-**Feature 2** — Show saved SSID/password: NOT STARTED
-**Feature 3** — AP-mode 5-minute reboot watchdog: NOT STARTED
+### Open TODOs (see bottom of file)
+Commit the tree → build both projects → flash + HW-verify the 6 checks → confirm F3 NWP recovery.
 
 ---
 
@@ -257,3 +268,21 @@ dropdown in real-time.
 5. Both creds wrong → after all attempts it stays in setup AP; "Forget" returns to setup AP and does
    **not** auto-reboot.
 6. Confirm MQTT, relays, inputs, OTA unaffected.
+
+---
+
+## OPEN TODOs (to fully close)
+1. **Commit the working tree** — `wifi_store.c/.h`, `webui_platform.c`, `enet_io.c`, `config.h`
+   (these hold the definitions HEAD already calls; build is incoherent until committed).
+   `CLAUDE_WORKFLOW.md` remains intentionally untracked.
+2. **Build both projects green** — `buildProject mqtt_io_cc35x1` (M33) **and** the TM4C `mqtt_io`
+   gmake build (shared `webui.c`/`config.h` + `enet_io.c` stubs must still compile/link).
+3. **Flash + on-HW verification** (COM14 via pyserial; `flash.sh`; USB power-cycle, not a debugger
+   reset) — run verification steps 1–6 above.
+4. **Confirm F3 NWP recovery (highest risk)** — after the 5-min `PalReboot()`, Wi-Fi must actually
+   rejoin. If the NWP wedges (per `cc35x1-nwp-reset` memory), switch F3 to the live AP→STA retry
+   documented in Risks/caveats.
+5. **RSSI-rank correctness** — with two saved SSIDs, verify it joins the stronger and cascades to the
+   other when the stronger is powered off.
+6. **Optional cleanup** — normalize `wifi_store.c` line endings (canonical vs `mqtt_io_cc35x1/` copy
+   differ only by CRLF/LF); regenerate `fsdata.c` only if `index.shtml` changes again.
