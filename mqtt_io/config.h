@@ -331,15 +331,14 @@ void        ConfigRoomSetDefaults(void);
 bool        ConfigRoomSave(void);
 
 //
-// Wi-Fi STA credentials records (CC35x1 only).  Reserved here in the shared
-// EEPROM map so the static-asserts in config.c protect them from collisions, but
+// Wi-Fi STA credentials record (CC35x1 only).  Reserved here in the shared
+// EEPROM map so the static-asserts in config.c protect it from collisions, but
 // the record layout and load/save live in platform/cc35x1/wifi_store.c (the TM4C
-// build is wired Ethernet and never touches these records).  Sit after the room
-// config, which ends at 4448.  Each record is 108 B (tWifiRecord).
+// build is wired Ethernet and never touches this record).  Sits after the room
+// config, which ends at 4448.
 //
-#define CFG_WIFI_EEPROM_ADDR   4608u         // slot 0: primary credentials
-#define CFG_WIFI2_EEPROM_ADDR  4720u         // slot 1: backup credentials (4-byte aligned)
-#define CFG_WIFI_MAGIC         0x57494649u   // "WIFI"
+#define CFG_WIFI_EEPROM_ADDR  4608u          // CC35x1-only Wi-Fi STA credentials
+#define CFG_WIFI_MAGIC        0x57494649u    // "WIFI"
 
 //
 // OTA pending flag in EEPROM.  Thin wrappers called by ota.c.

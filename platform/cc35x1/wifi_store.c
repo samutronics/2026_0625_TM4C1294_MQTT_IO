@@ -10,7 +10,6 @@
 //*****************************************************************************
 
 #include <stdbool.h>
-#include <stddef.h>
 #include <stdint.h>
 #include <string.h>
 
@@ -38,26 +37,14 @@ typedef struct
 tWifiRecord;   // 4 + 36 + 64 + 4 = 108 B
 
 //
-// Address table for multiple credential slots.  Slot 1 is the backup network.
-//
-static const uint32_t aui32SlotAddr[WIFI_STORE_SLOTS] = {
-    CFG_WIFI_EEPROM_ADDR,
-    CFG_WIFI2_EEPROM_ADDR
-};
-
-//
-// Compile-time guards: the records must sit after the room config, fit inside the
+// Compile-time guards: the record must sit after the room config, fit inside the
 // store, and stay 4-byte aligned.  (The store size mirrors PalStorageSize() = the
 // TM4C EEPROM size; kept literal here because static_assert needs a constant.)
 //
 _Static_assert(CFG_WIFI_EEPROM_ADDR >= CFG_ROOMCFG_ADDR + sizeof(tRoomConfig),
-               "WIFI slot 0 overlaps the ROOM record");
+               "WIFI record overlaps the ROOM record");
 _Static_assert(CFG_WIFI_EEPROM_ADDR + sizeof(tWifiRecord) <= 6144u,
-               "WIFI slot 0 overflows the persistent store");
-_Static_assert(CFG_WIFI2_EEPROM_ADDR >= CFG_WIFI_EEPROM_ADDR + sizeof(tWifiRecord),
-               "WIFI slot 1 overlaps slot 0");
-_Static_assert(CFG_WIFI2_EEPROM_ADDR + sizeof(tWifiRecord) <= 6144u,
-               "WIFI slot 1 overflows the persistent store");
+               "WIFI record overflows the persistent store");
 _Static_assert((sizeof(tWifiRecord) % 4u) == 0u,
                "tWifiRecord must be 4-byte aligned for PalStorageWrite");
 _Static_assert(WIFI_SSID_MAX < WIFI_SSID_BUF, "SSID buffer too small");
@@ -65,26 +52,19 @@ _Static_assert(WIFI_PASS_MAX < WIFI_PASS_BUF, "passphrase buffer too small");
 
 //*****************************************************************************
 //
-// WifiStoreLoad - read and validate the stored credentials from the given slot.
+// WifiStoreLoad - read and validate the stored credentials.
 //
 //*****************************************************************************
 bool
-WifiStoreLoad(int iSlot, char *pcSsid, char *pcPass)
+WifiStoreLoad(char *pcSsid, char *pcPass)
 {
     tWifiRecord sRec;
     uint32_t    ui32Crc;
 
-    if(iSlot < 0 || iSlot >= WIFI_STORE_SLOTS)
-    {
-        if(pcSsid != NULL) { pcSsid[0] = '\0'; }
-        if(pcPass != NULL) { pcPass[0] = '\0'; }
-        return(false);
-    }
-
     if(pcSsid != NULL) { pcSsid[0] = '\0'; }
     if(pcPass != NULL) { pcPass[0] = '\0'; }
 
-    if(PalStorageRead(&sRec, aui32SlotAddr[iSlot], sizeof(sRec)) != 0)
+    if(PalStorageRead(&sRec, CFG_WIFI_EEPROM_ADDR, sizeof(sRec)) != 0)
     {
         return(false);
     }
@@ -117,19 +97,14 @@ WifiStoreLoad(int iSlot, char *pcSsid, char *pcPass)
 
 //*****************************************************************************
 //
-// WifiStoreSave - stamp, CRC and persist the given credentials to the given slot.
+// WifiStoreSave - stamp, CRC and persist the given credentials.
 //
 //*****************************************************************************
 bool
-WifiStoreSave(int iSlot, const char *pcSsid, const char *pcPass)
+WifiStoreSave(const char *pcSsid, const char *pcPass)
 {
     tWifiRecord sRec;
     uint32_t    ui32Rc;
-
-    if(iSlot < 0 || iSlot >= WIFI_STORE_SLOTS)
-    {
-        return(false);
-    }
 
     memset(&sRec, 0, sizeof(sRec));
     sRec.ui32Magic = CFG_WIFI_MAGIC;
@@ -139,7 +114,7 @@ WifiStoreSave(int iSlot, const char *pcSsid, const char *pcPass)
     sRec.ui32Crc = ConfigCRC32((const uint8_t *)&sRec,
                                sizeof(sRec) - sizeof(uint32_t));
 
-    ui32Rc = PalStorageWrite(&sRec, aui32SlotAddr[iSlot], sizeof(sRec));
+    ui32Rc = PalStorageWrite(&sRec, CFG_WIFI_EEPROM_ADDR, sizeof(sRec));
     if(ui32Rc != 0)
     {
         PalLog("wifi: credentials save failed (0x%x)\n", ui32Rc);
@@ -152,20 +127,15 @@ WifiStoreSave(int iSlot, const char *pcSsid, const char *pcPass)
 
 //*****************************************************************************
 //
-// WifiStoreClear - invalidate the record in the given slot by zeroing its magic word.
+// WifiStoreClear - invalidate the record by zeroing its magic word.
 //
 //*****************************************************************************
 void
-WifiStoreClear(int iSlot)
+WifiStoreClear(void)
 {
     uint32_t ui32Zero = 0u;
 
-    if(iSlot < 0 || iSlot >= WIFI_STORE_SLOTS)
-    {
-        return;
-    }
-
-    if(PalStorageWrite(&ui32Zero, aui32SlotAddr[iSlot], sizeof(ui32Zero)) != 0)
+    if(PalStorageWrite(&ui32Zero, CFG_WIFI_EEPROM_ADDR, sizeof(ui32Zero)) != 0)
     {
         PalLog("wifi: credentials clear failed\n");
     }

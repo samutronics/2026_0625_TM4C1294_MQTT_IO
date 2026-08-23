@@ -34,7 +34,6 @@
 #include "pal_str.h"
 #include "pal_sys.h"
 #include "net_wifi.h"
-#include "wifi_store.h"
 #include "buttons.h"
 #include "temp_sensor.h"
 #include "webui.h"
@@ -945,8 +944,6 @@ WebPlatformWifiScanOptions(char *pcInsert, int iInsertLen)
     }
     pcInsert[0] = '\0';
 
-    PalLog("web: wifiopts SSI tag called, scan count=%d\n", iCount);
-
     for(i = 0; i < iCount; i++)
     {
         char        pcSsid[33];              // WLAN_SSID_MAX_LENGTH + 1
@@ -1042,130 +1039,6 @@ WebPlatformWifiTab(char *pcInsert, int iInsertLen)
         return;
     }
     memcpy(pcInsert, pcBar, sizeof(pcBar));     // includes the NUL
-}
-
-//*****************************************************************************
-//
-// WebPlatformWifiSsid / WebPlatformWifiPass - retrieve and HTML-attribute-escape
-// the saved SSID/password from the given WiFi credential slot (0 or 1).  The SSI
-// tags "wssid1"/"wpass1"/"wssid2"/"wpass2" use these to prefill the Settings page
-// Wi-Fi form (the value attributes of the input fields).  Returns the length
-// written (excluding NUL).
-//
-//*****************************************************************************
-int
-WebPlatformWifiSsid(int iSlot, char *pcBuf, int iLen)
-{
-    char pcSsid[33];
-    int  iWritten;
-
-    if((pcBuf == NULL) || (iLen <= 0))
-    {
-        return(0);
-    }
-
-    if(!WifiStoreLoad(iSlot, pcSsid, NULL))
-    {
-        pcBuf[0] = '\0';
-        return(0);
-    }
-
-    //
-    // HTML-attribute-escape the SSID for safe embedding in value="..." in webui.c.
-    // The escaper is defined there and called via the platform seam.
-    //
-    iWritten = 0;
-    for(const char *p = pcSsid; *p != '\0'; p++)
-    {
-        const char *pcRep = NULL;
-        int         iRepLen;
-
-        if(*p == '&')
-            pcRep = "&amp;";
-        else if(*p == '"')
-            pcRep = "&quot;";
-        else if(*p == '<')
-            pcRep = "&lt;";
-        else if(*p == '>')
-            pcRep = "&gt;";
-
-        iRepLen = (pcRep != NULL) ? (int)strlen(pcRep) : 1;
-        if((iWritten + iRepLen) >= (iLen - 1))
-        {
-            break;
-        }
-
-        if(pcRep != NULL)
-        {
-            memcpy(&pcBuf[iWritten], pcRep, (size_t)iRepLen);
-        }
-        else
-        {
-            pcBuf[iWritten] = *p;
-        }
-        iWritten += iRepLen;
-    }
-
-    pcBuf[iWritten] = '\0';
-    return(iWritten);
-}
-
-int
-WebPlatformWifiPass(int iSlot, char *pcBuf, int iLen)
-{
-    char pcPass[64];
-    int  iWritten;
-
-    if((pcBuf == NULL) || (iLen <= 0))
-    {
-        return(0);
-    }
-
-    if(!WifiStoreLoad(iSlot, NULL, pcPass))
-    {
-        pcBuf[0] = '\0';
-        return(0);
-    }
-
-    //
-    // HTML-attribute-escape the password for safe embedding in value="..."
-    // The password appears in the page HTML as a result of the chosen option
-    // (masked by default, revealed by the "Show" checkbox toggle).
-    //
-    iWritten = 0;
-    for(const char *p = pcPass; *p != '\0'; p++)
-    {
-        const char *pcRep = NULL;
-        int         iRepLen;
-
-        if(*p == '&')
-            pcRep = "&amp;";
-        else if(*p == '"')
-            pcRep = "&quot;";
-        else if(*p == '<')
-            pcRep = "&lt;";
-        else if(*p == '>')
-            pcRep = "&gt;";
-
-        iRepLen = (pcRep != NULL) ? (int)strlen(pcRep) : 1;
-        if((iWritten + iRepLen) >= (iLen - 1))
-        {
-            break;
-        }
-
-        if(pcRep != NULL)
-        {
-            memcpy(&pcBuf[iWritten], pcRep, (size_t)iRepLen);
-        }
-        else
-        {
-            pcBuf[iWritten] = *p;
-        }
-        iWritten += iRepLen;
-    }
-
-    pcBuf[iWritten] = '\0';
-    return(iWritten);
 }
 
 //*****************************************************************************

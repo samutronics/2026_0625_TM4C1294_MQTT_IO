@@ -86,10 +86,6 @@
 #define SSI_INDEX_WIFITAB   31
 #define SSI_INDEX_NLOC      32
 #define SSI_INDEX_TEMP      33
-#define SSI_INDEX_WSSID1    34
-#define SSI_INDEX_WPASS1    35
-#define SSI_INDEX_WSSID2    36
-#define SSI_INDEX_WPASS2    37
 
 static const char *g_pcConfigSSITags[] =
 {
@@ -126,11 +122,7 @@ static const char *g_pcConfigSSITags[] =
     "wifiopts",      // SSI_INDEX_WIFIOPTS  — setup-page SSID dropdown <option>s (CC35x1)
     "wifitab",       // SSI_INDEX_WIFITAB   — Settings MQTT/Wi-Fi sub-tab bar (CC35x1 only)
     "nloc",          // SSI_INDEX_NLOC      — count of platform-local inputs (CC35x1 buttons)
-    "temp",          // SSI_INDEX_TEMP      — on-board temperature reading (CC35x1)
-    "wssid1",        // SSI_INDEX_WSSID1    — slot 0 (primary) saved SSID (CC35x1)
-    "wpass1",        // SSI_INDEX_WPASS1    — slot 0 (primary) saved password (CC35x1)
-    "wssid2",        // SSI_INDEX_WSSID2    — slot 1 (backup) saved SSID (CC35x1)
-    "wpass2"         // SSI_INDEX_WPASS2    — slot 1 (backup) saved password (CC35x1)
+    "temp"           // SSI_INDEX_TEMP      — on-board temperature reading (CC35x1)
 };
 
 //*****************************************************************************
@@ -179,8 +171,6 @@ static char *WifiCfgCGIHandler(int32_t iIndex, int32_t i32NumParams,
                                char *pcParam[], char *pcValue[]);
 static char *WifiForgetCGIHandler(int32_t iIndex, int32_t i32NumParams,
                                   char *pcParam[], char *pcValue[]);
-static char *WifiScanCGIHandler(int32_t iIndex, int32_t i32NumParams,
-                                char *pcParam[], char *pcValue[]);
 
 #define CGI_INDEX_MQTTCFG       0
 #define CGI_INDEX_IOCFG         1
@@ -214,8 +204,7 @@ static const tCGI g_psConfigCGIURIs[] =
     { "/relayset.cgi",    (tCGIHandler)RelaySetCGIHandler       }, // CGI_INDEX_RELAYSET
     { "/roomcfg.cgi",     (tCGIHandler)RoomCfgCGIHandler        }, // CGI_INDEX_ROOMCFG
     { "/wificfg.cgi",     (tCGIHandler)WifiCfgCGIHandler        }, // CGI_INDEX_WIFICFG
-    { "/wififorget.cgi",  (tCGIHandler)WifiForgetCGIHandler     }, // CGI_INDEX_WIFIFORGET
-    { "/wifiscan.cgi",    (tCGIHandler)WifiScanCGIHandler       }  // CGI_INDEX_WIFISCAN
+    { "/wififorget.cgi",  (tCGIHandler)WifiForgetCGIHandler     }  // CGI_INDEX_WIFIFORGET
 };
 
 //*****************************************************************************
@@ -275,12 +264,10 @@ static volatile bool g_bWifiProvision;
 static volatile bool g_bWifiForget;
 static char          g_pcWifiSsid[WEBUI_WIFI_SSID_LEN];
 static char          g_pcWifiPass[WEBUI_WIFI_PASS_LEN];
-static volatile int  g_iWifiSlot = 0;
 
 void
-WebUIRequestWifiProvision(int iSlot, const char *pcSsid, const char *pcPass)
+WebUIRequestWifiProvision(const char *pcSsid, const char *pcPass)
 {
-    g_iWifiSlot = iSlot;
     strncpy(g_pcWifiSsid, (pcSsid != NULL) ? pcSsid : "", WEBUI_WIFI_SSID_LEN - 1);
     g_pcWifiSsid[WEBUI_WIFI_SSID_LEN - 1] = '\0';
     strncpy(g_pcWifiPass, (pcPass != NULL) ? pcPass : "", WEBUI_WIFI_PASS_LEN - 1);
@@ -289,7 +276,7 @@ WebUIRequestWifiProvision(int iSlot, const char *pcSsid, const char *pcPass)
 }
 
 bool
-WebUIWifiProvisionPending(char *pcSsid, int iSsidLen, char *pcPass, int iPassLen, int *piSlot)
+WebUIWifiProvisionPending(char *pcSsid, int iSsidLen, char *pcPass, int iPassLen)
 {
     if(!g_bWifiProvision)
     {
@@ -305,26 +292,12 @@ WebUIWifiProvisionPending(char *pcSsid, int iSsidLen, char *pcPass, int iPassLen
         strncpy(pcPass, g_pcWifiPass, (size_t)iPassLen - 1);
         pcPass[iPassLen - 1] = '\0';
     }
-    if(piSlot != NULL)
-    {
-        *piSlot = (int)g_iWifiSlot;
-    }
     g_bWifiProvision = false;
     return(true);
 }
 
 void WebUIRequestWifiForget(void) { g_bWifiForget = true; }
 bool WebUIWifiForgetPending(void) { bool b = g_bWifiForget; g_bWifiForget = false; return(b); }
-
-//
-// Wi-Fi scan request state.  The /wifiscan.cgi handler raises this; the CC35x1
-// tick polls this accessor to trigger a fresh scan of available networks.
-// No-op on the TM4C build (wired Ethernet).
-//
-static volatile bool g_bWifiScan;
-
-void WebUIRequestWifiScan(void) { g_bWifiScan = true; }
-bool WebUIWifiScanPending(void) { bool b = g_bWifiScan; g_bWifiScan = false; return(b); }
 
 // ---- handlers block 1: GetStringParam, MQTTConfig, HexNibble, IOConfig ----
 //*****************************************************************************
@@ -425,32 +398,22 @@ WifiCfgCGIHandler(int32_t iIndex, int32_t i32NumParams, char *pcParam[],
 {
     char pcSsid[WEBUI_WIFI_SSID_LEN];
     char pcPass[WEBUI_WIFI_PASS_LEN];
-    char pcSlot[4];
-    int  iSlot = 0;
 
     (void)iIndex;
 
     pcSsid[0] = '\0';
     pcPass[0] = '\0';
-    pcSlot[0] = '\0';
     GetStringParam("ssid", pcParam, pcValue, i32NumParams, pcSsid,
                    WEBUI_WIFI_SSID_LEN);
     GetStringParam("pass", pcParam, pcValue, i32NumParams, pcPass,
                    WEBUI_WIFI_PASS_LEN);
-    GetStringParam("slot", pcParam, pcValue, i32NumParams, pcSlot,
-                   sizeof(pcSlot));
 
     if(pcSsid[0] == '\0')
     {
         return(PARAM_ERROR_RESPONSE);
     }
 
-    if(pcSlot[0] != '\0')
-    {
-        iSlot = (int)ustrtoul(pcSlot, NULL, 10);
-    }
-
-    WebUIRequestWifiProvision(iSlot, pcSsid, pcPass);
+    WebUIRequestWifiProvision(pcSsid, pcPass);
     return("/wifi_ok.html");
 }
 
@@ -472,27 +435,6 @@ WifiForgetCGIHandler(int32_t iIndex, int32_t i32NumParams, char *pcParam[],
 
     WebUIRequestWifiForget();
     return("/wifi_forget.html");
-}
-
-//*****************************************************************************
-//
-// Wi-Fi scan CGI handler (/wifiscan.cgi).  Triggers a fresh scan of available
-// networks.  The handler returns immediately; the actual scan runs asynchronously
-// in the main tick via WebUIWifiScanPending().  Redirects back to the settings
-// page after a 7-second wait (via meta refresh in the returned HTML).
-//
-//*****************************************************************************
-static char *
-WifiScanCGIHandler(int32_t iIndex, int32_t i32NumParams, char *pcParam[],
-                   char *pcValue[])
-{
-    (void)iIndex;
-    (void)i32NumParams;
-    (void)pcParam;
-    (void)pcValue;
-
-    WebUIRequestWifiScan();
-    return("/wifi_scanning.html");
 }
 
 //*****************************************************************************
@@ -1342,60 +1284,6 @@ RoomCfgCGIHandler(int32_t iIndex, int32_t i32NumParams, char *pcParam[],
 }
 
 //*****************************************************************************
-//
-// HTML attribute escape: replaces &, ", <, > with their HTML entity equivalents
-// so a string can be safely embedded in an HTML attribute value (e.g. value="...").
-// Returns the length written (excluding NUL).
-//
-//*****************************************************************************
-static int32_t
-WebUIHtmlAttrEscape(const char *pcSrc, char *pcDest, int32_t iLen)
-{
-    int32_t iWritten = 0;
-
-    if((pcSrc == NULL) || (pcDest == NULL) || (iLen <= 0))
-    {
-        return(0);
-    }
-
-    while(*pcSrc != '\0')
-    {
-        const char *pcReplace = NULL;
-
-        if(*pcSrc == '&')
-            pcReplace = "&amp;";
-        else if(*pcSrc == '"')
-            pcReplace = "&quot;";
-        else if(*pcSrc == '<')
-            pcReplace = "&lt;";
-        else if(*pcSrc == '>')
-            pcReplace = "&gt;";
-
-        if(pcReplace != NULL)
-        {
-            while(*pcReplace != '\0')
-            {
-                if(iWritten >= iLen - 1) break;
-                *pcDest++ = *pcReplace++;
-                iWritten++;
-            }
-        }
-        else
-        {
-            if(iWritten >= iLen - 1) break;
-            *pcDest++ = *pcSrc;
-            iWritten++;
-        }
-        pcSrc++;
-
-        if(iWritten >= iLen - 1) break;
-    }
-
-    *pcDest = '\0';
-    return(iWritten);
-}
-
-//*****************************************************************************
 static int32_t
 SSIHandler(int32_t iIndex, char *pcInsert, int32_t iInsertLen)
 {
@@ -1846,39 +1734,6 @@ SSIHandler(int32_t iIndex, char *pcInsert, int32_t iInsertLen)
             // no sub-tabs.  Platform seam.
             //
             WebPlatformWifiTab(pcInsert, iInsertLen);
-            break;
-
-        case SSI_INDEX_WSSID1:
-            //
-            // Slot 0 (primary network) saved SSID, HTML-attribute-escaped for the
-            // Settings Wi-Fi form prefill (value attribute).  Platform seam; the TM4C
-            // returns empty.
-            //
-            WebPlatformWifiSsid(0, pcInsert, iInsertLen);
-            break;
-
-        case SSI_INDEX_WPASS1:
-            //
-            // Slot 0 (primary network) saved password, HTML-attribute-escaped.
-            // Platform seam; the TM4C returns empty.
-            //
-            WebPlatformWifiPass(0, pcInsert, iInsertLen);
-            break;
-
-        case SSI_INDEX_WSSID2:
-            //
-            // Slot 1 (backup network) saved SSID, HTML-attribute-escaped.
-            // Platform seam; the TM4C returns empty.
-            //
-            WebPlatformWifiSsid(1, pcInsert, iInsertLen);
-            break;
-
-        case SSI_INDEX_WPASS2:
-            //
-            // Slot 1 (backup network) saved password, HTML-attribute-escaped.
-            // Platform seam; the TM4C returns empty.
-            //
-            WebPlatformWifiPass(1, pcInsert, iInsertLen);
             break;
 
         default:

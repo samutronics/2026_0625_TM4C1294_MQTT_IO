@@ -40,7 +40,6 @@
 #include "net_wifi.h"
 #include "wifi_store.h"
 #include "pal_log.h"
-#include "pal_sys.h"
 
 /* Portable application layer (shared with the TM4C build) */
 #include "config.h"
@@ -101,128 +100,6 @@
 //
 #define TEMP_PUBLISH_MS   5000U
 
-//
-// AP-mode fallback reboot watchdog: if we fell to the provisioning AP because
-// the join failed (creds exist but router is down), reboot after 5 minutes to
-// retry the preset Wi-Fi.
-//
-#define AP_REBOOT_MS      (5U*60U*1000U)
-
-//
-// Wi-Fi candidate for ranked join: both configured slots plus scan results.
-//
-typedef struct
-{
-    char    ssid[WIFI_SSID_MAX + 1];
-    char    pass[WIFI_PASS_MAX + 1];
-    int8_t  rssi;
-    bool    present;
-    bool    valid;
-}
-tWifiCand;
-
-//*****************************************************************************
-//
-// wifi_rank_candidates - load credentials from both slots and rank by RSSI.
-//
-// Returns the number of valid (stored) candidates.  If <= 1, no scan is needed
-// (preserve fast single-cred boot).  If == 2, scans for RSSI and sorts
-// present-first, then RSSI descending (slot order tiebreak).
-//
-// The ranking fills pcSsid/pcPass (output) with the top candidate, and bHaveCreds
-// is set false if validCount == 0.
-//
-//*****************************************************************************
-static int
-wifi_rank_candidates(char *pcSsid, char *pcPass, bool *pbHaveCreds)
-{
-    tWifiCand   aCand[WIFI_STORE_SLOTS];
-    int         nValid = 0;
-    uint32_t    ui32ScanCount = 0;
-    int         iTop;
-    int         i;
-    int         j;
-    char        pcScannedSsid[WIFI_SSID_MAX + 1];
-    int8_t      i8Rssi;
-    bool        bTopPresent;
-    bool        bCandPresent;
-
-    memset(aCand, 0, sizeof(aCand));
-
-    for(i = 0; i < WIFI_STORE_SLOTS; i++)
-    {
-        if(WifiStoreLoad(i, aCand[i].ssid, aCand[i].pass))
-        {
-            aCand[i].valid = true;
-            aCand[i].rssi = -100;
-            aCand[i].present = false;
-            nValid++;
-        }
-    }
-
-    if(nValid == 0)
-    {
-        *pbHaveCreds = false;
-        pcSsid[0] = '\0';
-        pcPass[0] = '\0';
-        return(0);
-    }
-
-    if(nValid <= 1)
-    {
-        *pbHaveCreds = true;
-        if(aCand[0].valid)
-        {
-            strncpy(pcSsid, aCand[0].ssid, WIFI_SSID_MAX);
-            pcSsid[WIFI_SSID_MAX] = '\0';
-            strncpy(pcPass, aCand[0].pass, WIFI_PASS_MAX);
-            pcPass[WIFI_PASS_MAX] = '\0';
-        }
-        return(nValid);
-    }
-
-    NetWifiScanCache();
-    ui32ScanCount = NetWifiScanCount();
-
-    for(i = 0; i < WIFI_STORE_SLOTS; i++)
-    {
-        if(!aCand[i].valid) continue;
-        for(j = 0; j < (int)ui32ScanCount; j++)
-        {
-            if(NetWifiScanGet(j, pcScannedSsid, (int)(WIFI_SSID_MAX + 1), &i8Rssi) &&
-               (strcmp(pcScannedSsid, aCand[i].ssid) == 0))
-            {
-                aCand[i].present = true;
-                aCand[i].rssi = i8Rssi;
-                break;
-            }
-        }
-    }
-
-    iTop = 0;
-    for(i = 1; i < WIFI_STORE_SLOTS; i++)
-    {
-        if(!aCand[i].valid) continue;
-        bTopPresent = aCand[iTop].present;
-        bCandPresent = aCand[i].present;
-        if(bCandPresent && !bTopPresent)
-        {
-            iTop = i;
-        }
-        else if(bCandPresent && bTopPresent && (aCand[i].rssi > aCand[iTop].rssi))
-        {
-            iTop = i;
-        }
-    }
-
-    strncpy(pcSsid, aCand[iTop].ssid, WIFI_SSID_MAX);
-    pcSsid[WIFI_SSID_MAX] = '\0';
-    strncpy(pcPass, aCand[iTop].pass, WIFI_PASS_MAX);
-    pcPass[WIFI_PASS_MAX] = '\0';
-
-    return(nValid);
-}
-
 //*****************************************************************************
 //
 // mainThread - application task entry (invoked by main_freertos.c).
@@ -237,7 +114,6 @@ mainThread(void *pvArg0)
     uint32_t ui32UptimeMs = 0;
     uint32_t ui32HeartbeatMs = 0;
     uint32_t ui32TempMs = 0;
-    uint32_t ui32ApRebootMs = 0;  // AP fallback watchdog accumulator
     bool     bMQTTStarted = false;
     bool     bTrialChecked = false;
     char     pcSsid[WIFI_SSID_MAX + 1];
@@ -276,100 +152,58 @@ mainThread(void *pvArg0)
     //
     NetWifiDriverStart();
 
-    //
-    // Load and rank credentials from both slots; prefer the stored SSID with the
-    // strongest RSSI.  Try candidates in ranked order; if all fail, fall to AP.
-    // If no stored credentials exist but compile-time credentials are available,
-    // use those as a fallback (dev/bench use only).
-    //
-    {
-        int nCandidates = wifi_rank_candidates(pcSsid, pcPass, &bHaveCreds);
-
+    bHaveCreds = WifiStoreLoad(pcSsid, pcPass);
 #if defined(WIFI_SSID) && defined(WIFI_PASS)
-        if(nCandidates == 0)
-        {
-            strncpy(pcSsid, WIFI_SSID, WIFI_SSID_MAX); pcSsid[WIFI_SSID_MAX] = '\0';
-            strncpy(pcPass, WIFI_PASS, WIFI_PASS_MAX); pcPass[WIFI_PASS_MAX] = '\0';
-            bHaveCreds = true;
-            nCandidates = 1;
-            PalLog("wifi: using compile-time dev credentials for '%s'\n", pcSsid);
-        }
+    if(!bHaveCreds)
+    {
+        strncpy(pcSsid, WIFI_SSID, WIFI_SSID_MAX); pcSsid[WIFI_SSID_MAX] = '\0';
+        strncpy(pcPass, WIFI_PASS, WIFI_PASS_MAX); pcPass[WIFI_PASS_MAX] = '\0';
+        bHaveCreds = true;
+        PalLog("wifi: using compile-time dev credentials for '%s'\n", pcSsid);
+    }
 #endif
 
-        if(nCandidates > 0)
+    if(bHaveCreds)
+    {
+        uint32_t ui32Attempt;
+
+        //
+        // Join as a station; DHCP starts on link-up.  Wait for the lease,
+        // re-issuing the association up to WIFI_MAX_ATTEMPTS times.  If it never
+        // completes (wrong password, AP gone, device moved), fall back to the
+        // setup AP so it can be re-provisioned without JTAG.
+        //
+        NetWifiStaUp(pcSsid, pcPass);
+
+        for(ui32Attempt = 1U; ui32Attempt <= WIFI_MAX_ATTEMPTS; ui32Attempt++)
         {
-            uint32_t ui32Attempt;
-
-            //
-            // Try candidates in ranked order; for each, attempt to join as a
-            // station up to WIFI_MAX_ATTEMPTS times with DHCP polling.  If all
-            // candidates fail, fall back to provisioning AP.
-            //
-            for(int iCand = 0; iCand < nCandidates; iCand++)
+            for(ui32Waited = 0;
+                !NetWifiIsIpAcquired() && (ui32Waited < WIFI_ATTEMPT_MS);
+                ui32Waited += IP_POLL_MS)
             {
-                char pcCandSsid[WIFI_SSID_MAX + 1];
-                char pcCandPass[WIFI_PASS_MAX + 1];
-
-                if(iCand == 0)
-                {
-                    strncpy(pcCandSsid, pcSsid, WIFI_SSID_MAX);
-                    pcCandSsid[WIFI_SSID_MAX] = '\0';
-                    strncpy(pcCandPass, pcPass, WIFI_PASS_MAX);
-                    pcCandPass[WIFI_PASS_MAX] = '\0';
-                }
-                else
-                {
-                    if(!WifiStoreLoad(iCand, pcCandSsid, pcCandPass))
-                    {
-                        continue;
-                    }
-                }
-
-                NetWifiStaUp(pcCandSsid, pcCandPass);
-
-                for(ui32Attempt = 1U; ui32Attempt <= WIFI_MAX_ATTEMPTS; ui32Attempt++)
-                {
-                    for(ui32Waited = 0;
-                        !NetWifiIsIpAcquired() && (ui32Waited < WIFI_ATTEMPT_MS);
-                        ui32Waited += IP_POLL_MS)
-                    {
-                        vTaskDelay(pdMS_TO_TICKS(IP_POLL_MS));
-                    }
-                    if(NetWifiIsIpAcquired())
-                    {
-                        break;
-                    }
-                    PalLog("net: no IP after attempt %u/%u, reconnecting\n",
-                           (unsigned)ui32Attempt, (unsigned)WIFI_MAX_ATTEMPTS);
-                    NetWifiReconnect(pcCandSsid, pcCandPass);
-                }
-
-                if(NetWifiIsIpAcquired())
-                {
-                    strncpy(pcSsid, pcCandSsid, WIFI_SSID_MAX);
-                    pcSsid[WIFI_SSID_MAX] = '\0';
-                    strncpy(pcPass, pcCandPass, WIFI_PASS_MAX);
-                    pcPass[WIFI_PASS_MAX] = '\0';
-                    break;
-                }
-
-                PalLog("wifi: could not join '%s'; trying next candidate\n", pcCandSsid);
-                NetWifiStaDown();
+                vTaskDelay(pdMS_TO_TICKS(IP_POLL_MS));
             }
-
-            if(!NetWifiIsIpAcquired())
+            if(NetWifiIsIpAcquired())
             {
-                PalLog("wifi: all candidates failed; starting setup AP\n");
-                NetWifiScanCache();     // scan (STA role) + drop STA, ready for AP
-                NetWifiApUp();
+                break;
             }
+            PalLog("net: no IP after attempt %u/%u, reconnecting\n",
+                   (unsigned)ui32Attempt, (unsigned)WIFI_MAX_ATTEMPTS);
+            NetWifiReconnect(pcSsid, pcPass);
         }
-        else
+
+        if(!NetWifiIsIpAcquired())
         {
-            PalLog("wifi: no stored credentials; starting setup AP\n");
-            NetWifiScanCache();         // scan (STA role) + drop STA, ready for AP
+            PalLog("wifi: could not join '%s'; starting setup AP\n", pcSsid);
+            NetWifiScanCache();     // scan (STA role) + drop STA, ready for AP
             NetWifiApUp();
         }
+    }
+    else
+    {
+        PalLog("wifi: no stored credentials; starting setup AP\n");
+        NetWifiScanCache();         // scan (STA role) + drop STA, ready for AP
+        NetWifiApUp();
     }
 
     //
@@ -524,63 +358,28 @@ mainThread(void *pvArg0)
         // NWP.  A provision updates the active credentials (pcSsid/pcPass) so the
         // background reconnect below uses them; a forget returns to the setup AP.
         //
+        if(WebUIWifiProvisionPending(pcSsid, (int)sizeof(pcSsid),
+                                     pcPass, (int)sizeof(pcPass)))
         {
-            int iSlot = 0;
-            if(WebUIWifiProvisionPending(pcSsid, (int)sizeof(pcSsid),
-                                         pcPass, (int)sizeof(pcPass), &iSlot))
-            {
-                vTaskDelay(pdMS_TO_TICKS(300));
-                WifiStoreSave(iSlot, pcSsid, pcPass);
-                PalLog("wifi: provisioning '%s', switching to station\n", pcSsid);
-                NetWifiSwitchToSta(pcSsid, pcPass);
-                bMQTTStarted = false;   // (re)start MQTT once the new link has an IP
-                ui32RetryMs = 0;
-                ui32ApRebootMs = 0;     // reset AP watchdog when provisioning
-                bStaHadIp = false;      // arm the no-IP AP fallback for the new creds
-                bNoIpTiming = false;
-            }
-            else if(WebUIWifiForgetPending())
-            {
-                vTaskDelay(pdMS_TO_TICKS(300));
-                WifiStoreClear(0);
-                pcSsid[0] = '\0';
-                pcPass[0] = '\0';
-                bHaveCreds = false;     // intentional setup AP - never auto-reboot
-                ui32ApRebootMs = 0;     // reset AP watchdog
-                PalLog("wifi: credentials forgotten, starting setup AP\n");
-                NetWifiScanCache();     // scan (STA role) + drop STA, ready for AP
-                NetWifiApUp();
-                bMQTTStarted = false;
-            }
-            else if(WebUIWifiScanPending())
-            {
-                // User clicked "Scan Networks" button. Refresh the cached network list.
-                // NetWifiScanCache() brings STA up, scans, and tears STA down.
-                vTaskDelay(pdMS_TO_TICKS(300));
-                bool bWasAp = NetWifiIsAp();
-                if(bWasAp)
-                {
-                    PalLog("wifi: user scan requested (provisioning AP mode)\n");
-                }
-                else
-                {
-                    PalLog("wifi: user scan requested (STA mode - will disconnect/reconnect during scan)\n");
-                }
-                NetWifiScanCache();
-
-                // After scan, if we were in STA mode before, re-establish the connection
-                // with the saved credentials (NetWifiScanCache tore down the STA role).
-                if(!bWasAp && pcSsid[0] != '\0')
-                {
-                    vTaskDelay(pdMS_TO_TICKS(300));
-                    PalLog("wifi: reconnecting to '%s' after scan\n", pcSsid);
-                    NetWifiStaUp(pcSsid, pcPass);
-                    bMQTTStarted = false;   // re-trigger MQTT once IP is acquired
-                    ui32RetryMs = 0;        // reset retry timer
-                    bStaHadIp = false;      // arm the no-IP AP fallback
-                    bNoIpTiming = false;
-                }
-            }
+            vTaskDelay(pdMS_TO_TICKS(300));
+            WifiStoreSave(pcSsid, pcPass);
+            PalLog("wifi: provisioning '%s', switching to station\n", pcSsid);
+            NetWifiSwitchToSta(pcSsid, pcPass);
+            bMQTTStarted = false;   // (re)start MQTT once the new link has an IP
+            ui32RetryMs = 0;
+            bStaHadIp = false;      // arm the no-IP AP fallback for the new creds
+            bNoIpTiming = false;
+        }
+        else if(WebUIWifiForgetPending())
+        {
+            vTaskDelay(pdMS_TO_TICKS(300));
+            WifiStoreClear();
+            pcSsid[0] = '\0';
+            pcPass[0] = '\0';
+            PalLog("wifi: credentials forgotten, starting setup AP\n");
+            NetWifiScanCache();     // scan (STA role) + drop STA, ready for AP
+            NetWifiApUp();
+            bMQTTStarted = false;
         }
 
         //
@@ -595,26 +394,12 @@ mainThread(void *pvArg0)
         //
         if(NetWifiIsAp())
         {
-            if(bHaveCreds)
-            {
-                ui32ApRebootMs += SYSTICKMS;
-                if(ui32ApRebootMs >= AP_REBOOT_MS)
-                {
-                    PalLog("wifi: AP fallback 5 min, rebooting to retry preset Wi-Fi\n");
-                    vTaskDelay(pdMS_TO_TICKS(50));
-                    PalReboot();
-                }
-            }
-            else
-            {
-                ui32ApRebootMs = 0;
-            }
+            /* setup AP active - nothing to retry */
         }
         else if(NetWifiIsIpAcquired())
         {
             bStaHadIp = true;
             bNoIpTiming = false;
-            ui32ApRebootMs = 0;         // reset AP watchdog on IP acquired
         }
         else
         {
