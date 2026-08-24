@@ -87,6 +87,7 @@
 #define SSI_INDEX_WIFITAB   32
 #define SSI_INDEX_NLOC      33
 #define SSI_INDEX_TEMP      34
+#define SSI_INDEX_SHOWREBOOT 35
 
 static const char *g_pcConfigSSITags[] =
 {
@@ -124,7 +125,8 @@ static const char *g_pcConfigSSITags[] =
     "wifiopts",      // SSI_INDEX_WIFIOPTS  — setup-page SSID dropdown <option>s (CC35x1)
     "wifitab",       // SSI_INDEX_WIFITAB   — Settings MQTT/Wi-Fi sub-tab bar (CC35x1 only)
     "nloc",          // SSI_INDEX_NLOC      — count of platform-local inputs (CC35x1 buttons)
-    "temp"           // SSI_INDEX_TEMP      — on-board temperature reading (CC35x1)
+    "temp",          // SSI_INDEX_TEMP      — on-board temperature reading (CC35x1)
+    "showreboot"     // SSI_INDEX_SHOWREBOOT — 1 (TM4C), 0 (CC35x1 - reboot disabled due to NWP wedge)
 };
 
 //*****************************************************************************
@@ -199,7 +201,9 @@ static const tCGI g_psConfigCGIURIs[] =
     { "/ntpcfg.cgi",       (tCGIHandler)NtpCfgCGIHandler        }, // CGI_INDEX_NTPCFG
     { "/cfgrestore.cgi",   (tCGIHandler)CfgRestoreCGIHandler     }, // CGI_INDEX_CFGRESTORE
     { "/relaypulse.cgi",  (tCGIHandler)RelayPulseCGIHandler     }, // CGI_INDEX_RELAYPULSE
-    { "/reboot.cgi",      (tCGIHandler)RebootCGIHandler         }, // CGI_INDEX_REBOOT
+#ifndef CC35XX
+    { "/reboot.cgi",      (tCGIHandler)RebootCGIHandler         }, // CGI_INDEX_REBOOT (TM4C only)
+#endif
     { "/nameset.cgi",     (tCGIHandler)NameSetCGIHandler        }, // CGI_INDEX_NAMESET
     { "/outcfg.cgi",      (tCGIHandler)OutCfgCGIHandler         }, // CGI_INDEX_OUTCFG
     { "/cover.cgi",       (tCGIHandler)CoverCGIHandler          }, // CGI_INDEX_COVER
@@ -1337,6 +1341,19 @@ SSIHandler(int32_t iIndex, char *pcInsert, int32_t iInsertLen)
             // for the status bar's live poll.
             //
             WebPlatformTempStr(pcInsert, iInsertLen);
+            break;
+
+        case SSI_INDEX_SHOWREBOOT:
+            //
+            // Whether the Reboot button should be shown. CC35x1 disables it
+            // because a warm SYSRESETREQ wedges the NWP (see cc35x1-web-reboot-freeze).
+            // TM4C reboot works fine.
+            //
+#ifdef CC35XX
+            usnprintf(pcInsert, iInsertLen, "0");
+#else
+            usnprintf(pcInsert, iInsertLen, "1");
+#endif
             break;
 
         case SSI_INDEX_RELAY:

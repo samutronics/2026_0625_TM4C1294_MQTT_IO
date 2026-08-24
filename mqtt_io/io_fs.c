@@ -314,3 +314,19 @@ fs_bytes_left(struct fs_file *psFile)
     //
     return(psFile->len - psFile->index);
 }
+
+//*****************************************************************************
+//
+// WebPlatformOtaError - TM4C stub for the OTA error message SSI tag.
+// TM4C does not support PSA-FWU like CC35x1, so no detailed error tracking.
+// Return empty string.
+//
+//*****************************************************************************
+void
+WebPlatformOtaError(char *pcInsert, int iInsertLen)
+{
+    if((pcInsert != NULL) && (iInsertLen > 0))
+    {
+        pcInsert[0] = '\0';
+    }
+}

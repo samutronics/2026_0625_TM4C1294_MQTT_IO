@@ -964,6 +964,11 @@ WebPlatformOtaTrialAccept(void)
 // the bootloader swaps to the new slot; otherwise a plain system reset.  Does
 // not return.
 //
+// NOTE: The Reboot button is disabled on CC35x1 via the "showreboot" SSI tag
+// and is not registered in the CGI table, so this path should rarely be hit on
+// this platform except for factory reset (which does need reset). On TM4C the
+// reboot works fine.
+//
 //*****************************************************************************
 void
 WebPlatformFinalizeReboot(void)

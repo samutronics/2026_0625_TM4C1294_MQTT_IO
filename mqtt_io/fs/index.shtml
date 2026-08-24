@@ -258,11 +258,15 @@ main{padding:28px 24px;max-width:620px}
           onclick="if(confirm('Erase ALL settings and reboot with factory defaults?\n\nThis cannot be undone.')){window.location.href='/factoryreset.cgi'}">
           Factory Reset
         </button>
-        <button class="ti-btn" style="background:#555"
+        <button class="ti-btn" style="background:#555" id="rebootBtn"
           onclick="if(confirm('Reboot the device now?')){window.location.href='/reboot.cgi'}">
           Reboot
         </button>
       </div>
+      <script>
+        // Hide the Reboot button on CC35x1 (showreboot=0) due to NWP wedge on warm reset
+        if('<!--#echo var="showreboot"-->' === '0') { document.getElementById('rebootBtn').style.display='none'; }
+      </script>
       <p style="font-size:11px;color:#aaa;margin-top:12px">
         Hardware: hold <b>SW1</b> for 5 s at power-up for a factory reset.
         LED&nbsp;D1 blinks as a countdown indicator.

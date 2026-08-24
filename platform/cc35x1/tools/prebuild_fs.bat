@@ -8,9 +8,10 @@ REM  that include against the PROJECT-ROOT copy mqtt_io_cc35x1\fsdata.c (the
 REM  projectspec copies it in with action="copy"), so BOTH files must be
 REM  refreshed from mqtt_io/fs/ or HTML edits never reach the firmware.
 REM
-REM  (Earlier this script regenerated mqtt_io/io_fsdata.h - the TM4C header,
-REM  which the CC35x1 build never includes.  That is why edits appeared to do
-REM  nothing.  Do not point this back at io_fsdata.h.)
+REM  NOTE: Do NOT regenerate mqtt_io/io_fsdata.h (the TM4C header) here.
+REM  TM4C uses lwip-1.4.1 with includes in httpserver_raw/, which differ from
+REM  CC35x1's lwip-2.1.3 with includes in lwip/apps/. TM4C io_fsdata.h is
+REM  hand-maintained without platform-specific includes (io_fs.c includes them).
 REM ===========================================================================
 setlocal
 cd /d "%~dp0..\..\..\"
