@@ -1,6 +1,6 @@
 # Plan 8 — Decide + remove the BLE provisioning SDK demo project
 
-**Priority:** Low · **Status:** OPEN (needs a roadmap decision first) · Memory: `remove-ble-provisioning-demo-todo`
+**Priority:** Low · **Status:** DONE (2026-08-24 — decision: remove; BLE deferred, SoftAP ships) · Memory: `remove-ble-provisioning-demo-todo`
 
 ## Goal
 Remove `ble_wifi_provisioning_LP_EM_CC35X1_freertos_ticlang` from the workspace IF BLE provisioning is not on the roadmap. It only declutters — the project is gitignored and re-importable.
