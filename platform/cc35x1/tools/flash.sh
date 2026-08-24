@@ -86,6 +86,34 @@ echo
 echo "[flash.sh] =========================================="
 echo "[flash.sh] Stage 1: Re-signing flash images"
 echo "[flash.sh] =========================================="
+
+# --- OTA image version (PSA FWU anti-downgrade) -------------------------------
+# The signed vendor image carries a version in its 48-byte GPE-slot manifest.
+# On the device, psa_fwu_start() REJECTS any candidate whose version is not
+# strictly greater than the installed image -> PSA_ERROR_NOT_PERMITTED (-133).
+# The SysConfig default (action_request_extra.txt) is static 0.0.17.0, so every
+# build was identical and every OTA after the first was rejected. We override it
+# on the make command line (CLI assignment beats the makefile's include) with a
+# value that increments on every sign, so each image is strictly newer.
+#
+# Version format MUST keep the 3rd field ("patch") as the counter so it stays
+# ABOVE the installed 0.0.17.0 (compared field-by-field: 0.0.18.0 > 0.0.17.0).
+# Counter ceiling is 255 (each field is a byte); bump manually past that.
+VER_FILE="$HERE/ota_version.txt"
+if [ -n "${OTA_IMAGE_VERSION:-}" ]; then
+    VENDOR_VER="$OTA_IMAGE_VERSION"                 # explicit override, e.g. first bench test
+else
+    n="$(cat "$VER_FILE" 2>/dev/null)"; n="${n:-17}" # last counter; seed 17 (== installed)
+    n=$((n + 1))                                     # strictly greater than installed
+    if [ "$n" -gt 255 ]; then
+        echo "[flash.sh] ERROR: OTA version counter > 255; bump the minor field manually in flash.sh." >&2
+        exit 3
+    fi
+    VENDOR_VER="0.0.$n.0"
+    echo "$n" > "$VER_FILE"
+fi
+echo "[flash.sh] OTA image version: $VENDOR_VER (overrides syscfg default)"
+
 echo "[flash.sh] Invoking toolbox makefile to sign vendor image..."
 PATH="/c/ti/ccs2100/ccs/utils/bin:$PATH" \
 "$GMAKE" -s -f "$TOOLBOX/scripts/makefile" all \
@@ -93,6 +121,7 @@ PATH="/c/ti/ccs2100/ccs/utils/bin:$PATH" \
     SYSCONFIG_ARTIFACT="$BUILD_DIR_WIN/syscfg" \
     BUILD_DIR="$BUILD_DIR_WIN" \
     BUILD_ARTIFACT="$OUT_WIN" \
+    primary_vendor_image_version="$VENDOR_VER" \
     TOOLBOX_DIR="$TOOLBOX" > "$LOG.sign" 2>&1
 if [ $? -ne 0 ]; then
     echo "[flash.sh] ERROR: image re-sign failed. Log tail:" >&2; tail -15 "$LOG.sign" >&2; exit 3

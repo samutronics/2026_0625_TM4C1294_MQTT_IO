@@ -94,6 +94,13 @@ extern uint32_t WebPlatformOtaMaxBytes(void);
 extern uint32_t WebPlatformOtaUsePost(void);
 
 //
+// Last OTA error message, rendered by the "otaerror" SSI tag so the web UI can
+// display staging failures (e.g. "Staging failed: -133 (NOT_PERMITTED...) at byte 48").
+// Empty string if no error.  Always NUL-terminates.
+//
+extern void WebPlatformOtaError(char *pcInsert, int iInsertLen);
+
+//
 // Platform-local digital inputs (beyond the SN65HVS882 SPI chain), appended to
 // the input index space immediately after the SPI inputs by the io_scan
 // aggregation layer (IOInputCount / IOInputReadAll).  On the CC35x1 these are the

@@ -64,6 +64,7 @@ textarea.drag-over{border-color:#cc0000;background:#fff5f5}
 <input type="hidden" id="h_binds"    value="<!--#iobinds-->">
 <input type="hidden" id="h_innames"  value="<!--#innames-->">
 <input type="hidden" id="h_outnames" value="<!--#outnames-->">
+<input type="hidden" id="h_otaerror" value="<!--#otaerror-->">
 </head>
 <body>
 
@@ -87,7 +88,7 @@ textarea.drag-over{border-color:#cc0000;background:#fff5f5}
   <div class="ti-status-item"><span class="ti-dot"></span><b>IP&nbsp;</b><!--#ipaddr--></div>
   <div class="ti-status-item"><b>MQTT&nbsp;</b><!--#mqstatus--></div>
   <div class="ti-status-item"><b>Time&nbsp;</b><span id="ntptm"><!--#ntptime--></span></div>
-  <div class="ti-status-item" id="tempitem"><b>Temp&nbsp;</b><span id="tempv"><!--#temp--></span></div>
+  <div class="ti-status-item" id="tempitem"><b>Temperature&nbsp;</b><span id="tempv"><!--#temp--></span></div>
 </div>
 </div>
 
@@ -95,7 +96,7 @@ textarea.drag-over{border-color:#cc0000;background:#fff5f5}
 
   <!-- Firmware Update -->
   <div class="ti-card">
-    <div class="ti-card-head"><h2>Firmware Update (OTA)</h2></div>
+    <div class="ti-card-head"><h2>Firmware Update (OTA - Over The Air)</h2></div>
     <div class="ti-card-body">
       <div class="ti-field">
         <label>Firmware binary (.bin)</label>
@@ -105,6 +106,7 @@ textarea.drag-over{border-color:#cc0000;background:#fff5f5}
         <button id="upbtn" class="ti-btn" onclick="startUpload()">Upload &amp; Apply</button>
         <span id="fw-status"></span>
       </div>
+      <div id="fw-error" style="margin-top:14px;padding:11px 14px;background:#fff5f5;border-left:3px solid #cc0000;font-size:12px;color:#cc0000;display:none"></div>
       <div id="fw-prog" class="prog-wrap">
         <div class="prog-bar-bg"><div class="prog-bar-fg" id="fw-bar"></div></div>
         <div class="prog-txt" id="fw-txt">0%</div>
@@ -278,6 +280,23 @@ async function fwUploadPost(buf, total) {
         // and is rebooting — the update may in fact have succeeded.
         fwStatus('Connection lost near the end — if the device reboots it may have applied; check the running version.');
       } else {
+        // Fetch the device's detailed error message (cached in g_pcOtaError)
+        fwStatus('Fetching error details...');
+        try {
+          var resp = await fetch('/tools.shtml', {cache:'no-store'});
+          if(resp.ok) {
+            var html = await resp.text();
+            var m = html.match(/id="h_otaerror"\s+value="([^"]*)"/);
+            if(m && m[1]) {
+              fwStatus('Upload failed: ' + m[1]);
+              document.getElementById('fw-error').textContent = m[1];
+              document.getElementById('fw-error').style.display = 'block';
+              document.getElementById('upbtn').disabled = false;
+              return;
+            }
+          }
+        } catch(e) {}
+        // Fallback to generic message if device error fetch failed
         fwStatus('Upload failed: ' + r.reason + ' (chunk ' + seq + '). Device kept its firmware; retry.');
       }
       document.getElementById('upbtn').disabled = false;
@@ -296,6 +315,7 @@ async function startUpload() {
   if(!file.name.endsWith('.bin')) { alert('File must be a .bin file.'); return; }
   document.getElementById('upbtn').disabled = true;
   document.getElementById('fw-prog').style.display = 'block';
+  document.getElementById('fw-error').style.display = 'none';  // hide previous error
   fwProgress(0); fwStatus('Reading file...');
   var buf;
   try { buf = new Uint8Array(await file.arrayBuffer()); }
@@ -367,6 +387,13 @@ function buildJson() {
 
 window.onload = function() {
   document.getElementById('backupJson').value = buildJson();
+  // Display OTA error if present (from previous failed upload attempt)
+  var otaErr = document.getElementById('h_otaerror').value;
+  if(otaErr) {
+    var errDiv = document.getElementById('fw-error');
+    errDiv.textContent = otaErr;
+    errDiv.style.display = 'block';
+  }
 };
 
 function doDownload() {

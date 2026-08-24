@@ -82,10 +82,11 @@
 #define SSI_INDEX_SHROOMS   27
 #define SSI_INDEX_OTAMAX    28
 #define SSI_INDEX_OTAPOST   29
-#define SSI_INDEX_WIFIOPTS  30
-#define SSI_INDEX_WIFITAB   31
-#define SSI_INDEX_NLOC      32
-#define SSI_INDEX_TEMP      33
+#define SSI_INDEX_OTAERROR  30
+#define SSI_INDEX_WIFIOPTS  31
+#define SSI_INDEX_WIFITAB   32
+#define SSI_INDEX_NLOC      33
+#define SSI_INDEX_TEMP      34
 
 static const char *g_pcConfigSSITags[] =
 {
@@ -119,6 +120,7 @@ static const char *g_pcConfigSSITags[] =
     "shrooms",       // SSI_INDEX_SHROOMS   — room index per defined shutter (comma list)
     "otamax",        // SSI_INDEX_OTAMAX    — max OTA image size (bytes), per platform
     "otapost",       // SSI_INDEX_OTAPOST   — 1: upload via streaming POST, 0: hex-GET
+    "otaerror",      // SSI_INDEX_OTAERROR  — last OTA error message (CC35x1), empty string if none
     "wifiopts",      // SSI_INDEX_WIFIOPTS  — setup-page SSID dropdown <option>s (CC35x1)
     "wifitab",       // SSI_INDEX_WIFITAB   — Settings MQTT/Wi-Fi sub-tab bar (CC35x1 only)
     "nloc",          // SSI_INDEX_NLOC      — count of platform-local inputs (CC35x1 buttons)
@@ -1715,6 +1717,15 @@ SSIHandler(int32_t iIndex, char *pcInsert, int32_t iInsertLen)
             //
             usnprintf(pcInsert, iInsertLen, "%u",
                       (unsigned)WebPlatformOtaUsePost());
+            break;
+
+        case SSI_INDEX_OTAERROR:
+            //
+            // Last OTA error message (if any) from a failed staging attempt,
+            // e.g. "Staging failed: -133 (NOT_PERMITTED...) at byte 48".
+            // Empty string if no error.  Platform seam (CC35x1 only).
+            //
+            WebPlatformOtaError(pcInsert, iInsertLen);
             break;
 
         case SSI_INDEX_WIFIOPTS:

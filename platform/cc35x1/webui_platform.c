@@ -95,6 +95,7 @@ static uint32_t g_ui32WrLen;                         // bytes buffered in g_pui8
 static size_t   g_szWrBase;                          // image offset of buffer[0]
 
 static uint32_t g_ui32OtaMaxBytes = OTA_MAX_BYTES_FALLBACK;
+static char     g_pcOtaError[256] = "";                 // last OTA error (for web UI)
 
 #if LWIP_HTTPD_SUPPORT_POST
 //
@@ -154,6 +155,23 @@ OtaStrToUl(const char *p)
     return(v);
 }
 
+static const char *
+PsaStatusName(psa_status_t st)
+{
+    switch(st)
+    {
+        case PSA_SUCCESS:                 return("SUCCESS");
+        case PSA_ERROR_NOT_PERMITTED:     return("NOT_PERMITTED (version/anti-downgrade)");
+        case PSA_ERROR_INVALID_SIGNATURE: return("INVALID_SIGNATURE");
+        case PSA_ERROR_INVALID_ARGUMENT:  return("INVALID_ARGUMENT");
+        case PSA_ERROR_DATA_INVALID:      return("DATA_INVALID");
+        case PSA_ERROR_DATA_CORRUPT:      return("DATA_CORRUPT");
+        case PSA_ERROR_BAD_STATE:         return("BAD_STATE");
+        case PSA_ERROR_STORAGE_FAILURE:   return("STORAGE_FAILURE");
+        default:                          return("(other)");
+    }
+}
+
 //*****************************************************************************
 //
 // OtaPrepareTarget - pick the inactive (non-primary) vendor slot and drive it
@@ -192,6 +210,14 @@ OtaPrepareTarget(psa_fwu_component_t *pTarget)
     {
         return(-1);
     }
+
+    //
+    // Log the active (primary) image version so candidate mismatches are obvious.
+    //
+    psa_fwu_component_info_t sInfoActive = (target == OTA_VENDOR_SLOT_1) ? sInfo2 : sInfo1;
+    PalLog("ota: active image version %u.%u.%u.%u; candidate must be strictly greater\n",
+           (unsigned)sInfoActive.version.major, (unsigned)sInfoActive.version.minor,
+           (unsigned)sInfoActive.version.patch, (unsigned)sInfoActive.version.build);
 
     //
     // Transition whatever the target currently holds back to READY.
@@ -459,6 +485,7 @@ WebPlatformOtaChunkCGI(int32_t iIndex, int32_t i32NumParams,
         g_i32NextSeq        = 0;
         g_bOtaRebootPending = false;
         g_ui32WrLen         = 0;
+        g_pcOtaError[0]     = '\0';  // clear previous error
         memset(g_pui8Manifest, 0, sizeof(g_pui8Manifest));
 
         if(OtaPrepareTarget(&g_target) != 0)
@@ -527,8 +554,11 @@ WebPlatformOtaChunkCGI(int32_t iIndex, int32_t i32NumParams,
     {
         g_bAbort = true;
         psa_fwu_cancel(g_target);
-        PalLog("ota: staging @%u failed (%d), aborting\n",
-               (unsigned)g_szFileOffset, (int)st);
+        PalSnprintf(g_pcOtaError, sizeof(g_pcOtaError),
+                    "Staging failed: %d (%s) at byte %u",
+                    (int)st, PsaStatusName(st), (unsigned)g_szFileOffset);
+        PalLog("ota: staging @%u failed (%d = %s), aborting\n",
+               (unsigned)g_szFileOffset, (int)st, PsaStatusName(st));
         return("/otaack.txt");
     }
 
@@ -655,6 +685,7 @@ httpd_post_begin(void *connection, const char *uri, const char *http_request,
         g_i32NextSeq        = 0;
         g_bOtaRebootPending = false;
         g_ui32WrLen         = 0;
+        g_pcOtaError[0]     = '\0';  // clear previous error
         memset(g_pui8Manifest, 0, sizeof(g_pui8Manifest));
 
         if(OtaPrepareTarget(&g_target) != 0)
@@ -750,8 +781,11 @@ httpd_post_receive_data(void *connection, struct pbuf *p)
             {
                 g_bAbort = true;
                 psa_fwu_cancel(g_target);
-                PalLog("ota(post): staging @%u failed (%d), aborting\n",
-                       (unsigned)g_szFileOffset, (int)st);
+                PalSnprintf(g_pcOtaError, sizeof(g_pcOtaError),
+                            "Staging failed: %d (%s) at byte %u",
+                            (int)st, PsaStatusName(st), (unsigned)g_szFileOffset);
+                PalLog("ota(post): staging @%u failed (%d = %s), aborting\n",
+                       (unsigned)g_szFileOffset, (int)st, PsaStatusName(st));
                 pbuf_free(p);
                 return(ERR_VAL);
             }
@@ -849,6 +883,9 @@ WebPlatformOtaInit(void)
        (sInfo.max_size != 0u))
     {
         g_ui32OtaMaxBytes = sInfo.max_size;
+        PalLog("ota: boot active image version %u.%u.%u.%u\n",
+               (unsigned)sInfo.version.major, (unsigned)sInfo.version.minor,
+               (unsigned)sInfo.version.patch, (unsigned)sInfo.version.build);
     }
     PalLog("ota: FWU init done, staging cap %u bytes\n",
            (unsigned)g_ui32OtaMaxBytes);
@@ -864,6 +901,23 @@ uint32_t
 WebPlatformOtaMaxBytes(void)
 {
     return(g_ui32OtaMaxBytes);
+}
+
+//*****************************************************************************
+//
+// WebPlatformOtaError - render the last OTA error message for the "otaerror"
+// SSI tag on the Tools page.  Empty string if no error.
+//
+//*****************************************************************************
+void
+WebPlatformOtaError(char *pcInsert, int iInsertLen)
+{
+    if((pcInsert == NULL) || (iInsertLen <= 0))
+    {
+        return;
+    }
+    strncpy(pcInsert, g_pcOtaError, (size_t)iInsertLen);
+    pcInsert[iInsertLen - 1] = '\0';
 }
 
 //*****************************************************************************
