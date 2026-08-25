@@ -96,7 +96,7 @@ textarea.drag-over{border-color:#cc0000;background:#fff5f5}
 
   <!-- Firmware Update -->
   <div class="ti-card">
-    <div class="ti-card-head"><h2>Firmware Update (OTA - Over The Air)</h2></div>
+    <div class="ti-card-head"><h2>Firmware Update (OTA)</h2></div>
     <div class="ti-card-body">
       <div class="ti-field">
         <label>Firmware binary (.bin)</label>
