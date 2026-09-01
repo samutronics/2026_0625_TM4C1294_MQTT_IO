@@ -215,7 +215,11 @@ OtaPrepareTarget(psa_fwu_component_t *pTarget)
     // Log the active (primary) image version so candidate mismatches are obvious.
     //
     psa_fwu_component_info_t sInfoActive = (target == OTA_VENDOR_SLOT_1) ? sInfo2 : sInfo1;
-    PalLog("ota: active image version %u.%u.%u.%u; candidate must be strictly greater\n",
+    // Reconstruct the build timestamp: revision=YYMM, build_num=DDHHMM ->
+    // 20{revision:04}{build:06} = the same YYYYMMDDHHMM string fwver shows.
+    PalLog("ota: active image version 20%04u%06u (raw %u.%u.%u.%u);"
+           " candidate must be strictly greater\n",
+           (unsigned)sInfoActive.version.patch, (unsigned)sInfoActive.version.build,
            (unsigned)sInfoActive.version.major, (unsigned)sInfoActive.version.minor,
            (unsigned)sInfoActive.version.patch, (unsigned)sInfoActive.version.build);
 
@@ -883,7 +887,9 @@ WebPlatformOtaInit(void)
        (sInfo.max_size != 0u))
     {
         g_ui32OtaMaxBytes = sInfo.max_size;
-        PalLog("ota: boot active image version %u.%u.%u.%u\n",
+        // 20{revision:04}{build:06} = the YYYYMMDDHHMM build stamp fwver shows.
+        PalLog("ota: boot active image version 20%04u%06u (raw %u.%u.%u.%u)\n",
+               (unsigned)sInfo.version.patch, (unsigned)sInfo.version.build,
                (unsigned)sInfo.version.major, (unsigned)sInfo.version.minor,
                (unsigned)sInfo.version.patch, (unsigned)sInfo.version.build);
     }

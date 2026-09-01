@@ -1,5 +1,16 @@
 # OTA Fix Plan — PSA FWU version bump (error -133 / NOT_PERMITTED)
 
+> **UPDATE 2026-09-01 (Plan 5):** the monotonic **counter** described below
+> (`ota_version.txt`, `VENDOR_VER="0.0.$n.0"`) has been **replaced** by a version
+> **derived from the FW build timestamp**, so OTA and FW share one nomenclature and
+> there is no counter to maintain. `flash.sh` now splits the `YYYYMMDDHHMM`
+> fingerprint into the PSA fields — `iv_revision = YYMM`, `iv_build_num = DDHHMM`
+> (`VENDOR_VER="0.0.$YYMM.$DDHHMM"`) — which is still strictly monotonic under PSA's
+> field-wise compare, so the anti-downgrade fix still holds. `ota_version.txt` was
+> deleted. The device logs reconstruct the stamp as `20{revision}{build:06}`
+> (= `fwver`). See `docs/plans/PLAN_ota_version_fw_timestamp.md`. The counter
+> mechanics below are retained for historical context only.
+
 **Date:** 2026-08-23
 **Device:** CC35x1 (LP-EM-CC35x1)
 **For:** implementer (smaller model) — this plan is self-contained; do not redesign it, execute it.

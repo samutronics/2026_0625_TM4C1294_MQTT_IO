@@ -93,26 +93,31 @@ echo "[flash.sh] =========================================="
 # strictly greater than the installed image -> PSA_ERROR_NOT_PERMITTED (-133).
 # The SysConfig default (action_request_extra.txt) is static 0.0.17.0, so every
 # build was identical and every OTA after the first was rejected. We override it
-# on the make command line (CLI assignment beats the makefile's include) with a
-# value that increments on every sign, so each image is strictly newer.
+# on the make command line (CLI assignment beats the makefile's include).
 #
-# Version format MUST keep the 3rd field ("patch") as the counter so it stays
-# ABOVE the installed 0.0.17.0 (compared field-by-field: 0.0.18.0 > 0.0.17.0).
-# Counter ceiling is 255 (each field is a byte); bump manually past that.
-VER_FILE="$HERE/ota_version.txt"
+# The version is DERIVED FROM THE BUILD TIMESTAMP (the same YYYYMMDDHHMM
+# fingerprint the web UI shows as fwver), so OTA and FW share one nomenclature
+# and there is no separate counter to maintain. The PSA version struct is
+# major(u8).minor(u8).revision(u16).build_num(u32) -- a full 12-digit stamp
+# overflows the u32 build field, so we split it: revision = YYMM (<= 9912) and
+# build_num = DDHHMM (<= 312359). This is monotonic under PSA's field-wise
+# compare (major->minor->revision->build): YYMM rises across months/years, and
+# within a month DDHHMM rises (DD most significant) -> each build strictly newer.
+# The device reconstructs and displays it as 20{revision}{build:06} = the stamp.
+# (10#... forces base-10 so a day/hour with a leading zero is not read as octal.)
 if [ -n "${OTA_IMAGE_VERSION:-}" ]; then
-    VENDOR_VER="$OTA_IMAGE_VERSION"                 # explicit override, e.g. first bench test
+    VENDOR_VER="$OTA_IMAGE_VERSION"                 # explicit manual override
+    echo "[flash.sh] OTA image version: $VENDOR_VER (manual OTA_IMAGE_VERSION override)"
 else
-    n="$(cat "$VER_FILE" 2>/dev/null)"; n="${n:-17}" # last counter; seed 17 (== installed)
-    n=$((n + 1))                                     # strictly greater than installed
-    if [ "$n" -gt 255 ]; then
-        echo "[flash.sh] ERROR: OTA version counter > 255; bump the minor field manually in flash.sh." >&2
+    FP="$(fw_fingerprint)" || {
+        echo "[flash.sh] ERROR: cannot derive build fingerprint for OTA version." >&2
         exit 3
-    fi
-    VENDOR_VER="0.0.$n.0"
-    echo "$n" > "$VER_FILE"
+    }
+    YYMM=$((10#${FP:2:4}))                          # -> iv_revision (u16, <= 9912)
+    DDHHMM=$((10#${FP:6:6}))                         # -> iv_build_num (u32, <= 312359)
+    VENDOR_VER="0.0.$YYMM.$DDHHMM"
+    echo "[flash.sh] OTA image version: $VENDOR_VER (derived from build $FP)"
 fi
-echo "[flash.sh] OTA image version: $VENDOR_VER (overrides syscfg default)"
 
 echo "[flash.sh] Invoking toolbox makefile to sign vendor image..."
 PATH="/c/ti/ccs2100/ccs/utils/bin:$PATH" \
