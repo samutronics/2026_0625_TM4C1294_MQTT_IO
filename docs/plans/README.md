@@ -13,7 +13,7 @@ One self-contained plan per open task. Each file is written so a smaller model c
 | 7 | [PLAN_portability_absolute_paths.md](PLAN_portability_absolute_paths.md) | Build | Med | OPEN |
 | 8 | [PLAN_remove_ble_demo.md](PLAN_remove_ble_demo.md) | Cleanup | Low | DONE |
 | 9 | [PLAN_cleanup_root_md_docs.md](PLAN_cleanup_root_md_docs.md) | Cleanup | Low | OPEN |
-| 10 | [PLAN_tm4c_build_broken_io_fsdata.md](PLAN_tm4c_build_broken_io_fsdata.md) | Bug | High | OPEN |
+| 10 | [PLAN_tm4c_build_broken_io_fsdata.md](PLAN_tm4c_build_broken_io_fsdata.md) | Bug | High | DONE |
 
 **Global rules for every plan:**
 - Do ONE plan at a time; build green after each change set; do not start another task's files.

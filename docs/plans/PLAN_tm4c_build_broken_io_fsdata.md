@@ -1,6 +1,16 @@
 # Plan 10 — Fix broken TM4C build (`io_fsdata.h` regenerated with the CC35x1 generator)
 
-**Priority:** High · **Status:** OPEN · Memory: `tm4c-build-broken-io-fsdata-todo`
+**Priority:** High · **Status:** DONE · Memory: `tm4c-build-broken-io-fsdata-todo`
+
+## Resolution (2026-09-01)
+Steps 1–2 were already resolved on `main`: commit `119cc81` regenerated
+`mqtt_io/io_fsdata.h` back into correct TivaWare/lwip-1.4.1 form (bare `fs.h`
+via `io_fs.c`, no `lwip/apps/fs.h`). Verified both projects build green this
+session (`mqtt_io` links + emits its bin; `mqtt_io_cc35x1` green). Step 3
+(prevent recurrence) implemented: `platform/cc35x1/tools/makefsdata.py` now
+hard-refuses `-o …/io_fsdata.h` (exits non-zero, writes nothing), so the CC35x1
+generator can never cross-contaminate the TM4C header again. Tested: refuses
+`io_fsdata.h`, still generates `fsdata.c`, both builds remain green.
 
 ## Goal
 Restore a green `mqtt_io` (TM4C1294) build. It currently fails to compile; `mqtt_io_cc35x1` is unaffected.
