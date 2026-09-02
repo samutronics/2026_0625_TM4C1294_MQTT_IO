@@ -19,7 +19,7 @@ Do NOT call any ccs-project, ccs-debug, ccs-sysconfig, or ccs-serial MCP tools u
 
 ## CC35x1 Debug/Flash Preflight (prevents the M4/M33 target mix-up)
 
-The TM4C project `mqtt_io` (Cortex-**M4**) and the CC35x1 project `mqtt_io_cc35x1`
+The TM4C project `mqtt_io_tm4c1294` (Cortex-**M4**) and the CC35x1 project `mqtt_io_cc35x1`
 (Cortex-**M33**) share this workspace. `debugProject` has no project argument — it
 uses the CCS **active project** — so if a TM4C build ran last, a CC35x1 debug launch
 silently attaches to the M4 and fails with an "M4 error". Enforce these invariants:

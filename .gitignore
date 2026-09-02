@@ -60,3 +60,5 @@ serial_logs/
 # --- CC35x1 CCS project (imported from platform/cc35x1/mqtt_io_cc35x1.projectspec;
 #     the projectspec is tracked, the generated managed-build project dir is not) ---
 /mqtt_io_cc35x1/
+# Transient reimport scaffolds left by the renameProject/importProject dance
+/mqtt_io_cc35x1_*/

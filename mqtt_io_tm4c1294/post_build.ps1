@@ -1,5 +1,5 @@
 # post_build.ps1 — called by Debug/makefile after the linker step.
-# Converts mqtt_io.out → timestamped .bin and a fixed-name latest .bin.
+# Converts mqtt_io_tm4c1294.out → timestamped .bin and a fixed-name latest .bin.
 #
 # File naming matches the fwver SSI tag shown in the web UI (YYYYMMDDHHMM).
 # Note: this timestamp is the system time at post-build execution; the
@@ -15,10 +15,10 @@ $debugDir   = Join-Path $scriptDir "Debug"
 $objcopy    = "C:/ti/ccs2100/ccs/tools/compiler/ti-cgt-armllvm_5.1.1.LTS/bin/tiarmobjcopy.exe"
 
 $ts      = Get-Date -Format "yyyyMMddHHmm"
-$binName = "mqtt_io_$ts.bin"
-$elfPath = Join-Path $debugDir "mqtt_io.out"
+$binName = "mqtt_io_tm4c1294_$ts.bin"
+$elfPath = Join-Path $debugDir "mqtt_io_tm4c1294.out"
 $binPath = Join-Path $debugDir $binName
-$latest  = Join-Path $debugDir "mqtt_io.bin"
+$latest  = Join-Path $debugDir "mqtt_io_tm4c1294.bin"
 
 Write-Host ""
 Write-Host "Post-build: generating $binName ..." -ForegroundColor Cyan
@@ -27,5 +27,5 @@ Write-Host "Post-build: generating $binName ..." -ForegroundColor Cyan
 Copy-Item -Force $binPath $latest
 
 $sizeMB = [math]::Round((Get-Item $binPath).Length / 1KB, 1)
-Write-Host "Post-build: $binName  ($sizeMB KB)  ->  mqtt_io.bin" -ForegroundColor Green
+Write-Host "Post-build: $binName  ($sizeMB KB)  ->  mqtt_io_tm4c1294.bin" -ForegroundColor Green
 Write-Host ""

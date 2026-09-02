@@ -2,7 +2,7 @@
 #
 # CC35x1 flash/debug preflight guard -- makes the M4/M33 target mix-up impossible.
 #
-# Background: on 2026-08-05 a debug launch silently attached to the TM4C `mqtt_io`
+# Background: on 2026-08-05 a debug launch silently attached to the TM4C `mqtt_io_tm4c1294`
 # (Cortex-M4) instead of the CC35x1 (Cortex-M33), because CCS `debugProject` uses
 # the IDE *active project*, not the probe. It cost real time ("M4 error while CC35
 # is M33"). This script encodes the invariants so it can't recur.
@@ -73,7 +73,7 @@ cc35_probe_sn() {
 cc35_check_out_fresh() {
     [ -f "$_OUT" ] || { _red "preflight: .out missing ($_OUT) -- build the CCS project first." >&2; return 3; }
     local newest
-    newest="$(find "$_REPO/mqtt_io" "$_REPO/platform/cc35x1" \
+    newest="$(find "$_REPO/mqtt_io_tm4c1294" "$_REPO/platform/cc35x1" \
                    -type f \( -name '*.c' -o -name '*.h' \) -newer "$_OUT" 2>/dev/null | head -5)"
     if [ -n "$newest" ]; then
         _ylw "preflight: WARNING -- these sources are newer than the .out (stale image?):" >&2

@@ -90,15 +90,15 @@ bindings, but not yet published over MQTT.)*
 Build from the command line with the CCS gmake and TI Arm Clang toolchain:
 
 ```
-cd mqtt_io/Debug
+cd mqtt_io_tm4c1294/Debug
 "C:/ti/ccs2100/ccs/utils/bin/gmake.exe" -j4
 ```
 
-The post-build step writes a timestamped `mqtt_io_YYYYMMDDHHMM.bin` (and copies it to
-`mqtt_io.bin`).
+The post-build step writes a timestamped `mqtt_io_tm4c1294_YYYYMMDDHHMM.bin` (and copies it to
+`mqtt_io_tm4c1294.bin`).
 
 If the web UI (`fs/*.shtml`) is changed, regenerate the compiled FS image **first** (from
-`mqtt_io/`), then force a rebuild of the FS object so the new content is linked in:
+`mqtt_io_tm4c1294/`), then force a rebuild of the FS object so the new content is linked in:
 
 ```
 "C:/ti/TivaWare_C_Series-2.2.0.295/tools/bin/makefsfile.exe" -i fs -o io_fsdata.h -r -h -q

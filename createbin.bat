@@ -21,5 +21,7 @@ if %rc% equ 0 (
 ) else (
     echo [createbin.bat] Binary creation failed with error code %rc%.
 )
-pause
+REM Only pause for interactive (double-click) use; CCS post-build sets CCS_BUILD
+REM so the build never hangs waiting on a keypress.
+if not defined CCS_BUILD pause
 exit /b %rc%
