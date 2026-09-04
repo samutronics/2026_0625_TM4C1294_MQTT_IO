@@ -7,13 +7,13 @@ Rework the Control Board so it accepts either a TM4C1294 LaunchPad (via EV300E) 
 
 ## Before you start (read)
 - `CCS.md`, `CLAUDE.md`, `MEMORY.md`.
-- **Root doc `MCU_INTERCHANGE_PLAN.md`** — the full design (this is the execution wrapper).
+- **Reference doc `docs/MCU_INTERCHANGE_PLAN.md`** — the full design (this is the execution wrapper).
 - Memory `mcu-interchange-plan`. Hardware refs: `HARDWARE.md`, `docs/pdf/ControlBoardSch.pdf`, both `board_pins.h`.
 
 ## HARD GATE — do this first, before ANY trace cut
-The exact **isolator-net → EV300C/D pin** mapping is unknown (the flattened schematic hides wire-merges; the C/D site has selection jumpers JP4/JP5 + resistors R300–R325). **Build the 10-row continuity map on the bench (unpowered):** buzz from each ISO7241 VCC1-side pin (U301/U302/U303: INA/INB/INC = MCU outputs, OUTD = MCU input) to the EV300C/D header pins, then read the LP-EM-CC35x1 DIO at that pin from the user-provided P1/P2 table (in `MCU_INTERCHANGE_PLAN.md`). Fill the table. **Do not cut/jumper anything until this table is complete and reviewed by the user.**
+The exact **isolator-net → EV300C/D pin** mapping is unknown (the flattened schematic hides wire-merges; the C/D site has selection jumpers JP4/JP5 + resistors R300–R325). **Build the 10-row continuity map on the bench (unpowered):** buzz from each ISO7241 VCC1-side pin (U301/U302/U303: INA/INB/INC = MCU outputs, OUTD = MCU input) to the EV300C/D header pins, then read the LP-EM-CC35x1 DIO at that pin from the user-provided P1/P2 table (in `docs/MCU_INTERCHANGE_PLAN.md`). Fill the table. **Do not cut/jumper anything until this table is complete and reviewed by the user.**
 
-## Known inputs (already in MCU_INTERCHANGE_PLAN.md)
+## Known inputs (already in docs/MCU_INTERCHANGE_PLAN.md)
 - Site chosen: **EV300C+EV300D** (ex-CC3200 BoosterPack1).
 - ISO7241 direction contract (fixed): 7 MCU-outputs (Input CLK/CS/LD, Relay CLK/MOSI/LATCH/EN) + 3 MCU-inputs (Input MISO, Relay MISO/Dout, nFAULT). Both MCUs must match these directions.
 - TM4C ports (EV300E) and LP-EM-CC35x1 P1/P2→DIO map are documented in the root plan.

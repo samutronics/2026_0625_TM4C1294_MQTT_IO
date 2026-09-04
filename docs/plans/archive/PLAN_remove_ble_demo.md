@@ -10,7 +10,7 @@ Remove `ble_wifi_provisioning_LP_EM_CC35X1_freertos_ticlang` from the workspace 
 
 ## Facts (already validated)
 - It's an **imported SDK demo**, **gitignored** (0 tracked files → removing it makes no git diff).
-- **No code/build dependency** from `mqtt_io` or `mqtt_io_cc35x1` (only two docs mention it: `CC35X1_BLE_PROVISIONING.md`, `CC35X1_PORTING_PROPOSAL.md`).
+- **No code/build dependency** from `mqtt_io` or `mqtt_io_cc35x1` (only two docs mention it: `docs/CC35X1_BLE_PROVISIONING.md`, `docs/CC35X1_PORTING_PROPOSAL.md`).
 - **Re-importable** from `C:/ti/simplelink_wifi_sdk_10_10_01_08/examples/rtos/LP_EM_CC35X1/demos/ble_wifi_provisioning/` (+ its `.projectspec`).
 
 ## Step 0 — DECISION (ask the user)
@@ -22,7 +22,7 @@ Is BLE-based Wi-Fi provisioning still planned (as an alternative to the shipped 
 1. Ensure it is NOT the CCS **active project** (else `buildProject`/`debugProject` mis-target — see the active-project trap in `CLAUDE.md`). If it is, make `mqtt_io_cc35x1` active first.
 2. Remove it from the CCS workspace (project explorer → Remove; do not need "delete from disk" via CCS).
 3. Delete the directory `ble_wifi_provisioning_LP_EM_CC35X1_freertos_ticlang/`.
-4. **Keep** `CC35X1_BLE_PROVISIONING.md` and `CC35X1_PORTING_PROPOSAL.md` (reference if BLE is revisited).
+4. **Keep** `docs/CC35X1_BLE_PROVISIONING.md` and `docs/CC35X1_PORTING_PROPOSAL.md` (reference if BLE is revisited).
 
 ## Verification
 - `mqtt_io` and `mqtt_io_cc35x1` still build green (they never depended on it).
