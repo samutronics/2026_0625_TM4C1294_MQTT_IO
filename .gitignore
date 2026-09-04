@@ -49,7 +49,12 @@ serial_logs/
 .theia/
 
 # --- Local Claude/CCS session artifacts (keep project CLAUDE.md & .mcp.json at root) ---
-.claude/
+# Ignore .claude by default, but VERSION the reusable, portable project pieces so they
+# come along on a fresh clone / another machine. settings.local.json stays local.
+.claude/*
+!.claude/commands/
+!.claude/skills/
+!.claude/settings.json
 .codex/
 
 # --- CC35x1 SDK example spikes (imported into the CCS workspace for toolchain validation;

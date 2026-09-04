@@ -1,0 +1,25 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(cd /c/Users/tomik/Workspaces/Workspace2026_0625_TM4C1294_MQTT_IO/mqtt_io_tm4c1294 && \"C:/ti/TivaWare_C_Series-2.2.0.295/tools/bin/makefsfile.exe\" -i ../mqtt_io_common/fs -o io_fsdata.h -r -h -q && echo \"REGEN OK\" && rm -f Debug/io_fs.o Debug/enet_io.o Debug/ota.o && echo \"dropped stale .o \\(io_fs, enet_io, ota\\)\")",
+      "Bash(git rev-list:*)",
+      "Bash(ls:*)",
+      "Bash(pwd)",
+      "Bash(cd:*)",
+      "Bash(grep:*)",
+      "Bash(rg:*)",
+      "Bash(find:*)",
+      "Bash(cat:*)",
+      "Bash(head:*)",
+      "Bash(tail:*)",
+      "Bash(wc:*)",
+      "Bash(sort:*)",
+      "Bash(git status)",
+      "Bash(git diff:*)",
+      "Bash(git log:*)"
+    ],
+    "additionalDirectories": [     
+      "c:\\Users\\tomik\\Workspaces\\Workspace2026_0625_TM4C1294_MQTT_IO\\mqtt_io_tm4c1294\\Debug"
+    ]
+  }
+}
