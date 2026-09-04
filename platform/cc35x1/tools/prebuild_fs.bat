@@ -6,7 +6,7 @@ REM  The CC35x1 httpd serves its pages from platform/cc35x1/fsdata.c, which
 REM  fs.c pulls in via `#include HTTPD_FSDATA_FILE` (= "fsdata.c").  CCS resolves
 REM  that include against the PROJECT-ROOT copy mqtt_io_cc35x1\fsdata.c (the
 REM  projectspec copies it in with action="copy"), so BOTH files must be
-REM  refreshed from mqtt_io_tm4c1294/fs/ or HTML edits never reach the firmware.
+REM  refreshed from mqtt_io_common/fs/ or HTML edits never reach the firmware.
 REM
 REM  NOTE: Do NOT regenerate mqtt_io_tm4c1294/io_fsdata.h (the TM4C header) here.
 REM  TM4C uses lwip-1.4.1 with includes in httpserver_raw/, which differ from
@@ -18,7 +18,7 @@ cd /d "%~dp0..\..\..\"
 
 set "PY=C:\Users\tomik\AppData\Local\Microsoft\WindowsApps\python3.exe"
 
-"%PY%" platform\cc35x1\tools\makefsdata.py mqtt_io_tm4c1294\fs -o platform\cc35x1\fsdata.c
+"%PY%" platform\cc35x1\tools\makefsdata.py mqtt_io_common\fs -o platform\cc35x1\fsdata.c
 if errorlevel 1 (
   echo WARNING: FS regeneration failed, continuing with existing fsdata.c
   exit /b 0

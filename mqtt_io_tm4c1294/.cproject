@@ -46,8 +46,9 @@
                                     <listOptionValue value="C:/ti/TivaWare_C_Series-2.2.0.295/third_party/lwip-1.4.1/ports/tiva-tm4c129/include"/>
                                     <listOptionValue value="C:/ti/TivaWare_C_Series-2.2.0.295/third_party"/>
                                     <listOptionValue value="C:/ti/TivaWare_C_Series-2.2.0.295/third_party/lwip-1.4.1/apps/httpserver_raw"/>
-                                    <listOptionValue value="${PROJECT_ROOT}/common"/>
-                                    <listOptionValue value="${PROJECT_ROOT}/pal"/>
+                                    <listOptionValue value="C:/Users/tomik/Workspaces/Workspace2026_0625_TM4C1294_MQTT_IO/mqtt_io_common"/>
+                                    <listOptionValue value="C:/Users/tomik/Workspaces/Workspace2026_0625_TM4C1294_MQTT_IO/mqtt_io_common/common"/>
+                                    <listOptionValue value="C:/Users/tomik/Workspaces/Workspace2026_0625_TM4C1294_MQTT_IO/mqtt_io_common/pal"/>
                                 </option>
                                 <option id="com.ti.ccstudio.buildDefinitions.TMS470_TICLANG_5.1.compilerID.DEFINE.272602982" superClass="com.ti.ccstudio.buildDefinitions.TMS470_TICLANG_5.1.compilerID.DEFINE" valueType="definedSymbols">
                                     <listOptionValue value="gcc"/>

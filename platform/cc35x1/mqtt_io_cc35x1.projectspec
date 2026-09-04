@@ -48,9 +48,9 @@
             -I${PROJECT_ROOT}/${ConfigName}
             -I${COM_TI_SIMPLELINK_WIFI_SDK_INSTALL_DIR}/source/third_party/lwip/ti_config/lwip-port/osi/include
             -IC:/Users/tomik/Workspaces/Workspace2026_0625_TM4C1294_MQTT_IO/platform/cc35x1
-            -IC:/Users/tomik/Workspaces/Workspace2026_0625_TM4C1294_MQTT_IO/mqtt_io_tm4c1294
-            -IC:/Users/tomik/Workspaces/Workspace2026_0625_TM4C1294_MQTT_IO/mqtt_io_tm4c1294/common
-            -IC:/Users/tomik/Workspaces/Workspace2026_0625_TM4C1294_MQTT_IO/mqtt_io_tm4c1294/pal
+            -IC:/Users/tomik/Workspaces/Workspace2026_0625_TM4C1294_MQTT_IO/mqtt_io_common
+            -IC:/Users/tomik/Workspaces/Workspace2026_0625_TM4C1294_MQTT_IO/mqtt_io_common/common
+            -IC:/Users/tomik/Workspaces/Workspace2026_0625_TM4C1294_MQTT_IO/mqtt_io_common/pal
             -DSNTP_SUPPORT
             -DMBEDTLS_CONFIG_FILE=\&quot;config-hsm.h\&quot;
             -DNVOCMP_SPS_USE_CBC
@@ -181,7 +181,7 @@
         <file path="C:/Users/tomik/Workspaces/Workspace2026_0625_TM4C1294_MQTT_IO/platform/cc35x1/pal_str.c" openOnCreation="false" excludeFromBuild="false" action="link"/>
 
         <!-- Portable core (mqtt_io/ root) - TivaWare-free, shared with the TM4C build. -->
-        <file path="C:/Users/tomik/Workspaces/Workspace2026_0625_TM4C1294_MQTT_IO/mqtt_io_tm4c1294/buildinfo.c" openOnCreation="false" excludeFromBuild="false" action="link"/>
+        <file path="C:/Users/tomik/Workspaces/Workspace2026_0625_TM4C1294_MQTT_IO/mqtt_io_common/buildinfo.c" openOnCreation="false" excludeFromBuild="false" action="link"/>
 
         <!-- din_chain.c / relay_chain.c are COPIED, not linked, on purpose.  They
              #include "board_pins.h", and a quote-include is resolved FIRST from the
@@ -194,12 +194,12 @@
              (A cleaner long-term fix is to relocate board_pins.h out of mqtt_io/
              root into each platform dir, but that modifies the shipped TM4C project's
              include paths - deferred.) -->
-        <file path="C:/Users/tomik/Workspaces/Workspace2026_0625_TM4C1294_MQTT_IO/mqtt_io_tm4c1294/din_chain.c" openOnCreation="false" excludeFromBuild="false" action="copy"/>
-        <file path="C:/Users/tomik/Workspaces/Workspace2026_0625_TM4C1294_MQTT_IO/mqtt_io_tm4c1294/relay_chain.c" openOnCreation="false" excludeFromBuild="false" action="copy"/>
+        <file path="C:/Users/tomik/Workspaces/Workspace2026_0625_TM4C1294_MQTT_IO/mqtt_io_common/din_chain.c" openOnCreation="false" excludeFromBuild="false" action="copy"/>
+        <file path="C:/Users/tomik/Workspaces/Workspace2026_0625_TM4C1294_MQTT_IO/mqtt_io_common/relay_chain.c" openOnCreation="false" excludeFromBuild="false" action="copy"/>
 
         <!-- Portable common/ modules (no external stack deps in this subset). -->
-        <file path="C:/Users/tomik/Workspaces/Workspace2026_0625_TM4C1294_MQTT_IO/mqtt_io_tm4c1294/common/cgifuncs.c" openOnCreation="false" excludeFromBuild="false" action="link"/>
-        <file path="C:/Users/tomik/Workspaces/Workspace2026_0625_TM4C1294_MQTT_IO/mqtt_io_tm4c1294/common/input_events.c" openOnCreation="false" excludeFromBuild="false" action="link"/>
+        <file path="C:/Users/tomik/Workspaces/Workspace2026_0625_TM4C1294_MQTT_IO/mqtt_io_common/common/cgifuncs.c" openOnCreation="false" excludeFromBuild="false" action="link"/>
+        <file path="C:/Users/tomik/Workspaces/Workspace2026_0625_TM4C1294_MQTT_IO/mqtt_io_common/common/input_events.c" openOnCreation="false" excludeFromBuild="false" action="link"/>
 
         <!-- ================================================================
              Checkpoint B2: config + storage + the MQTT/network cluster.
@@ -213,14 +213,14 @@
              ================================================================ -->
         <file path="C:/Users/tomik/Workspaces/Workspace2026_0625_TM4C1294_MQTT_IO/platform/cc35x1/pal_irq.c" openOnCreation="false" excludeFromBuild="false" action="link"/>
         <file path="C:/Users/tomik/Workspaces/Workspace2026_0625_TM4C1294_MQTT_IO/platform/cc35x1/pal_storage.c" openOnCreation="false" excludeFromBuild="false" action="link"/>
-        <file path="C:/Users/tomik/Workspaces/Workspace2026_0625_TM4C1294_MQTT_IO/mqtt_io_tm4c1294/config.c" openOnCreation="false" excludeFromBuild="false" action="link"/>
-        <file path="C:/Users/tomik/Workspaces/Workspace2026_0625_TM4C1294_MQTT_IO/mqtt_io_tm4c1294/mqtt_client.c" openOnCreation="false" excludeFromBuild="false" action="link"/>
-        <file path="C:/Users/tomik/Workspaces/Workspace2026_0625_TM4C1294_MQTT_IO/mqtt_io_tm4c1294/common/mqtt_app.c" openOnCreation="false" excludeFromBuild="false" action="link"/>
-        <file path="C:/Users/tomik/Workspaces/Workspace2026_0625_TM4C1294_MQTT_IO/mqtt_io_tm4c1294/common/relay_pulse.c" openOnCreation="false" excludeFromBuild="false" action="link"/>
-        <file path="C:/Users/tomik/Workspaces/Workspace2026_0625_TM4C1294_MQTT_IO/mqtt_io_tm4c1294/common/output_ctrl.c" openOnCreation="false" excludeFromBuild="false" action="link"/>
-        <file path="C:/Users/tomik/Workspaces/Workspace2026_0625_TM4C1294_MQTT_IO/mqtt_io_tm4c1294/common/io_scan.c" openOnCreation="false" excludeFromBuild="false" action="link"/>
-        <file path="C:/Users/tomik/Workspaces/Workspace2026_0625_TM4C1294_MQTT_IO/mqtt_io_tm4c1294/common/netbiosns.c" openOnCreation="false" excludeFromBuild="false" action="link"/>
-        <file path="C:/Users/tomik/Workspaces/Workspace2026_0625_TM4C1294_MQTT_IO/mqtt_io_tm4c1294/common/sntp_client.c" openOnCreation="false" excludeFromBuild="false" action="link"/>
+        <file path="C:/Users/tomik/Workspaces/Workspace2026_0625_TM4C1294_MQTT_IO/mqtt_io_common/config.c" openOnCreation="false" excludeFromBuild="false" action="link"/>
+        <file path="C:/Users/tomik/Workspaces/Workspace2026_0625_TM4C1294_MQTT_IO/mqtt_io_common/mqtt_client.c" openOnCreation="false" excludeFromBuild="false" action="link"/>
+        <file path="C:/Users/tomik/Workspaces/Workspace2026_0625_TM4C1294_MQTT_IO/mqtt_io_common/common/mqtt_app.c" openOnCreation="false" excludeFromBuild="false" action="link"/>
+        <file path="C:/Users/tomik/Workspaces/Workspace2026_0625_TM4C1294_MQTT_IO/mqtt_io_common/common/relay_pulse.c" openOnCreation="false" excludeFromBuild="false" action="link"/>
+        <file path="C:/Users/tomik/Workspaces/Workspace2026_0625_TM4C1294_MQTT_IO/mqtt_io_common/common/output_ctrl.c" openOnCreation="false" excludeFromBuild="false" action="link"/>
+        <file path="C:/Users/tomik/Workspaces/Workspace2026_0625_TM4C1294_MQTT_IO/mqtt_io_common/common/io_scan.c" openOnCreation="false" excludeFromBuild="false" action="link"/>
+        <file path="C:/Users/tomik/Workspaces/Workspace2026_0625_TM4C1294_MQTT_IO/mqtt_io_common/common/netbiosns.c" openOnCreation="false" excludeFromBuild="false" action="link"/>
+        <file path="C:/Users/tomik/Workspaces/Workspace2026_0625_TM4C1294_MQTT_IO/mqtt_io_common/common/sntp_client.c" openOnCreation="false" excludeFromBuild="false" action="link"/>
 
         <!-- ================================================================
              Checkpoint B3: the lwIP apps/httpd web server.
@@ -256,7 +256,7 @@
              reboot / factory-reset flow; webui_platform.c stubs the OTA chunk
              CGI (/fwchunk.cgi - OTA on CC35x1 is PSA FWU, deferred).
              ================================================================ -->
-        <file path="C:/Users/tomik/Workspaces/Workspace2026_0625_TM4C1294_MQTT_IO/mqtt_io_tm4c1294/common/webui.c" openOnCreation="false" excludeFromBuild="false" action="link"/>
+        <file path="C:/Users/tomik/Workspaces/Workspace2026_0625_TM4C1294_MQTT_IO/mqtt_io_common/common/webui.c" openOnCreation="false" excludeFromBuild="false" action="link"/>
         <file path="C:/Users/tomik/Workspaces/Workspace2026_0625_TM4C1294_MQTT_IO/platform/cc35x1/pal_sys.c" openOnCreation="false" excludeFromBuild="false" action="link"/>
         <file path="C:/Users/tomik/Workspaces/Workspace2026_0625_TM4C1294_MQTT_IO/platform/cc35x1/webui_platform.c" openOnCreation="false" excludeFromBuild="false" action="link"/>
 
