@@ -1,6 +1,11 @@
 # Plan 9 — Clean up the root-level .md task/plan files
 
-**Priority:** Low · **Status:** OPEN · Memory: `cleanup-root-md-docs-todo`
+> **Status: CLOSED** — executed 2026-09-04 (commits `56eba54`, `da751a1`, `97bcb2b`,
+> `18ccebc`). Root now holds only `README.md`/`CLAUDE.md`/`HARDWARE.md`; reference docs
+> moved to `docs/`, the Wi-Fi plan to `docs/plans/`, `OTA_FIX_PLAN.md` to
+> `docs/plans/archive/`, and the layout convention is recorded in `CLAUDE.md`.
+
+**Priority:** Low · **Status:** CLOSED · Memory: `cleanup-root-md-docs-todo`
 
 ## Goal
 Move Claude task/plan `.md` files out of the workspace root into a tidy `docs/` tree, keeping only conventional docs at root. Delete truly-closed plans (git history preserves them).

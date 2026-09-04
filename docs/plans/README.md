@@ -16,7 +16,6 @@ move its row from **Active** to **Completed** below.
 | 4 | [PLAN_mcu_interchange_rework.md](PLAN_mcu_interchange_rework.md) | Hardware | Med | OPEN (gated) |
 | 6 | [PLAN_restructure_perfect_symmetry.md](PLAN_restructure_perfect_symmetry.md) | Structure | Med | PARTIAL (mqtt_io_common extracted; CC35x1 fold + OTA-unify deferred) |
 | 7 | [PLAN_portability_absolute_paths.md](PLAN_portability_absolute_paths.md) | Build | Med | OPEN |
-| 9 | [PLAN_cleanup_root_md_docs.md](PLAN_cleanup_root_md_docs.md) | Cleanup | Low | OPEN |
 
 ### Completed (archived in [`archive/`](archive/))
 
@@ -26,6 +25,7 @@ move its row from **Active** to **Completed** below.
 | — | [archive/OTA_FIX_PLAN.md](archive/OTA_FIX_PLAN.md) | OTA | `00395e0` (superseded by Plan 5) |
 | 8 | [archive/PLAN_remove_ble_demo.md](archive/PLAN_remove_ble_demo.md) | Cleanup | `1c5258d` (2026-08-24) |
 | 10 | [archive/PLAN_tm4c_build_broken_io_fsdata.md](archive/PLAN_tm4c_build_broken_io_fsdata.md) | Bug | DONE |
+| 9 | [archive/PLAN_cleanup_root_md_docs.md](archive/PLAN_cleanup_root_md_docs.md) | Cleanup | `18ccebc` (2026-09-04) |
 
 ## Executing a plan (procedure used by the `/execute-plan` command)
 When asked to execute `PLAN_<name>` (or `/execute-plan PLAN_<name>`):
