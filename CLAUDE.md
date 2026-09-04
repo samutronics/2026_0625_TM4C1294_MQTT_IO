@@ -53,3 +53,7 @@ To automatically flash the CC35x1 board immediately after every successful build
 
 After this setup, building the project will automatically compile, link, re-sign the flash images, and program the CC35x1 board via the XDS110 probe. The `flash.sh` script logs all steps (prefixed with `[flash.sh]`) to the CCS console, so you can watch progress without opening a separate terminal.
 
+## Docs & plans layout
+
+Keep the repo root to conventional docs only (`README.md`, `CLAUDE.md`, `HARDWARE.md`). Living reference docs go in `docs/`. New plan docs live in `docs/plans/`; on close, `git mv` them to `docs/plans/archive/` and move their index row to the **Completed** table in `docs/plans/README.md` (or delete once the outcome is captured in code + a memory). Do not create a separate `docs/archive/`, and do not bury docs under `.claude/`.
+

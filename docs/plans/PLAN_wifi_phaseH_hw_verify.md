@@ -7,7 +7,7 @@ Verify on hardware the three already-committed Wi-Fi Phase H features, and — t
 
 ## Before you start (read)
 - `CCS.md`, `CLAUDE.md`, `MEMORY.md`.
-- **Root doc `WIFI_FEATURES_PLAN.md`** (the full feature spec + its own verification section) — this plan is the execution wrapper around it.
+- **Spec doc `WIFI_FEATURES_PLAN.md`** (same folder; the full feature spec + its own verification section) — this plan is the execution wrapper around it.
 - Memories: `cc35x1-provisioning`, `cc35x1-web-reboot-freeze` (F3 shares that hazard), `cc35x1-nwp-reset`, `serial-use-pyserial`.
 
 ## What to verify (from WIFI_FEATURES_PLAN.md §Verification)
