@@ -24,7 +24,7 @@ the fewest cuts/jumpers. A+B is raw TM4C GPIO with no wireless-MCU intent.
 
 ---
 
-## Reference 1 — Isolator MCU-side nets (FULLY KNOWN, from `pdf/ControlBoardSch.pdf`)
+## Reference 1 — Isolator MCU-side nets (FULLY KNOWN, from `docs/pdf/ControlBoardSch.pdf`)
 Each net crosses an ISO7241 (U301/U302/U303). **The isolator fixes the direction of each line**, so
 *both* MCUs must drive/read each net the same way. This table is the electrical contract.
 
@@ -79,7 +79,7 @@ gate routing. **Do not assume** the CC3200 native-SPI carried a specific chain. 
 **continuity-buzzing (board unpowered)** from each **ISO7241 VCC1-side pin** (known, silk U301/U302/U303:
 `INA/INB/INC` = MCU→field, `OUTD` = field→MCU) out to the EV300C/EV300D header pins. Record which C/D
 header position each of the 10 isolator nets lands on, then read the DIO at that position from
-Reference 2. That produces the final map. (The `pdf/ControlBoardSch.pdf` is image-only and this
+Reference 2. That produces the final map. (The `docs/pdf/ControlBoardSch.pdf` is image-only and this
 environment can't OCR it; TI's LP-EM-CC35X1 pinout is **SWRU629A** — cite/verify against silkscreen.)
 
 **Fill this table on the bench (one row per isolator net):**

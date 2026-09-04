@@ -8,7 +8,7 @@ Rework the Control Board so it accepts either a TM4C1294 LaunchPad (via EV300E) 
 ## Before you start (read)
 - `CCS.md`, `CLAUDE.md`, `MEMORY.md`.
 - **Root doc `MCU_INTERCHANGE_PLAN.md`** — the full design (this is the execution wrapper).
-- Memory `mcu-interchange-plan`. Hardware refs: `HARDWARE.md`, `pdf/ControlBoardSch.pdf`, both `board_pins.h`.
+- Memory `mcu-interchange-plan`. Hardware refs: `HARDWARE.md`, `docs/pdf/ControlBoardSch.pdf`, both `board_pins.h`.
 
 ## HARD GATE — do this first, before ANY trace cut
 The exact **isolator-net → EV300C/D pin** mapping is unknown (the flattened schematic hides wire-merges; the C/D site has selection jumpers JP4/JP5 + resistors R300–R325). **Build the 10-row continuity map on the bench (unpowered):** buzz from each ISO7241 VCC1-side pin (U301/U302/U303: INA/INB/INC = MCU outputs, OUTD = MCU input) to the EV300C/D header pins, then read the LP-EM-CC35x1 DIO at that pin from the user-provided P1/P2 table (in `MCU_INTERCHANGE_PLAN.md`). Fill the table. **Do not cut/jumper anything until this table is complete and reviewed by the user.**
