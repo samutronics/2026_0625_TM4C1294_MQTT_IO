@@ -1,7 +1,36 @@
 # Plan 6 — Restructure to perfect platform symmetry
 
-**Priority:** Med · **Status:** OPEN · Memory: `rename-tm4c-project-todo`
+**Priority:** Med · **Status:** PARTIAL · Memory: `rename-tm4c-project-todo`
 **⚠ Big, high-risk refactor. A smaller model MUST do it incrementally and keep both builds green after every step. If unsure, do Option A only and stop.**
+
+## Progress (2026-09-04)
+Executed as **Option B**, Model 2 (sources in tracked project folders), incrementally,
+both builds green after each commit:
+- **Stage A** (`788a50f`): renamed CCS project `mqtt_io` → `mqtt_io_tm4c1294` (renameProject
+  MOVES the dir); post-build (`makefile.targets`/`post_build.ps1`) emits `mqtt_io_tm4c1294_*.bin`.
+  CC35x1 projectspec repointed + reimported. Made the CC35x1 projectspec faithful + reimport-lossless:
+  encoded `preBuildStep` (FS regen) + `postBuildStep` (createbin sign), and added 4 sources the
+  tracked spec had drifted from (buttons/dhcpserver/temp_sensor/wifi_store). `createbin.bat` pause
+  guarded (`CCS_BUILD`) for headless builds.
+- **Stage C1** (`1d85abb`): created tracked `mqtt_io_common/` holding ALL shared code
+  (`common/ fs/ pal/` + `buildinfo config mqtt_client din_chain relay_chain ota.h`). `ota.c` stays
+  TM4C-only (CC35x1 stubs OTA); `ota.h` is the shared interface. TM4C `.project`/`.cproject`
+  hand-edited (CCS.md rule **waived by user** for this restructure) to link common; CC35x1 projectspec
+  repointed to common. `prebuild_fs.bat` FS input → `mqtt_io_common/fs`.
+
+**Key learnings baked in:** `renameProject` moves the on-disk dir; projectspec reimport silently drops
+manually-added build steps (fix: encode pre/post steps in the projectspec) and the tracked CC35x1
+projectspec had drifted from the live project.
+
+## Deferred (by user decision 2026-09-04)
+- **CC35x1 fold** (`platform/cc35x1/` → `mqtt_io_cc35x1/`): NOT done. The CC35x1 project dir is
+  projectspec-generated + gitignored and holds SDK-copied + generated files (`main_freertos.c`,
+  `httpd.c`, 501 KB `fsdata.c`, …); folding + tracking it would commit regenerable/SDK files to git.
+  Chosen layout: keep `platform/cc35x1/` as CC35x1's tracked source dir, project dir gitignored.
+  → The two platforms are intentionally asymmetric here (TM4C = hand-owned managed-build project;
+  CC35x1 = projectspec-bootstrapped from the SDK). Perfect folder symmetry is not pursued.
+- **Stage D (OTA-binary unify)**: SKIPPED — cosmetic, touches the flash path, only affects gitignored
+  `Debug/ota/` artifacts. Revisit if a shared OTA archive is wanted.
 
 ## Goal
 Make the two platforms perfectly symmetric so a new platform is a mechanical clone:

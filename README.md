@@ -97,11 +97,12 @@ cd mqtt_io_tm4c1294/Debug
 The post-build step writes a timestamped `mqtt_io_tm4c1294_YYYYMMDDHHMM.bin` (and copies it to
 `mqtt_io_tm4c1294.bin`).
 
-If the web UI (`fs/*.shtml`) is changed, regenerate the compiled FS image **first** (from
-`mqtt_io_tm4c1294/`), then force a rebuild of the FS object so the new content is linked in:
+The web UI now lives in the shared tree at `mqtt_io_common/fs/`. If it is changed, regenerate
+the compiled FS image **first** (run from `mqtt_io_tm4c1294/`; `io_fsdata.h` is the TM4C loader
+and stays in the TM4C project), then force a rebuild of the FS object so the new content is linked in:
 
 ```
-"C:/ti/TivaWare_C_Series-2.2.0.295/tools/bin/makefsfile.exe" -i fs -o io_fsdata.h -r -h -q
+"C:/ti/TivaWare_C_Series-2.2.0.295/tools/bin/makefsfile.exe" -i ../mqtt_io_common/fs -o io_fsdata.h -r -h -q
 rm -f Debug/io_fs.o
 ```
 

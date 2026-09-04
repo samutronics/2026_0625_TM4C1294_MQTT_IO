@@ -9,7 +9,7 @@ One self-contained plan per open task. Each file is written so a smaller model c
 | 3 | [PLAN_wifi_phaseH_hw_verify.md](PLAN_wifi_phaseH_hw_verify.md) | Verification | High | OPEN |
 | 4 | [PLAN_mcu_interchange_rework.md](PLAN_mcu_interchange_rework.md) | Hardware | Med | OPEN (gated) |
 | 5 | [PLAN_ota_version_fw_timestamp.md](PLAN_ota_version_fw_timestamp.md) | OTA | Med | DONE |
-| 6 | [PLAN_restructure_perfect_symmetry.md](PLAN_restructure_perfect_symmetry.md) | Structure | Med | OPEN |
+| 6 | [PLAN_restructure_perfect_symmetry.md](PLAN_restructure_perfect_symmetry.md) | Structure | Med | PARTIAL (mqtt_io_common extracted; CC35x1 fold + OTA-unify deferred) |
 | 7 | [PLAN_portability_absolute_paths.md](PLAN_portability_absolute_paths.md) | Build | Med | OPEN |
 | 8 | [PLAN_remove_ble_demo.md](PLAN_remove_ble_demo.md) | Cleanup | Low | DONE |
 | 9 | [PLAN_cleanup_root_md_docs.md](PLAN_cleanup_root_md_docs.md) | Cleanup | Low | OPEN |
