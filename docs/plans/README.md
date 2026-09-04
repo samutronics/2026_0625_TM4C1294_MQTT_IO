@@ -26,6 +26,24 @@ move its row from **Active** to **Completed** below.
 | 8 | [archive/PLAN_remove_ble_demo.md](archive/PLAN_remove_ble_demo.md) | Cleanup | `1c5258d` (2026-08-24) |
 | 10 | [archive/PLAN_tm4c_build_broken_io_fsdata.md](archive/PLAN_tm4c_build_broken_io_fsdata.md) | Bug | DONE |
 
+## Executing a plan (procedure used by the `/execute-plan` command)
+When asked to execute `PLAN_<name>` (or `/execute-plan PLAN_<name>`):
+1. **Read first, confirm:** `C:/ti/ccs2100/ccs/theia/resources/ai/CCS.md` (mandatory before any
+   CCS/TI MCP tool), the repo `CLAUDE.md`, this `README.md`, the memory index
+   `~/.claude/projects/<this-project>/memory/MEMORY.md`, the target plan file (in `docs/plans/`),
+   and every memory/doc that plan links. State that you've read them.
+2. **Execute that plan only** — its steps / per-file disposition / verification, plus the global
+   rules below. Don't start another plan's files.
+3. **Green gate (code/build plans):** both `mqtt_io_tm4c1294` and `mqtt_io_cc35x1` must build green
+   (via the ccs-project MCP `buildProject`, never raw gmake) after each change set; if a step can't
+   stay green, revert it and stop. (Docs-only plans skip the build gate.)
+4. **Commits:** small, reviewable, on `main`, each ending with the `Co-Authored-By` trailer.
+   **Stop for review before committing each step/group.** Do not `git push` or flash hardware unless
+   told. Leave the pre-existing uncommitted `platform/cc35x1/{main,net_wifi}` edits untouched.
+5. **On completion:** update the plan's Status here; if DONE, `git mv` it to `archive/` and move its
+   row to **Completed**. Refresh any affected memories.
+6. If anything is ambiguous or conflicts with the plan, **stop and ask** rather than guess.
+
 **Global rules for every plan:**
 - Do ONE plan at a time; build green after each change set; do not start another task's files.
 - Never hand-edit `.syscfg`/`.project`/`.cproject` — use the CCS SysConfig / project MCP (CCS.md rule).
