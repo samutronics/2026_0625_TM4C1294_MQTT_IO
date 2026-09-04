@@ -1,3 +1,8 @@
+> **Status: CLOSED** — the OTA version-override fix landed in `00395e0`; the mechanism
+> was later superseded by the FW-timestamp-derived version (Plan 5, `51b47cb`, see
+> `docs/plans/archive/PLAN_ota_version_fw_timestamp.md`). Outcome is captured in shipped
+> code and the `cc35x1-ota` memory. Kept for history.
+
 # OTA Fix Plan — PSA FWU version bump (error -133 / NOT_PERMITTED)
 
 > **UPDATE 2026-09-01 (Plan 5):** the monotonic **counter** described below

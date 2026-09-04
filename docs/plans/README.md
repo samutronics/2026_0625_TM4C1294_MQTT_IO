@@ -23,6 +23,7 @@ move its row from **Active** to **Completed** below.
 | # | Plan | Area | Done |
 |---|------|------|------|
 | 5 | [archive/PLAN_ota_version_fw_timestamp.md](archive/PLAN_ota_version_fw_timestamp.md) | OTA | `51b47cb` (2026-09-01) |
+| — | [archive/OTA_FIX_PLAN.md](archive/OTA_FIX_PLAN.md) | OTA | `00395e0` (superseded by Plan 5) |
 | 8 | [archive/PLAN_remove_ble_demo.md](archive/PLAN_remove_ble_demo.md) | Cleanup | `1c5258d` (2026-08-24) |
 | 10 | [archive/PLAN_tm4c_build_broken_io_fsdata.md](archive/PLAN_tm4c_build_broken_io_fsdata.md) | Bug | DONE |
 
