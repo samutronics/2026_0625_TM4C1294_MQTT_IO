@@ -188,7 +188,7 @@ re-discovering the codebase. To hand off:
    green build only.
 
 A concrete kickoff prompt for the cheaper model:
-> "Read `WIFI_FEATURES_PLAN.md`, then `C:/ti/ccs2100/ccs/theia/resources/ai/CCS.md`, the repo
+> "Read `docs/plans/WIFI_FEATURES_PLAN.md`, then `C:/ti/ccs2100/ccs/theia/resources/ai/CCS.md`, the repo
 > `CLAUDE.md`, and `…/memory/MEMORY.md`. Implement **Feature 1 only** from the Source edit checklist
 > (rows 1-4). Do not touch F2/F3 files yet. Follow the two-copy sync rule for `wifi_store.c`. When
 > done, run `buildProject mqtt_io_cc35x1` and report the result — do not flash."
@@ -274,7 +274,6 @@ dropdown in real-time.
 ## OPEN TODOs (to fully close)
 1. **Commit the working tree** — `wifi_store.c/.h`, `webui_platform.c`, `enet_io.c`, `config.h`
    (these hold the definitions HEAD already calls; build is incoherent until committed).
-   `CLAUDE_WORKFLOW.md` remains intentionally untracked.
 2. **Build both projects green** — `buildProject mqtt_io_cc35x1` (M33) **and** the TM4C `mqtt_io`
    gmake build (shared `webui.c`/`config.h` + `enet_io.c` stubs must still compile/link).
 3. **Flash + on-HW verification** (COM14 via pyserial; `flash.sh`; USB power-cycle, not a debugger
