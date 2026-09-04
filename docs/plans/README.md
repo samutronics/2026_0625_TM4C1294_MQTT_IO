@@ -27,6 +27,10 @@ move its row from **Active** to **Completed** below.
 | 10 | [archive/PLAN_tm4c_build_broken_io_fsdata.md](archive/PLAN_tm4c_build_broken_io_fsdata.md) | Bug | DONE |
 | 9 | [archive/PLAN_cleanup_root_md_docs.md](archive/PLAN_cleanup_root_md_docs.md) | Cleanup | `18ccebc` (2026-09-04) |
 
+The old `OTA_FIX_PLAN.md` (pre-numbering OTA design doc, delivered `00395e0`, superseded by Plan 5)
+was deleted after archiving — its outcome lives in shipped code + the `cc35x1-ota` memory + Plan 5.
+Recover with `git show 00395e0:OTA_FIX_PLAN.md` if ever needed.
+
 ## Executing a plan (procedure used by the `/execute-plan` command)
 When asked to execute `PLAN_<name>` (or `/execute-plan PLAN_<name>`):
 1. **Read first, confirm:** `C:/ti/ccs2100/ccs/theia/resources/ai/CCS.md` (mandatory before any
