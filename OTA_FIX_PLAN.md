@@ -8,7 +8,7 @@
 > (`VENDOR_VER="0.0.$YYMM.$DDHHMM"`) — which is still strictly monotonic under PSA's
 > field-wise compare, so the anti-downgrade fix still holds. `ota_version.txt` was
 > deleted. The device logs reconstruct the stamp as `20{revision}{build:06}`
-> (= `fwver`). See `docs/plans/PLAN_ota_version_fw_timestamp.md`. The counter
+> (= `fwver`). See `docs/plans/archive/PLAN_ota_version_fw_timestamp.md`. The counter
 > mechanics below are retained for historical context only.
 
 **Date:** 2026-08-23
