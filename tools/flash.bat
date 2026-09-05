@@ -12,7 +12,7 @@ echo [flash.bat] Invoking flash.sh via Git Bash...
 echo.
 REM Use any XDS110 by default (empty CC35_PROBE_SN accepts the first/only probe)
 if not defined CC35_PROBE_SN set CC35_PROBE_SN=
-"C:\Program Files\Git\bin\bash.exe" "%~dp0platform/cc35x1/tools/flash.sh" %*
+"C:\Program Files\Git\bin\bash.exe" "%~dp0../platform/cc35x1/tools/flash.sh" %*
 set rc=%errorlevel%
 echo.
 if %rc% equ 0 (

@@ -15,7 +15,7 @@ Replace machine-specific absolute paths in tracked build files with relative/con
    - `platform/cc35x1/tools/preflight.sh:36` (`XDSDFU`)
    - `mqtt_io/post_build.ps1:15` (`objcopy` full path)
    - `mqtt_io/.cproject:41-44` (TivaWare include dirs `C:/ti/TivaWare_C_Series-2.2.0.295/...`)
-3. **Program Files launchers (low):** `createbin.bat:16`, `flash.bat:15` (`C:\Program Files\Git\bin\bash.exe`).
+3. **Program Files launchers (low):** `tools/createbin.bat:16`, `tools/flash.bat:15` (`C:\Program Files\Git\bin\bash.exe`).
 4. **IDE/tooling config (leave/document):** `.mcp.json` CCS-install launcher — inherently machine-specific.
 
 ## Fixes

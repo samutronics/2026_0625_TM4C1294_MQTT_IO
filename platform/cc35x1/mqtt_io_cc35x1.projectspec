@@ -126,7 +126,7 @@
             --compiler ticlang
         "
         preBuildStep="&quot;c:\Users\tomik\Workspaces\Workspace2026_0625_TM4C1294_MQTT_IO\platform\cc35x1\tools\prebuild_fs.bat&quot;"
-        postBuildStep="set CCS_BUILD=1&amp;&amp; &quot;c:\Users\tomik\Workspaces\Workspace2026_0625_TM4C1294_MQTT_IO\createbin.bat&quot;"
+        postBuildStep="set CCS_BUILD=1&amp;&amp; &quot;c:\Users\tomik\Workspaces\Workspace2026_0625_TM4C1294_MQTT_IO\tools\createbin.bat&quot;"
         description="MQTT-IO gateway firmware ported to LP-EM-CC35X1 (CC3551E)">
 
         <property name="launch.loadSymbolsOnly" value="true"/>

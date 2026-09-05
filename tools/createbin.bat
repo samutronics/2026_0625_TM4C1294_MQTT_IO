@@ -13,7 +13,7 @@ REM Uses Git Bash specifically (not WSL) for proper Windows path mapping.
 cd /d "%~dp0"
 echo [createbin.bat] Creating signed CC35x1 binary via Git Bash (no hardware)...
 echo.
-"C:\Program Files\Git\bin\bash.exe" "%~dp0platform/cc35x1/tools/flash.sh" --sign-only %*
+"C:\Program Files\Git\bin\bash.exe" "%~dp0../platform/cc35x1/tools/flash.sh" --sign-only %*
 set rc=%errorlevel%
 echo.
 if %rc% equ 0 (
