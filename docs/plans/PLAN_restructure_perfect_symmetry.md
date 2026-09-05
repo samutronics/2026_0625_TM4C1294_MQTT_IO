@@ -31,6 +31,18 @@ projectspec had drifted from the live project.
   CC35x1 = projectspec-bootstrapped from the SDK). Perfect folder symmetry is not pursued.
 - **Stage D (OTA-binary unify)**: SKIPPED — cosmetic, touches the flash path, only affects gitignored
   `Debug/ota/` artifacts. Revisit if a shared OTA archive is wanted.
+- **Tools consolidation** (`platform/cc35x1/tools/` → `mqtt_io_cc35x1/tools/`): DEFERRED, do it AS PART OF
+  the CC35x1 fold above (not standalone). The platform build/flash scripts (`flash.sh`, `preflight.sh`,
+  `makefsdata.py`, `ota_push.py`, `prebuild_fs.bat`) belong with the CC35x1 platform, so when
+  `platform/cc35x1/` folds into `mqtt_io_cc35x1/`, its `tools/` moves with it. Keep the repo-root
+  `tools/` for host/cross-platform helpers + launchers (`mqtt_*.py`, `createbin.bat`, `flash.bat`,
+  `temp/`) — do NOT merge the platform scripts into it. **Cost of moving now (why it waits):** `flash.sh`
+  is referenced by `CLAUDE.md`, the CC35x1 **pre-build step** (`prebuild_fs.bat`) + **post-build**
+  launchers, `.gitignore` (`platform/cc35x1/tools/*.log`), `settings.local.json`, 7+ plan docs, and
+  internal cross-calls (`flash.sh` sources `preflight.sh`; calls `ota_push.py`; `prebuild_fs.bat` calls
+  `makefsdata.py`) — plus it forces re-editing the CC35x1 pre/post-build paths in the CCS UI again.
+  Update all of those in the same step as the fold. See Option B steps 3 & 5 (which already assume the
+  scripts move) and combine with Plan 7 (portability) so paths land parameterized.
 
 ## Goal
 Make the two platforms perfectly symmetric so a new platform is a mechanical clone:
@@ -60,7 +72,7 @@ Acceptance / litmus test: "add platform N" = copy a platform folder, rename the 
 Do in small, independently-verifiable steps, building both projects green after each:
 1. **Create `mqtt_io_common/`** and `git mv` the shared tree into it (`common/`, `fs/`, `config.*`, `mqtt_client.*`, `io*.c`, `ota.*`, `netbiosns.*`, shared headers). Update BOTH projects' include paths / linked-resource paths to point at `mqtt_io_common/…`.
 2. **Create `mqtt_io_tm4c1294/`** (thin): `git mv` TM4C-only files (`enet_io.c`, `board_pins.h`, `driverlib/`, `drivers/`, `startup_ccs.c`, `lwipopts.h`, `enet_io_ccs.cmd`, `mqtt_io/platform/tm4c1294/*`) + the `.project`/`.cproject` here; relink to `mqtt_io_common/`.
-3. **Repoint `mqtt_io_cc35x1/`** linked resources from `mqtt_io/common/…` → `mqtt_io_common/…`. Move root `platform/cc35x1/*` into `mqtt_io_cc35x1/` (CC35x1-specific) and any cross-platform seam headers into `mqtt_io_common/`.
+3. **Repoint `mqtt_io_cc35x1/`** linked resources from `mqtt_io/common/…` → `mqtt_io_common/…`. Move root `platform/cc35x1/*` into `mqtt_io_cc35x1/` (CC35x1-specific), including `platform/cc35x1/tools/` → `mqtt_io_cc35x1/tools/` (see the "Tools consolidation" deferred note — keep repo-root `tools/` for host launchers, which reach in via `../`), and any cross-platform seam headers into `mqtt_io_common/`.
 4. **Kill duplication:** if the projects can now link `mqtt_io_common/` directly, remove the two-copy build hacks (`fsdata.c`, `wifi_store.c` copies) — see `cc35x1-web-fs-regen` before touching fsdata.
 5. **OTA binaries** → single shared `mqtt_io_common/ota/`, filenames `mqtt_io_<platform>_YYYYMMDDHHMM.bin`. Change `OTA_DIR` in `platform/cc35x1/tools/flash.sh` (which moves too) to the shared dir and prefix the platform. Gitignore `mqtt_io_common/ota/`.
 6. Delete the emptied `mqtt_io/` dir. Update ALL `mqtt_io/…` / `platform/cc35x1/…` references (makefiles/ORDERED_OBJS, flash scripts, `CLAUDE.md`, docs, `MEMORY.md` pointers).
