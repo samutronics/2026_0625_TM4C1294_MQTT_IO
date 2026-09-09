@@ -530,6 +530,38 @@ WebPlatformWifiTab(char *pcInsert, int iInsertLen)
 
 //*****************************************************************************
 //
+// WebPlatformWifiSsid / WebPlatformWifiPass - retrieve the saved Wi-Fi SSID and
+// password for display on the Settings page.  The TM4C is wired Ethernet with no
+// Wi-Fi storage, so both stubs return 0 (empty) for any slot.  (The CC35x1 build
+// loads from persistent storage and HTML-escapes for the form prefill.)
+//
+//*****************************************************************************
+int
+WebPlatformWifiSsid(int iSlot, char *pcBuf, int iLen)
+{
+    (void)iSlot;
+
+    if((pcBuf != NULL) && (iLen > 0))
+    {
+        pcBuf[0] = '\0';
+    }
+    return(0);
+}
+
+int
+WebPlatformWifiPass(int iSlot, char *pcBuf, int iLen)
+{
+    (void)iSlot;
+
+    if((pcBuf != NULL) && (iLen > 0))
+    {
+        pcBuf[0] = '\0';
+    }
+    return(0);
+}
+
+//*****************************************************************************
+//
 // WebPlatformLocalInputCount / WebPlatformLocalInputRead - platform-local inputs
 // appended after the SPI chain by io_scan.  The TM4C exposes none (its field-I/O
 // is entirely on the SN65HVS882 chain), so it reports 0 and reads back 0.  (The

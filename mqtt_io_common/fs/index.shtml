@@ -203,7 +203,7 @@ main{padding:28px 24px;max-width:620px}
 
   <div id="set-wifi" style="display:none">
     <div class="ti-card">
-      <div class="ti-card-head"><h2>Wi-Fi Network</h2></div>
+      <div class="ti-card-head"><h2>Wi-Fi Network (Primary)</h2></div>
       <div class="ti-card-body">
         <form method="get" action="/wificfg.cgi">
           <div class="ti-field">
@@ -215,11 +215,17 @@ main{padding:28px 24px;max-width:620px}
           </div>
           <div class="ti-field">
             <label>Network Name (SSID)</label>
-            <input id="wssid" type="text" name="ssid" maxlength="32" autocomplete="off" required>
+            <input id="wssid" type="text" name="ssid" maxlength="32" autocomplete="off"
+                   value="<!--#wssid1-->" required>
           </div>
           <div class="ti-field">
             <label>Password</label>
-            <input id="wpass" type="password" name="pass" maxlength="63" autocomplete="off">
+            <input id="wpass" type="password" name="pass" maxlength="63" autocomplete="off"
+                   value="<!--#wpass1-->">
+            <label style="font-weight:normal;font-size:13px;display:block;margin-top:6px">
+              <input type="checkbox"
+                     onclick="var p=document.getElementById('wpass');p.type=this.checked?'text':'password';">
+              Show password</label>
           </div>
           <div class="ti-btn-row">
             <button type="submit" class="ti-btn">Save &amp; Connect</button>
@@ -232,12 +238,49 @@ main{padding:28px 24px;max-width:620px}
     </div>
 
     <div class="ti-card" style="margin-top:20px">
+      <div class="ti-card-head"><h2>Wi-Fi Network (Backup)</h2></div>
+      <div class="ti-card-body">
+        <form method="get" action="/wificfg.cgi">
+          <input type="hidden" name="slot" value="1">
+          <div class="ti-field">
+            <label>Detected Networks</label>
+            <select id="wpick2" onchange="if(this.value){document.getElementById('wssid2').value=this.value;}">
+              <option value="">&mdash; select a network &mdash;</option>
+              <!--#wifiopts-->
+            </select>
+          </div>
+          <div class="ti-field">
+            <label>Network Name (SSID)</label>
+            <input id="wssid2" type="text" name="ssid" maxlength="32" autocomplete="off"
+                   value="<!--#wssid2-->">
+          </div>
+          <div class="ti-field">
+            <label>Password</label>
+            <input id="wpass2" type="password" name="pass" maxlength="63" autocomplete="off"
+                   value="<!--#wpass2-->">
+            <label style="font-weight:normal;font-size:13px;display:block;margin-top:6px">
+              <input type="checkbox"
+                     onclick="var p=document.getElementById('wpass2');p.type=this.checked?'text':'password';">
+              Show password</label>
+          </div>
+          <div class="ti-btn-row">
+            <button type="submit" class="ti-btn">Save Backup</button>
+          </div>
+        </form>
+        <div class="ti-note">A second network the device also tries at boot. It joins whichever of
+          the two has the stronger signal and falls back to the other if that fails. Saving the
+          backup does not change the current connection.</div>
+      </div>
+    </div>
+
+    <div class="ti-card" style="margin-top:20px">
       <div class="ti-card-head"><h2>Forget Wi-Fi</h2></div>
       <div class="ti-card-body">
         <form method="get" action="/wififorget.cgi"
-              onsubmit="return confirm('Forget the saved network and return to setup mode?');">
-          <p style="font-size:13px;color:#555;margin-bottom:14px">Clear the saved network and
-            bring the &quot;MQTT-IO-Setup&quot; access point back up for re-provisioning.</p>
+              onsubmit="return confirm('Forget both saved networks and return to setup mode?');">
+          <p style="font-size:13px;color:#555;margin-bottom:14px">Clear both saved networks
+            (primary and backup) and bring the &quot;MQTT-IO-Setup&quot; access point back up for
+            re-provisioning.</p>
           <button type="submit" class="ti-btn" style="background:#555">Forget Wi-Fi</button>
         </form>
       </div>

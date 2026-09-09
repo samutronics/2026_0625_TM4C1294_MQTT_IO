@@ -64,8 +64,8 @@ bool WebUIMqttRepublishPending(void);
 // provision accessor copies the pending SSID/passphrase into the caller's
 // buffers and clears the request.  No-ops on the TM4C build (wired Ethernet).
 //
-void WebUIRequestWifiProvision(const char *pcSsid, const char *pcPass);
-bool WebUIWifiProvisionPending(char *pcSsid, int iSsidLen,
+void WebUIRequestWifiProvision(int iSlot, const char *pcSsid, const char *pcPass);
+bool WebUIWifiProvisionPending(int *piSlot, char *pcSsid, int iSsidLen,
                                char *pcPass, int iPassLen);
 void WebUIRequestWifiForget(void);
 bool WebUIWifiForgetPending(void);
@@ -139,6 +139,17 @@ extern void WebPlatformWifiScanOptions(char *pcInsert, int iInsertLen);
 // pane.  Always NUL-terminates.
 //
 extern void WebPlatformWifiTab(char *pcInsert, int iInsertLen);
+
+//
+// Render the saved Wi-Fi SSID / passphrase for credential slot iSlot (0 = primary,
+// 1 = backup) into pcBuf, HTML-escaped so it is safe as a double-quoted form-input
+// value attribute.  Emitted by the "wssid1"/"wpass1"/"wssid2"/"wpass2" SSI tags so
+// the Settings->Wi-Fi forms prefill with the stored credentials.  The CC35x1 build
+// reads the credential store; the TM4C build (wired Ethernet, no Wi-Fi store)
+// writes an empty string.  Always NUL-terminates; returns the escaped length.
+//
+extern int  WebPlatformWifiSsid(int iSlot, char *pcBuf, int iLen);
+extern int  WebPlatformWifiPass(int iSlot, char *pcBuf, int iLen);
 
 #ifdef __cplusplus
 }

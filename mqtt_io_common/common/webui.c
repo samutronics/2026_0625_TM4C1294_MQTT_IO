@@ -88,6 +88,10 @@
 #define SSI_INDEX_NLOC      33
 #define SSI_INDEX_TEMP      34
 #define SSI_INDEX_SHOWREBOOT 35
+#define SSI_INDEX_WSSID1    36
+#define SSI_INDEX_WPASS1    37
+#define SSI_INDEX_WSSID2    38
+#define SSI_INDEX_WPASS2    39
 
 static const char *g_pcConfigSSITags[] =
 {
@@ -126,7 +130,11 @@ static const char *g_pcConfigSSITags[] =
     "wifitab",       // SSI_INDEX_WIFITAB   — Settings MQTT/Wi-Fi sub-tab bar (CC35x1 only)
     "nloc",          // SSI_INDEX_NLOC      — count of platform-local inputs (CC35x1 buttons)
     "temp",          // SSI_INDEX_TEMP      — on-board temperature reading (CC35x1)
-    "showreboot"     // SSI_INDEX_SHOWREBOOT — 1 (TM4C), 0 (CC35x1 - reboot disabled due to NWP wedge)
+    "showreboot",    // SSI_INDEX_SHOWREBOOT — 1 (TM4C), 0 (CC35x1 - reboot disabled due to NWP wedge)
+    "wssid1",        // SSI_INDEX_WSSID1 — saved primary SSID prefill (CC35x1)
+    "wpass1",        // SSI_INDEX_WPASS1 — saved primary passphrase prefill (CC35x1)
+    "wssid2",        // SSI_INDEX_WSSID2 — saved backup SSID prefill (CC35x1)
+    "wpass2"         // SSI_INDEX_WPASS2 — saved backup passphrase prefill (CC35x1)
 };
 
 //*****************************************************************************
@@ -268,12 +276,14 @@ bool WebUIMqttRepublishPending(void) { bool b = g_bRepublishMQTT; g_bRepublishMQ
 #define WEBUI_WIFI_PASS_LEN  64
 static volatile bool g_bWifiProvision;
 static volatile bool g_bWifiForget;
+static volatile int  g_iWifiSlot;    // target credential slot: 0 = primary, 1 = backup
 static char          g_pcWifiSsid[WEBUI_WIFI_SSID_LEN];
 static char          g_pcWifiPass[WEBUI_WIFI_PASS_LEN];
 
 void
-WebUIRequestWifiProvision(const char *pcSsid, const char *pcPass)
+WebUIRequestWifiProvision(int iSlot, const char *pcSsid, const char *pcPass)
 {
+    g_iWifiSlot = (iSlot == 1) ? 1 : 0;
     strncpy(g_pcWifiSsid, (pcSsid != NULL) ? pcSsid : "", WEBUI_WIFI_SSID_LEN - 1);
     g_pcWifiSsid[WEBUI_WIFI_SSID_LEN - 1] = '\0';
     strncpy(g_pcWifiPass, (pcPass != NULL) ? pcPass : "", WEBUI_WIFI_PASS_LEN - 1);
@@ -282,11 +292,16 @@ WebUIRequestWifiProvision(const char *pcSsid, const char *pcPass)
 }
 
 bool
-WebUIWifiProvisionPending(char *pcSsid, int iSsidLen, char *pcPass, int iPassLen)
+WebUIWifiProvisionPending(int *piSlot, char *pcSsid, int iSsidLen,
+                          char *pcPass, int iPassLen)
 {
     if(!g_bWifiProvision)
     {
         return(false);
+    }
+    if(piSlot != NULL)
+    {
+        *piSlot = g_iWifiSlot;
     }
     if((pcSsid != NULL) && (iSsidLen > 0))
     {
@@ -404,22 +419,36 @@ WifiCfgCGIHandler(int32_t iIndex, int32_t i32NumParams, char *pcParam[],
 {
     char pcSsid[WEBUI_WIFI_SSID_LEN];
     char pcPass[WEBUI_WIFI_PASS_LEN];
+    char pcSlot[4];
+    int  iSlot = 0;
 
     (void)iIndex;
 
     pcSsid[0] = '\0';
     pcPass[0] = '\0';
+    pcSlot[0] = '\0';
     GetStringParam("ssid", pcParam, pcValue, i32NumParams, pcSsid,
                    WEBUI_WIFI_SSID_LEN);
     GetStringParam("pass", pcParam, pcValue, i32NumParams, pcPass,
                    WEBUI_WIFI_PASS_LEN);
+
+    //
+    // Optional "slot" param selects the credential slot: absent or "0" = primary
+    // (triggers the live AP->STA switch), "1" = backup (saved only, no switch).
+    //
+    GetStringParam("slot", pcParam, pcValue, i32NumParams, pcSlot,
+                   (int32_t)sizeof(pcSlot));
+    if(pcSlot[0] == '1')
+    {
+        iSlot = 1;
+    }
 
     if(pcSsid[0] == '\0')
     {
         return(PARAM_ERROR_RESPONSE);
     }
 
-    WebUIRequestWifiProvision(pcSsid, pcPass);
+    WebUIRequestWifiProvision(iSlot, pcSsid, pcPass);
     return("/wifi_ok.html");
 }
 
@@ -1762,6 +1791,25 @@ SSIHandler(int32_t iIndex, char *pcInsert, int32_t iInsertLen)
             // no sub-tabs.  Platform seam.
             //
             WebPlatformWifiTab(pcInsert, iInsertLen);
+            break;
+
+        case SSI_INDEX_WSSID1:
+        case SSI_INDEX_WPASS1:
+        case SSI_INDEX_WSSID2:
+        case SSI_INDEX_WPASS2:
+            //
+            // Saved Wi-Fi credential prefill for the Settings->Wi-Fi forms: the
+            // primary (slot 0) and backup (slot 1) SSID/passphrase, HTML-escaped
+            // for a double-quoted value="" attribute.  Platform seam (CC35x1 reads
+            // the credential store; the TM4C build writes an empty string).
+            //
+            switch(iIndex)
+            {
+                case SSI_INDEX_WSSID1: WebPlatformWifiSsid(0, pcInsert, iInsertLen); break;
+                case SSI_INDEX_WPASS1: WebPlatformWifiPass(0, pcInsert, iInsertLen); break;
+                case SSI_INDEX_WSSID2: WebPlatformWifiSsid(1, pcInsert, iInsertLen); break;
+                default:               WebPlatformWifiPass(1, pcInsert, iInsertLen); break;
+            }
             break;
 
         default:

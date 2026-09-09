@@ -25,23 +25,30 @@
 #define WIFI_PASS_MAX   63
 
 //
-// Load the stored credentials.  pcSsid must have room for >= WIFI_SSID_MAX+1
-// bytes and pcPass (if non-NULL) >= WIFI_PASS_MAX+1.  Returns true if a valid
-// (magic + CRC) record with a non-empty SSID was found; otherwise returns false
-// and sets the buffers to empty strings.
+// Number of credential slots (one primary, one backup).
 //
-bool WifiStoreLoad(char *pcSsid, char *pcPass);
+#define WIFI_STORE_SLOTS 2
 
 //
-// Persist the given credentials (truncated to the max lengths).  A NULL or empty
-// password stores an open-network entry.  Returns true on success.
+// Load the stored credentials from the given slot (0 or 1).  pcSsid must have
+// room for >= WIFI_SSID_MAX+1 bytes and pcPass (if non-NULL) >= WIFI_PASS_MAX+1.
+// Returns true if a valid (magic + CRC) record with a non-empty SSID was found;
+// otherwise returns false and sets the buffers to empty strings.
 //
-bool WifiStoreSave(const char *pcSsid, const char *pcPass);
+bool WifiStoreLoad(int iSlot, char *pcSsid, char *pcPass);
 
 //
-// Invalidate the stored record (zeroes its magic word) so WifiStoreLoad()
-// returns false and the device falls back to AP provisioning on the next boot.
+// Persist the given credentials (truncated to the max lengths) to the given slot
+// (0 or 1).  A NULL or empty password stores an open-network entry.  Returns true
+// on success.
 //
-void WifiStoreClear(void);
+bool WifiStoreSave(int iSlot, const char *pcSsid, const char *pcPass);
+
+//
+// Invalidate the stored record in the given slot (0 or 1) by zeroing its magic
+// word so WifiStoreLoad() returns false and the device falls back to AP
+// provisioning on the next boot.
+//
+void WifiStoreClear(int iSlot);
 
 #endif // WIFI_STORE_H

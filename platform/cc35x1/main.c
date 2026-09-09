@@ -100,6 +100,106 @@
 //
 #define TEMP_PUBLISH_MS   5000U
 
+//
+// One stored Wi-Fi credential set, used to rank the boot join order (F1).
+//
+typedef struct
+{
+    char pcSsid[WIFI_SSID_MAX + 1];
+    char pcPass[WIFI_PASS_MAX + 1];
+}
+tWifiCand;
+
+//*****************************************************************************
+//
+// wifi_rank_candidates - load the stored credential slots and return, in
+// pCand[0..N-1], the networks to try at boot in preference order (N = return).
+//
+// With BOTH slots stored (dual credentials), refresh the scan cache once and
+// order the two present-in-scan first, then by RSSI (strongest first), so the
+// device joins the best currently-reachable of its known networks and cascades
+// to the other if that fails.  With ONE slot, return it directly with no scan (a
+// fast single-credential boot).  With none, return 0 and the caller brings up the
+// setup AP.  NetWifiWaitReady() is issued before the ranking scan so the scan
+// does not race the cold-boot NWP init.
+//
+//*****************************************************************************
+static int
+wifi_rank_candidates(tWifiCand *pCand)
+{
+    tWifiCand sSlot[WIFI_STORE_SLOTS];
+    bool      bValid[WIFI_STORE_SLOTS];
+    int8_t    i8Rssi[WIFI_STORE_SLOTS];
+    int       iValid = 0;
+    int       i;
+
+    for(i = 0; i < WIFI_STORE_SLOTS; i++)
+    {
+        bValid[i] = WifiStoreLoad(i, sSlot[i].pcSsid, sSlot[i].pcPass);
+        if(bValid[i])
+        {
+            iValid++;
+        }
+    }
+
+    //
+    // Zero or one stored: return the single valid slot (if any), no scan needed.
+    //
+    if(iValid <= 1)
+    {
+        for(i = 0; i < WIFI_STORE_SLOTS; i++)
+        {
+            if(bValid[i])
+            {
+                pCand[0] = sSlot[i];
+                return(1);
+            }
+        }
+        return(0);
+    }
+
+    //
+    // Two stored: scan once and score each by the RSSI of its match in the cache
+    // (absent networks get a floor below any real RSSI so they sort last).
+    //
+    NetWifiWaitReady();
+    NetWifiScanCache();
+    for(i = 0; i < WIFI_STORE_SLOTS; i++)
+    {
+        int iCount = NetWifiScanCount();
+        int j;
+
+        i8Rssi[i] = -128;                       // absent floor
+        for(j = 0; j < iCount; j++)
+        {
+            char   pcScan[WIFI_SSID_MAX + 1];
+            int8_t i8;
+
+            if(NetWifiScanGet(j, pcScan, (int)sizeof(pcScan), &i8) &&
+               (strcmp(pcScan, sSlot[i].pcSsid) == 0))
+            {
+                i8Rssi[i] = i8;
+                break;
+            }
+        }
+    }
+
+    //
+    // Emit strongest first (only two slots, so a single compare orders them).
+    //
+    if(i8Rssi[1] > i8Rssi[0])
+    {
+        pCand[0] = sSlot[1];
+        pCand[1] = sSlot[0];
+    }
+    else
+    {
+        pCand[0] = sSlot[0];
+        pCand[1] = sSlot[1];
+    }
+    return(WIFI_STORE_SLOTS);
+}
+
 //*****************************************************************************
 //
 // mainThread - application task entry (invoked by main_freertos.c).
@@ -118,7 +218,9 @@ mainThread(void *pvArg0)
     bool     bTrialChecked = false;
     char     pcSsid[WIFI_SSID_MAX + 1];
     char     pcPass[WIFI_PASS_MAX + 1];
-    bool     bHaveCreds;
+    tWifiCand  pCand[WIFI_STORE_SLOTS];
+    int        iNumCand;
+    int        iJoined = -1;       // index of the candidate that acquired an IP, or -1
     bool       bStaHadIp = false;  // a working STA link has been seen this session
     bool       bNoIpTiming = false; // the no-IP -> AP fallback timer is running
     TickType_t xNoIpStart = 0;     // wall-clock tick when the no-IP wait began
@@ -152,56 +254,97 @@ mainThread(void *pvArg0)
     //
     NetWifiDriverStart();
 
-    bHaveCreds = WifiStoreLoad(pcSsid, pcPass);
+    //
+    // Rank the stored credentials (F1): with two saved networks, scan once and
+    // order them present-first / strongest-RSSI so we join the best reachable and
+    // cascade to the other; with one, take it directly (no scan); with none,
+    // iNumCand == 0.  A compile-time wifi_credentials.h seeds a single candidate
+    // for bench/dev use when nothing is stored.
+    //
+    iNumCand = wifi_rank_candidates(pCand);
 #if defined(WIFI_SSID) && defined(WIFI_PASS)
-    if(!bHaveCreds)
+    if(iNumCand == 0)
     {
-        strncpy(pcSsid, WIFI_SSID, WIFI_SSID_MAX); pcSsid[WIFI_SSID_MAX] = '\0';
-        strncpy(pcPass, WIFI_PASS, WIFI_PASS_MAX); pcPass[WIFI_PASS_MAX] = '\0';
-        bHaveCreds = true;
-        PalLog("wifi: using compile-time dev credentials for '%s'\n", pcSsid);
+        strncpy(pCand[0].pcSsid, WIFI_SSID, WIFI_SSID_MAX);
+        pCand[0].pcSsid[WIFI_SSID_MAX] = '\0';
+        strncpy(pCand[0].pcPass, WIFI_PASS, WIFI_PASS_MAX);
+        pCand[0].pcPass[WIFI_PASS_MAX] = '\0';
+        iNumCand = 1;
+        PalLog("wifi: using compile-time dev credentials for '%s'\n",
+               pCand[0].pcSsid);
     }
 #endif
 
-    if(bHaveCreds)
+    if(iNumCand > 0)
     {
-        uint32_t ui32Attempt;
+        int iCand;
 
         //
-        // Join as a station; DHCP starts on link-up.  Wait for the lease,
-        // re-issuing the association up to WIFI_MAX_ATTEMPTS times.  If it never
-        // completes (wrong password, AP gone, device moved), fall back to the
-        // setup AP so it can be re-provisioned without JTAG.
+        // Let the NWP finish its CME station-flow init before the first connect:
+        // issuing it immediately after NetWifiDriverStart races that init on a
+        // cold boot and the first attempt is deauthed (reason 15).  No-op if the
+        // two-candidate ranking scan above already waited.
         //
-        NetWifiStaUp(pcSsid, pcPass);
+        NetWifiWaitReady();
 
-        for(ui32Attempt = 1U; ui32Attempt <= WIFI_MAX_ATTEMPTS; ui32Attempt++)
+        //
+        // Try each ranked candidate in turn; DHCP starts on link-up.  Wait for the
+        // lease, re-issuing the association up to WIFI_MAX_ATTEMPTS times, and drop
+        // the STA role before cascading to the next network.  If none join, fall
+        // back to the setup AP so the device can be re-provisioned without JTAG.
+        //
+        for(iCand = 0; (iCand < iNumCand) && (iJoined < 0); iCand++)
         {
-            for(ui32Waited = 0;
-                !NetWifiIsIpAcquired() && (ui32Waited < WIFI_ATTEMPT_MS);
-                ui32Waited += IP_POLL_MS)
+            uint32_t ui32Attempt;
+
+            PalLog("wifi: joining '%s' (candidate %d/%d)\n",
+                   pCand[iCand].pcSsid, iCand + 1, iNumCand);
+            NetWifiStaUp(pCand[iCand].pcSsid, pCand[iCand].pcPass);
+
+            for(ui32Attempt = 1U; ui32Attempt <= WIFI_MAX_ATTEMPTS; ui32Attempt++)
             {
-                vTaskDelay(pdMS_TO_TICKS(IP_POLL_MS));
+                for(ui32Waited = 0;
+                    !NetWifiIsIpAcquired() && (ui32Waited < WIFI_ATTEMPT_MS);
+                    ui32Waited += IP_POLL_MS)
+                {
+                    vTaskDelay(pdMS_TO_TICKS(IP_POLL_MS));
+                }
+                if(NetWifiIsIpAcquired())
+                {
+                    break;
+                }
+                PalLog("net: no IP after attempt %u/%u, reconnecting\n",
+                       (unsigned)ui32Attempt, (unsigned)WIFI_MAX_ATTEMPTS);
+                NetWifiReconnect(pCand[iCand].pcSsid, pCand[iCand].pcPass);
             }
+
             if(NetWifiIsIpAcquired())
             {
-                break;
+                iJoined = iCand;
             }
-            PalLog("net: no IP after attempt %u/%u, reconnecting\n",
-                   (unsigned)ui32Attempt, (unsigned)WIFI_MAX_ATTEMPTS);
-            NetWifiReconnect(pcSsid, pcPass);
+            else if((iCand + 1) < iNumCand)
+            {
+                NetWifiStaDown();       // drop before trying the next candidate
+            }
         }
+    }
 
-        if(!NetWifiIsIpAcquired())
-        {
-            PalLog("wifi: could not join '%s'; starting setup AP\n", pcSsid);
-            NetWifiScanCache();     // scan (STA role) + drop STA, ready for AP
-            NetWifiApUp();
-        }
+    if(iJoined >= 0)
+    {
+        //
+        // Adopt the joined network as the active credentials the runtime
+        // reconnect / no-IP-fallback paths below operate on.
+        //
+        strncpy(pcSsid, pCand[iJoined].pcSsid, WIFI_SSID_MAX);
+        pcSsid[WIFI_SSID_MAX] = '\0';
+        strncpy(pcPass, pCand[iJoined].pcPass, WIFI_PASS_MAX);
+        pcPass[WIFI_PASS_MAX] = '\0';
     }
     else
     {
-        PalLog("wifi: no stored credentials; starting setup AP\n");
+        pcSsid[0] = '\0';
+        pcPass[0] = '\0';
+        PalLog("wifi: no known network joined; starting setup AP\n");
         NetWifiScanCache();         // scan (STA role) + drop STA, ready for AP
         NetWifiApUp();
     }
@@ -354,32 +497,61 @@ mainThread(void *pvArg0)
         //
         // Wi-Fi provisioning requests from the setup page (the CGIs run on the
         // tcpip_thread and only set a flag).  Apply here so the HTTP response
-        // flushes first, then switch role live - a warm reboot would wedge the
-        // NWP.  A provision updates the active credentials (pcSsid/pcPass) so the
-        // background reconnect below uses them; a forget returns to the setup AP.
+        // flushes first, then act - a warm reboot would wedge the NWP.  Slot 0
+        // (primary) is saved AND switched to live, adopting it as the active
+        // credentials the background reconnect uses; slot 1 (backup) is saved only
+        // and the current link is left untouched.  A forget returns to the setup AP.
         //
-        if(WebUIWifiProvisionPending(pcSsid, (int)sizeof(pcSsid),
-                                     pcPass, (int)sizeof(pcPass)))
         {
-            vTaskDelay(pdMS_TO_TICKS(300));
-            WifiStoreSave(pcSsid, pcPass);
-            PalLog("wifi: provisioning '%s', switching to station\n", pcSsid);
-            NetWifiSwitchToSta(pcSsid, pcPass);
-            bMQTTStarted = false;   // (re)start MQTT once the new link has an IP
-            ui32RetryMs = 0;
-            bStaHadIp = false;      // arm the no-IP AP fallback for the new creds
-            bNoIpTiming = false;
-        }
-        else if(WebUIWifiForgetPending())
-        {
-            vTaskDelay(pdMS_TO_TICKS(300));
-            WifiStoreClear();
-            pcSsid[0] = '\0';
-            pcPass[0] = '\0';
-            PalLog("wifi: credentials forgotten, starting setup AP\n");
-            NetWifiScanCache();     // scan (STA role) + drop STA, ready for AP
-            NetWifiApUp();
-            bMQTTStarted = false;
+            char pcNewSsid[WIFI_SSID_MAX + 1];
+            char pcNewPass[WIFI_PASS_MAX + 1];
+            int  iSlot = 0;
+
+            if(WebUIWifiProvisionPending(&iSlot, pcNewSsid, (int)sizeof(pcNewSsid),
+                                         pcNewPass, (int)sizeof(pcNewPass)))
+            {
+                vTaskDelay(pdMS_TO_TICKS(300));
+                WifiStoreSave(iSlot, pcNewSsid, pcNewPass);
+
+                if(iSlot == 0)
+                {
+                    //
+                    // Primary: adopt as the active credentials and switch live.
+                    //
+                    strncpy(pcSsid, pcNewSsid, WIFI_SSID_MAX);
+                    pcSsid[WIFI_SSID_MAX] = '\0';
+                    strncpy(pcPass, pcNewPass, WIFI_PASS_MAX);
+                    pcPass[WIFI_PASS_MAX] = '\0';
+                    PalLog("wifi: provisioning primary '%s', switching to station\n",
+                           pcSsid);
+                    NetWifiSwitchToSta(pcSsid, pcPass);
+                    bMQTTStarted = false; // (re)start MQTT once the new link has an IP
+                    ui32RetryMs = 0;
+                    bStaHadIp = false;    // arm the no-IP AP fallback for the new creds
+                    bNoIpTiming = false;
+                }
+                else
+                {
+                    //
+                    // Backup: saved for boot-time ranking; the running link (or the
+                    // setup AP) is left as-is.
+                    //
+                    PalLog("wifi: saved backup network '%s' (slot 1); link unchanged\n",
+                           pcNewSsid);
+                }
+            }
+            else if(WebUIWifiForgetPending())
+            {
+                vTaskDelay(pdMS_TO_TICKS(300));
+                WifiStoreClear(0);
+                WifiStoreClear(1);
+                pcSsid[0] = '\0';
+                pcPass[0] = '\0';
+                PalLog("wifi: credentials forgotten (both slots), starting setup AP\n");
+                NetWifiScanCache();     // scan (STA role) + drop STA, ready for AP
+                NetWifiApUp();
+                bMQTTStarted = false;
+            }
         }
 
         //

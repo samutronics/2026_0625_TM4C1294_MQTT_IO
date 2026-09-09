@@ -34,6 +34,7 @@
 #include "pal_str.h"
 #include "pal_sys.h"
 #include "net_wifi.h"
+#include "wifi_store.h"
 #include "buttons.h"
 #include "temp_sensor.h"
 #include "webui.h"
@@ -989,6 +990,59 @@ WebPlatformFinalizeReboot(void)
 
 //*****************************************************************************
 //
+// html_escape - copy pcIn to pcOut escaping the five HTML-significant characters
+// (& < > " ') so the result is safe both as element text and inside a
+// double-quoted attribute value.  Truncates to fit iOutLen (including the NUL) on
+// a whole-replacement boundary, always NUL-terminates, and returns the number of
+// characters written (excluding the NUL).
+//
+//*****************************************************************************
+static int
+html_escape(const char *pcIn, char *pcOut, int iOutLen)
+{
+    int         iPos = 0;
+    const char *p;
+
+    if((pcOut == NULL) || (iOutLen <= 0))
+    {
+        return(0);
+    }
+    for(p = pcIn; (pcIn != NULL) && (*p != '\0'); p++)
+    {
+        const char *pcRep;
+        int         iRepLen;
+
+        switch(*p)
+        {
+            case '&':  pcRep = "&amp;";  break;
+            case '<':  pcRep = "&lt;";   break;
+            case '>':  pcRep = "&gt;";   break;
+            case '"':  pcRep = "&quot;"; break;
+            case '\'': pcRep = "&#39;";  break;
+            default:   pcRep = NULL;     break;
+        }
+
+        iRepLen = (pcRep != NULL) ? (int)strlen(pcRep) : 1;
+        if((iPos + iRepLen) >= (iOutLen - 1))
+        {
+            break;                       // no room left (reserve the NUL)
+        }
+        if(pcRep != NULL)
+        {
+            memcpy(&pcOut[iPos], pcRep, (size_t)iRepLen);
+        }
+        else
+        {
+            pcOut[iPos] = *p;
+        }
+        iPos += iRepLen;
+    }
+    pcOut[iPos] = '\0';
+    return(iPos);
+}
+
+//*****************************************************************************
+//
 // WebPlatformWifiScanOptions - render the setup page's SSID dropdown from the
 // cached Wi-Fi scan (net_wifi).  Emits "<option>SSID</option>" per network, the
 // SSID HTML-escaped, appending only whole options that fit iInsertLen.  The
@@ -1104,6 +1158,50 @@ WebPlatformWifiTab(char *pcInsert, int iInsertLen)
         return;
     }
     memcpy(pcInsert, pcBar, sizeof(pcBar));     // includes the NUL
+}
+
+//*****************************************************************************
+//
+// WebPlatformWifiSsid / WebPlatformWifiPass - render the stored SSID / passphrase
+// for credential slot iSlot (0 = primary, 1 = backup) into pcBuf, HTML-escaped for
+// use as a double-quoted form-input value attribute.  The "wssid1"/"wpass1"/
+// "wssid2"/"wpass2" SSI tags call these so the Settings->Wi-Fi forms prefill with
+// the saved credentials.  Writes an empty string when the slot holds none.
+//
+//*****************************************************************************
+int
+WebPlatformWifiSsid(int iSlot, char *pcBuf, int iLen)
+{
+    char pcSsid[WIFI_SSID_MAX + 1];
+
+    if((pcBuf == NULL) || (iLen <= 0))
+    {
+        return(0);
+    }
+    pcBuf[0] = '\0';
+    if(!WifiStoreLoad(iSlot, pcSsid, NULL))
+    {
+        return(0);
+    }
+    return(html_escape(pcSsid, pcBuf, iLen));
+}
+
+int
+WebPlatformWifiPass(int iSlot, char *pcBuf, int iLen)
+{
+    char pcSsid[WIFI_SSID_MAX + 1];
+    char pcPass[WIFI_PASS_MAX + 1];
+
+    if((pcBuf == NULL) || (iLen <= 0))
+    {
+        return(0);
+    }
+    pcBuf[0] = '\0';
+    if(!WifiStoreLoad(iSlot, pcSsid, pcPass))
+    {
+        return(0);
+    }
+    return(html_escape(pcPass, pcBuf, iLen));
 }
 
 //*****************************************************************************
