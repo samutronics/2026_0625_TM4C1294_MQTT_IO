@@ -47,6 +47,17 @@ int NetWifiReconnect(const char *pcSsid, const char *pcPass);
 int NetWifiDriverStart(void);
 
 //
+// Block (bounded, ~NWP_SETTLE_MS) until the NWP has had a brief settling window
+// past Wlan_Start before the first station association.  Call once between
+// NetWifiDriverStart() and the first NetWifiStaUp() on boot: it prevents the
+// cold-boot race where an immediate first connect is issued before the NWP CME
+// init has completed (the "apGlobal->ifaces is NULL" + reason-15 boot burst that
+// wastes the first association attempt).  Measured from Wlan_Start, so it adds
+// only the remaining latency, and is a no-op once the window has elapsed.
+//
+void NetWifiWaitReady(void);
+
+//
 // Bring the station role up (adding the STA netif if needed) and issue the first
 // association to the given AP.  NetWifiDriverStart() must have run.  Returns 0 if
 // the connect request was issued.

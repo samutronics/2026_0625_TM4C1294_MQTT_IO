@@ -80,6 +80,26 @@ static tNetRole g_eRole = ROLE_NONE;
 static bool     g_bDriverStarted = false;
 
 //
+// lwIP millisecond timestamp captured when the NWP driver finished starting.
+// NetWifiWaitReady() uses it to gate the very first STA connect until the NWP
+// has had a brief settling window past Wlan_Start (see NetWifiWaitReady).
+//
+static uint32_t g_ui32DriverStartMs;
+
+//
+// NWP settling window before the first station association.  Wlan_Start (and the
+// blocking Wlan_RoleUp) return before the NWP's CME station-flow state machine is
+// fully initialised on a cold boot, so an immediate first Wlan_Connect races that
+// init and is rejected ("apGlobal->ifaces is NULL" + CME UnExpected-event burst +
+// 802.11 reason-15 handshake timeout), wasting the first ~12 s association
+// attempt.  A short one-shot settle past Wlan_Start closes that window.  This is
+// measured from Wlan_Start completion, so time already spent in role-up/config
+// counts toward it and the added latency is only the remainder.  Bench-tunable:
+// the smallest value that makes the first attempt succeed on HW.
+//
+#define NWP_SETTLE_MS       800U
+
+//
 // The STA and AP interfaces and the STA DHCP client state.
 //
 static struct netif g_sStaIf;
@@ -639,7 +659,44 @@ NetWifiDriverStart(void)
     }
 
     g_bDriverStarted = true;
+    g_ui32DriverStartMs = sys_now();
     return(0);
+}
+
+//*****************************************************************************
+//
+// NetWifiWaitReady - block (bounded) until the NWP has had a brief settling
+// window past Wlan_Start before the first station association.  Prevents the
+// cold-boot race where an immediate first Wlan_Connect is issued before the NWP
+// CME station-flow init has completed (see NWP_SETTLE_MS).  Measured from the
+// Wlan_Start timestamp, so any time already spent in driver setup / role-up
+// counts toward the window and only the remainder is slept.  A no-op once the
+// window has elapsed (later runtime STA switches never wait).  Safe to call from
+// the app task (blocks via sys_msleep).
+//
+//*****************************************************************************
+void
+NetWifiWaitReady(void)
+{
+    uint32_t ui32Elapsed;
+
+    if(!g_bDriverStarted)
+    {
+        return;
+    }
+
+    //
+    // Unsigned subtraction is wrap-safe.  Sleep in short slices so the remaining
+    // wait tracks the true deadline even if a slice is slightly long.
+    //
+    ui32Elapsed = sys_now() - g_ui32DriverStartMs;
+    while(ui32Elapsed < NWP_SETTLE_MS)
+    {
+        uint32_t ui32Remain = NWP_SETTLE_MS - ui32Elapsed;
+
+        sys_msleep((ui32Remain > 100U) ? 100U : ui32Remain);
+        ui32Elapsed = sys_now() - g_ui32DriverStartMs;
+    }
 }
 
 //*****************************************************************************
