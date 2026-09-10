@@ -115,13 +115,15 @@ tWifiCand;
 // wifi_rank_candidates - load the stored credential slots and return, in
 // pCand[0..N-1], the networks to try at boot in preference order (N = return).
 //
-// With BOTH slots stored (dual credentials), refresh the scan cache once and
-// order the two present-in-scan first, then by RSSI (strongest first), so the
-// device joins the best currently-reachable of its known networks and cascades
-// to the other if that fails.  With ONE slot, return it directly with no scan (a
-// fast single-credential boot).  With none, return 0 and the caller brings up the
-// setup AP.  NetWifiWaitReady() is issued before the ranking scan so the scan
-// does not race the cold-boot NWP init.
+// Whenever at least one slot is stored, refresh the scan cache once first.  With
+// BOTH slots stored (dual credentials) the scan also orders the two present-in-
+// scan first, then by RSSI (strongest first), so the device joins the best
+// currently-reachable of its known networks and cascades to the other if that
+// fails.  With ONE slot the scan does not affect the join (the single credential
+// is returned as-is) but still populates the Settings-page "Detected Networks"
+// dropdown so a backup can be picked from the list later.  With none, return 0
+// (no scan here) and the caller scans + brings up the setup AP.  NetWifiWaitReady()
+// gates the scan so it does not race the cold-boot NWP init.
 //
 //*****************************************************************************
 static int
@@ -143,9 +145,26 @@ wifi_rank_candidates(tWifiCand *pCand)
     }
 
     //
-    // Zero or one stored: return the single valid slot (if any), no scan needed.
+    // Nothing stored: the caller scans and brings up the setup AP.
     //
-    if(iValid <= 1)
+    if(iValid == 0)
+    {
+        return(0);
+    }
+
+    //
+    // At least one stored: refresh the scan cache before joining.  With two
+    // networks this decides the join order below; with one it is run purely to
+    // populate the Settings-page "Detected Networks" dropdown for adding a backup
+    // later.  Gate on the NWP settle so the scan does not race the cold-boot init.
+    //
+    NetWifiWaitReady();
+    NetWifiScanCache();
+
+    //
+    // One stored: return it directly (the scan above was only to fill the dropdown).
+    //
+    if(iValid == 1)
     {
         for(i = 0; i < WIFI_STORE_SLOTS; i++)
         {
@@ -155,15 +174,12 @@ wifi_rank_candidates(tWifiCand *pCand)
                 return(1);
             }
         }
-        return(0);
     }
 
     //
-    // Two stored: scan once and score each by the RSSI of its match in the cache
-    // (absent networks get a floor below any real RSSI so they sort last).
+    // Two stored: score each by the RSSI of its match in the cache (absent
+    // networks get a floor below any real RSSI so they sort last).
     //
-    NetWifiWaitReady();
-    NetWifiScanCache();
     for(i = 0; i < WIFI_STORE_SLOTS; i++)
     {
         int iCount = NetWifiScanCount();
@@ -255,11 +271,11 @@ mainThread(void *pvArg0)
     NetWifiDriverStart();
 
     //
-    // Rank the stored credentials (F1): with two saved networks, scan once and
-    // order them present-first / strongest-RSSI so we join the best reachable and
-    // cascade to the other; with one, take it directly (no scan); with none,
-    // iNumCand == 0.  A compile-time wifi_credentials.h seeds a single candidate
-    // for bench/dev use when nothing is stored.
+    // Rank the stored credentials (F1): with any saved network the scan cache is
+    // refreshed (also feeding the Settings "Detected Networks" dropdown); with two
+    // saved networks they are ordered present-first / strongest-RSSI so we join the
+    // best reachable and cascade to the other; with none, iNumCand == 0.  A
+    // compile-time wifi_credentials.h seeds a single candidate when nothing stored.
     //
     iNumCand = wifi_rank_candidates(pCand);
 #if defined(WIFI_SSID) && defined(WIFI_PASS)
