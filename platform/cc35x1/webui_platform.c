@@ -213,13 +213,14 @@ OtaPrepareTarget(psa_fwu_component_t *pTarget)
     }
 
     //
-    // Log the active (primary) image version so candidate mismatches are obvious.
+    // Log the active (installed) image version so candidate mismatches are
+    // obvious; the candidate version is logged separately once its manifest
+    // arrives (see OtaFeed).  A candidate is only installed if it is strictly
+    // greater than this.  Reconstruct the build timestamp: revision=YYMM,
+    // build_num=DDHHMM -> 20{revision:04}{build:06} = the YYYYMMDDHHMM fwver shows.
     //
     psa_fwu_component_info_t sInfoActive = (target == OTA_VENDOR_SLOT_1) ? sInfo2 : sInfo1;
-    // Reconstruct the build timestamp: revision=YYMM, build_num=DDHHMM ->
-    // 20{revision:04}{build:06} = the same YYYYMMDDHHMM string fwver shows.
-    PalLog("ota: active image version 20%04u%06u (raw %u.%u.%u.%u);"
-           " candidate must be strictly greater\n",
+    PalLog("ota: active (installed) image version 20%04u%06u (raw %u.%u.%u.%u)\n",
            (unsigned)sInfoActive.version.patch, (unsigned)sInfoActive.version.build,
            (unsigned)sInfoActive.version.major, (unsigned)sInfoActive.version.minor,
            (unsigned)sInfoActive.version.patch, (unsigned)sInfoActive.version.build);
@@ -361,6 +362,20 @@ OtaFeed(const uint8_t *pData, uint32_t ui32Len)
 
         if((g_szFileOffset == TI_FWU_MANIFEST_SIZE) && !g_bStarted)
         {
+            //
+            // Log the candidate version parsed straight from the manifest GPE
+            // fields BEFORE handing it to psa_fwu_start(), so an anti-downgrade
+            // rejection shows both sides side-by-side (see the active-version log
+            // in OtaPrepareTarget).  revision=YYMM, build_num=DDHHMM ->
+            // 20{revision:04}{build:06} = the YYYYMMDDHHMM stamp fwver shows.
+            //
+            const PSA_FWU_GPEVersion_t *pVer =
+                &((const PSA_FWU_GPESlot_t *)g_pui8Manifest)->Manifest.GPE_Version;
+            PalLog("ota: candidate image version 20%04u%06u (raw %u.%u.%u.%u)\n",
+                   (unsigned)pVer->iv_revision, (unsigned)pVer->iv_build_num,
+                   (unsigned)pVer->iv_major,    (unsigned)pVer->iv_minor,
+                   (unsigned)pVer->iv_revision, (unsigned)pVer->iv_build_num);
+
             st = psa_fwu_start(g_target, g_pui8Manifest, TI_FWU_MANIFEST_SIZE);
             if(st != PSA_SUCCESS)
             {
