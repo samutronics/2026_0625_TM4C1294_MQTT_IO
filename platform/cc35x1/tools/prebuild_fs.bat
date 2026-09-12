@@ -31,4 +31,13 @@ echo FS regenerated: platform\cc35x1\fsdata.c -^> mqtt_io_cc35x1\fsdata.c
 REM fsdata.c is #included into fs.c, so it is fs.o that must be rebuilt.
 if exist "mqtt_io_cc35x1\Debug\fs.o" del "mqtt_io_cc35x1\Debug\fs.o"
 
+REM Force buildinfo.o to recompile every build so its baked-in __DATE__/__TIME__
+REM (the YYYYMMDDHHMM fingerprint the web UI shows and flash.sh derives the OTA
+REM version from) reflects the ACTUAL build time.  Without this, an incremental
+REM CCS build that does not touch buildinfo.c leaves a stale timestamp, so the
+REM OTA version never advances and anti-downgrade rejects the new image.  The
+REM TM4C gmake build already force-rebuilds it (FORCE rule in makefile.targets);
+REM the CCS-managed build has no equivalent, so we delete the object here.
+if exist "mqtt_io_cc35x1\Debug\buildinfo.o" del "mqtt_io_cc35x1\Debug\buildinfo.o"
+
 exit /b 0
