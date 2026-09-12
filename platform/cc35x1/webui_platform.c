@@ -175,6 +175,54 @@ PsaStatusName(psa_status_t st)
 
 //*****************************************************************************
 //
+// OtaStateName - short human name for a PSA_FWU_* component state, for logging.
+//
+//*****************************************************************************
+static const char *
+OtaStateName(uint8_t ui8State)
+{
+    switch(ui8State)
+    {
+        case PSA_FWU_READY:     return("READY");
+        case PSA_FWU_WRITING:   return("WRITING");
+        case PSA_FWU_CANDIDATE: return("CANDIDATE");
+        case PSA_FWU_STAGED:    return("STAGED");
+        case PSA_FWU_FAILED:    return("FAILED");
+        case PSA_FWU_TRIAL:     return("TRIAL");
+        case PSA_FWU_REJECTED:  return("REJECTED");
+        case PSA_FWU_UPDATED:   return("UPDATED");
+        default:                return("?");
+    }
+}
+
+//*****************************************************************************
+//
+// OtaLogComponentStates - dump the state (+ primary flag) of every FWU component.
+// psa_fwu_install() is a GLOBAL gate: it refuses with BAD_STATE (-137) if ANY
+// component (BL2, WSOC, or either vendor slot) is left in STAGED/TRIAL/REJECTED.
+// Logging all of them makes a wedged prior OTA obvious in the boot/OTA log.
+//
+//*****************************************************************************
+static void
+OtaLogComponentStates(const char *pcWhen)
+{
+    psa_fwu_component_info_t sInfo;
+    psa_fwu_component_t      c;
+
+    for(c = 0; c < MAX_COMPONENT_ID; c++)
+    {
+        if(psa_fwu_query(c, &sInfo) != PSA_SUCCESS)
+        {
+            continue;
+        }
+        PalLog("ota: [%s] comp %d state %u(%s)%s\n", pcWhen, (int)c,
+               (unsigned)sInfo.state, OtaStateName(sInfo.state),
+               (sInfo.impl.Primary != 0) ? " PRIMARY" : "");
+    }
+}
+
+//*****************************************************************************
+//
 // OtaPrepareTarget - pick the inactive (non-primary) vendor slot and drive it
 // to the READY state, ready for psa_fwu_start().  Mirrors the SDK OTA example's
 // OTA_FWU_selectTargetSlot + OTA_FWU_prepareSlot.  Returns 0 on success.
@@ -185,6 +233,12 @@ OtaPrepareTarget(psa_fwu_component_t *pTarget)
 {
     psa_fwu_component_info_t sInfo1, sInfo2, sTgt;
     psa_fwu_component_t      target;
+
+    //
+    // Snapshot every component's state before we touch anything -- the single
+    // most useful line when an OTA fails with -137 (see OtaLogComponentStates).
+    //
+    OtaLogComponentStates("ota-start");
 
     if((psa_fwu_query(OTA_VENDOR_SLOT_1, &sInfo1) != PSA_SUCCESS) ||
        (psa_fwu_query(OTA_VENDOR_SLOT_2, &sInfo2) != PSA_SUCCESS))
@@ -257,6 +311,48 @@ OtaPrepareTarget(psa_fwu_component_t *pTarget)
     {
         PalLog("ota: target not READY (state %d)\n", (int)sTgt.state);
         return(-1);
+    }
+
+    //
+    // Safety net for the GLOBAL install() gate: psa_fwu_install() returns
+    // BAD_STATE (-137) if ANY component -- not just our target -- is left in
+    // STAGED / TRIAL / REJECTED / FAILED.  A prior OTA whose TRIAL image never
+    // committed (e.g. the boot-time accept was skipped) otherwise wedges every
+    // future OTA.  Clear those stale states on the NON-primary, non-target
+    // components so the new install() can proceed.  We never touch a PRIMARY
+    // (running) image -- if the running slot itself is stuck in a blocking
+    // state we only warn, since rejecting it would arm a rollback of the very
+    // firmware serving this upload.
+    //
+    {
+        psa_fwu_component_t      c;
+        psa_fwu_component_info_t s;
+
+        for(c = 0; c < MAX_COMPONENT_ID; c++)
+        {
+            if((c == target) || (psa_fwu_query(c, &s) != PSA_SUCCESS))
+            {
+                continue;
+            }
+            if((s.state != PSA_FWU_STAGED)  && (s.state != PSA_FWU_TRIAL) &&
+               (s.state != PSA_FWU_REJECTED) && (s.state != PSA_FWU_FAILED))
+            {
+                continue;
+            }
+            if(s.impl.Primary != 0)
+            {
+                PalLog("ota: WARNING primary comp %d in %u(%s) will block install\n",
+                       (int)c, (unsigned)s.state, OtaStateName(s.state));
+                continue;
+            }
+            PalLog("ota: clearing stale comp %d state %u(%s) blocking install\n",
+                   (int)c, (unsigned)s.state, OtaStateName(s.state));
+            if(s.state == PSA_FWU_TRIAL)
+            {
+                psa_fwu_reject(PSA_ERROR_NOT_PERMITTED);  // global: reject trials
+            }
+            psa_fwu_clean(c);
+        }
     }
 
     *pTarget = target;
@@ -911,6 +1007,7 @@ WebPlatformOtaInit(void)
     }
     PalLog("ota: FWU init done, staging cap %u bytes\n",
            (unsigned)g_ui32OtaMaxBytes);
+    OtaLogComponentStates("boot");
 }
 
 //*****************************************************************************
@@ -973,9 +1070,24 @@ WebPlatformOtaTrialAccept(void)
     }
 
     PalLog("ota: healthy boot in TRIAL -> accepting update\n");
-    if(psa_fwu_accept() == PSA_SUCCESS_REBOOT)
+    psa_status_t stAccept = psa_fwu_accept();
+    PalLog("ota: psa_fwu_accept -> %d\n", (int)stAccept);
+    if(stAccept == PSA_SUCCESS_REBOOT)
     {
         psa_fwu_request_reboot();   // commit; does not return
+    }
+    else
+    {
+        //
+        // accept() did not ask for the commit reboot -- the trial was not
+        // finalised.  Left uncommitted, it stays in TRIAL and blocks the next
+        // OTA's install() with BAD_STATE (-137).  Log the surviving states so
+        // the wedge is diagnosable; OtaPrepareTarget's sweep clears it on the
+        // next OTA attempt for the non-primary case.
+        //
+        PalLog("ota: WARNING trial NOT committed (accept %d); states:\n",
+               (int)stAccept);
+        OtaLogComponentStates("post-accept");
     }
 }
 
