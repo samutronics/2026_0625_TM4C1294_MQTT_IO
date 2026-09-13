@@ -44,6 +44,8 @@ textarea.drag-over{border-color:#cc0000;background:#fff5f5}
 .prog-wrap{display:none;margin-top:12px}
 .prog-bar-bg{height:6px;background:#e0e0e0;border-radius:3px;overflow:hidden}
 .prog-bar-fg{height:100%;background:#cc0000;width:0%;transition:width .2s}
+.prog-bar-fg.indet{width:35%;transition:none;animation:indet 1.1s ease-in-out infinite}
+@keyframes indet{0%{margin-left:-35%}100%{margin-left:100%}}
 .prog-txt{font-size:11px;color:#888;margin-top:4px}
 #fw-status{margin-top:14px;font-size:13px;font-weight:600;color:#1a1a1a}
 #cfg-status{margin-top:10px;font-size:13px;font-weight:600}
@@ -208,7 +210,16 @@ function toHex(buf, off, len) {
 }
 
 function fwStatus(msg) { document.getElementById('fw-status').textContent = msg; }
+// Animated "working" bar for phases with no byte count yet (device preparing the
+// slot on the first chunk), so the UI shows activity immediately instead of a
+// stalled 0% bar. fwProgress() clears it as soon as a real percentage arrives.
+function fwIndet(on, txt) {
+  var bar = document.getElementById('fw-bar');
+  bar.classList.toggle('indet', !!on);
+  if(on) { bar.style.width = ''; document.getElementById('fw-txt').textContent = txt || ''; }
+}
 function fwProgress(pct) {
+  fwIndet(false);
   document.getElementById('fw-bar').style.width = pct + '%';
   document.getElementById('fw-txt').textContent = Math.round(pct) + '%';
 }
@@ -263,7 +274,10 @@ async function fwPostChunk(url, body, isLast) {
 }
 
 async function fwUploadPost(buf, total) {
-  fwStatus('Uploading...');
+  // Show an animated bar the instant the first chunk goes out: seq 0 makes the
+  // device prepare the slot (query/clean components, psa_fwu_start) before it
+  // replies, so a plain 0% bar looks stalled. Switches to real % after chunk 0.
+  fwStatus('Uploading...'); fwIndet(true, 'starting');
   var seq = 0, offset = 0;
   while(offset < total) {
     var len = Math.min(POST_CHUNK, total - offset);
@@ -306,7 +320,8 @@ async function fwUploadPost(buf, total) {
     fwProgress(offset / total * 100);
   }
   fwProgress(100);
-  fwStatus('Upload verified. Device rebooting — reconnect in ~10 s.');
+  fwStatus('Upload verified. Device rebooting — reconnect in ~10 s. '
+         + 'If it comes back on the OLD version, power-cycle it once to apply.');
 }
 
 async function startUpload() {
@@ -333,7 +348,7 @@ async function startUpload() {
   var crc = ('00000000' + crc32(buf).toString(16)).slice(-8);
   var nChunks = Math.ceil(total / FWCHUNK);
   var seq = 0, offset = 0, ok = true, failMsg = '';
-  fwStatus('Uploading...');
+  fwStatus('Uploading...'); fwIndet(true, 'starting');
   while(offset < total) {
     var len = Math.min(FWCHUNK, total - offset);
     var last = (offset + len >= total) ? 1 : 0;
