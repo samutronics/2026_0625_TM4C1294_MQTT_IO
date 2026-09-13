@@ -38,9 +38,11 @@ Thumbs.db
 tools/temp/*
 !tools/temp/.gitkeep
 
-# --- CC35x1 local Wi-Fi credentials (real SSID/pass never committed; create
-#     from platform/cc35x1/wifi_credentials.example.h) ---
-/platform/cc35x1/wifi_credentials.h
+# --- CC35x1 Wi-Fi seed credentials ---
+# wifi_credentials.h is now TRACKED with a deliberately non-existent placeholder
+# (dummyAP/dummyPSW) so the default build falls through to the setup AP instead
+# of joining a real bench network. Real credentials come from SoftAP
+# provisioning at runtime -- never put a real SSID/pass in the committed file.
 
 # --- CC35x1 flash-tool transient output (flash.sh is tracked; its logs are not) ---
 /platform/cc35x1/tools/*.log
