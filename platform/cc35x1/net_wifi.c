@@ -100,6 +100,15 @@ static uint32_t g_ui32DriverStartMs;
 #define NWP_SETTLE_MS       800U
 
 //
+// Live STA->AP role transition (the "Forget" path) can be rejected by the NWP
+// while it is still settling the just-torn-down STA link.  Retry Wlan_RoleUp(AP)
+// a few times with a short settle so the setup AP comes up without a hardware
+// reset.  Bench-tunable.
+//
+#define AP_ROLEUP_TRIES     5
+#define AP_ROLEUP_RETRY_MS  400U
+
+//
 // The STA and AP interfaces and the STA DHCP client state.
 //
 static struct netif g_sStaIf;
@@ -860,10 +869,32 @@ NetWifiApUp(void)
     sAp.wpsParams.uuid          = (uint8_t *)g_pui8Uuid;
     sAp.wpsParams.deviceType    = (uint8_t *)g_pui8DevType;
 
-    iRet = Wlan_RoleUp(WLAN_ROLE_AP, &sAp, WLAN_WAIT_FOREVER);
+    //
+    // Bring the AP role up.  Retry on failure: this call succeeds cleanly at boot
+    // (STA never associated), but when invoked LIVE right after tearing down an
+    // associated STA + DHCP link (the "Forget" path), the NWP has not finished
+    // settling the STA role-down and the first Wlan_RoleUp(AP) is rejected
+    // (observed -2147482582).  A short settle + retry lets the role transition
+    // complete without the fragile-live-switch wedging that would otherwise force
+    // a hardware reset.
+    //
+    {
+        int iTry;
+        for(iTry = 0; iTry < AP_ROLEUP_TRIES; iTry++)
+        {
+            iRet = Wlan_RoleUp(WLAN_ROLE_AP, &sAp, WLAN_WAIT_FOREVER);
+            if(iRet >= 0)
+            {
+                break;
+            }
+            PalLog("net: Wlan_RoleUp(AP) failed (%d), retry %d/%d\n",
+                   iRet, iTry + 1, AP_ROLEUP_TRIES);
+            sys_msleep(AP_ROLEUP_RETRY_MS);
+        }
+    }
     if(iRet < 0)
     {
-        PalLog("net: Wlan_RoleUp(AP) failed (%d)\n", iRet);
+        PalLog("net: Wlan_RoleUp(AP) gave up after %d tries\n", AP_ROLEUP_TRIES);
         LOCK_TCPIP_CORE();
         netif_remove(&g_sApIf);
         UNLOCK_TCPIP_CORE();
