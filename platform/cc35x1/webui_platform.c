@@ -319,14 +319,22 @@ OtaPrepareTarget(psa_fwu_component_t *pTarget)
     // STAGED / TRIAL / REJECTED / FAILED.  A prior OTA whose TRIAL image never
     // committed (e.g. the boot-time accept was skipped) otherwise wedges every
     // future OTA.  Clear those stale states on the NON-primary, non-target
-    // components so the new install() can proceed.  We never touch a PRIMARY
-    // (running) image -- if the running slot itself is stuck in a blocking
-    // state we only warn, since rejecting it would arm a rollback of the very
-    // firmware serving this upload.
+    // components so the new install() can proceed.
+    //
+    // clean() only accepts UPDATED/FAILED, so a non-primary STAGED must first be
+    // reject()ed (STAGED -> FAILED) before clean() (FAILED -> READY).
+    //
+    // A PRIMARY (running) slot stuck in a blocking state is UNRECOVERABLE from
+    // here: every PSA mutator protects the running image -- clean() needs
+    // UPDATED/FAILED, cancel() refuses ACTIVE, reject()/accept()/request_reboot()
+    // all skip primary.  So we cannot un-stick it and install() would just fail
+    // -137.  Detect it and abort the OTA up front with an actionable message
+    // rather than streaming a whole image to a doomed install.
     //
     {
         psa_fwu_component_t      c;
         psa_fwu_component_info_t s;
+        bool                     bPrimaryBlocked = false;
 
         for(c = 0; c < MAX_COMPONENT_ID; c++)
         {
@@ -341,17 +349,35 @@ OtaPrepareTarget(psa_fwu_component_t *pTarget)
             }
             if(s.impl.Primary != 0)
             {
-                PalLog("ota: WARNING primary comp %d in %u(%s) will block install\n",
+                PalLog("ota: primary comp %d stuck in %u(%s) -- blocks install, "
+                       "not recoverable in-app\n",
                        (int)c, (unsigned)s.state, OtaStateName(s.state));
+                bPrimaryBlocked = true;
                 continue;
             }
             PalLog("ota: clearing stale comp %d state %u(%s) blocking install\n",
                    (int)c, (unsigned)s.state, OtaStateName(s.state));
-            if(s.state == PSA_FWU_TRIAL)
+            if((s.state == PSA_FWU_STAGED) || (s.state == PSA_FWU_TRIAL))
             {
-                psa_fwu_reject(PSA_ERROR_NOT_PERMITTED);  // global: reject trials
+                psa_fwu_reject(PSA_ERROR_NOT_PERMITTED);  // STAGED->FAILED / TRIAL->REJECTED
             }
-            psa_fwu_clean(c);
+            psa_fwu_clean(c);                             // FAILED/UPDATED -> READY
+        }
+
+        if(bPrimaryBlocked)
+        {
+            //
+            // The running image's own slot did not finalise (usually an OTA
+            // started before the previous update committed).  install() cannot
+            // proceed and no in-app call can clear it -- a power-cycle (or, if
+            // that does not clear it, a USB cold-flash) is required.
+            //
+            PalSnprintf(g_pcOtaError, sizeof(g_pcOtaError),
+                        "Previous update did not finalise (running slot still "
+                        "staged). Power-cycle the device and retry; if it "
+                        "persists, re-flash over USB.");
+            PalLog("ota: aborting -- running slot mid-update; power-cycle needed\n");
+            return(-1);
         }
     }
 
@@ -1008,6 +1034,31 @@ WebPlatformOtaInit(void)
     PalLog("ota: FWU init done, staging cap %u bytes\n",
            (unsigned)g_ui32OtaMaxBytes);
     OtaLogComponentStates("boot");
+
+    //
+    // Swap-didn't-take detector.  A staged OTA that boots the NEW image shows the
+    // target slot as TRIAL (then UPDATED once committed).  A vendor slot still
+    // STAGED at boot means the PSA soft-reboot did NOT apply the A/B swap -- the
+    // OLD image is running and the update is pending.  This is a known SDK/boot-ROM
+    // limitation: the soft reset (PRCM RST_CTRL) resets the M33 but not the NWP,
+    // and swapping away from a committed slot needs the full reset only a physical
+    // power-cycle provides (see the NWP-reset notes).  Surface it plainly so the
+    // one correct action -- power-cycle -- is obvious, rather than a silent
+    // "OTA did nothing".
+    //
+    {
+        psa_fwu_component_info_t s1, s2;
+        bool bStaged =
+            ((psa_fwu_query(OTA_VENDOR_SLOT_1, &s1) == PSA_SUCCESS) &&
+             (s1.state == PSA_FWU_STAGED)) ||
+            ((psa_fwu_query(OTA_VENDOR_SLOT_2, &s2) == PSA_SUCCESS) &&
+             (s2.state == PSA_FWU_STAGED));
+        if(bStaged)
+        {
+            PalLog("ota: *** staged update NOT applied by soft-reboot -- "
+                   "POWER-CYCLE the device to boot the new image ***\n");
+        }
+    }
 }
 
 //*****************************************************************************
