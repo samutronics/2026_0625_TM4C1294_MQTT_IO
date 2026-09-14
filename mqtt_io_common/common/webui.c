@@ -26,6 +26,10 @@
 #define UNLOCK_TCPIP_CORE()
 #endif
 
+// Foundation<->product contract (Plan 11).  Included after httpd.h so the web
+// hook types (tCGI) resolve; only prototypes today, wired as the cleave lands.
+#include "product_api.h"
+
 #include "config.h"
 #include "cgifuncs.h"
 #include "mqtt_app.h"

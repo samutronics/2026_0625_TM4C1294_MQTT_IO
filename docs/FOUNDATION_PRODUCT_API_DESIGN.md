@@ -32,8 +32,9 @@ files are **internally mixed** and must be split, and one (`mqtt_app.c`) is *mos
 
 /* ---- lifecycle: foundation main()/super-loop calls these ---- */
 void product_init(void);        /* one-time app bring-up (after config load, before net) */
-void product_poll(void);        /* super-loop tick. CC35x1: foundation calls this UNDER
-                                   LOCK_TCPIP_CORE — see [[cc35x1-corelock-publish]] */
+void product_poll(uint32_t elapsed_ms); /* super-loop tick (elapsed_ms since prev call).
+                                   CC35x1: foundation calls this UNDER LOCK_TCPIP_CORE —
+                                   see [[cc35x1-corelock-publish]] */
 
 /* ---- MQTT: foundation owns client/connect/LWT; product owns app semantics ---- */
 void product_on_connect(void);  /* (re)connected: publish discovery + retained state, subscribe */
