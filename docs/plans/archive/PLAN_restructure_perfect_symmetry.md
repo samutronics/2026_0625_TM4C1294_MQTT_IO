@@ -1,7 +1,17 @@
 # Plan 6 — Restructure to perfect platform symmetry
 
-**Priority:** Med · **Status:** PARTIAL · Memory: `rename-tm4c-project-todo`
+**Priority:** Med · **Status:** DONE (closed 2026-09-14) · Memory: `rename-tm4c-project-todo`
 **⚠ Big, high-risk refactor. A smaller model MUST do it incrementally and keep both builds green after every step. If unsure, do Option A only and stop.**
+
+## Closure (2026-09-14)
+Closed as **DONE**. The delivered scope (Stage A `788a50f` + Stage C1 `1d85abb`) achieved
+symmetric project names + a shared `mqtt_io_common/` tree with both builds green — the practical
+payoff of this plan. The remaining Option-B items (CC35x1 fold, OTA-binary unify, tools
+consolidation) were **deferred by user decision 2026-09-04** and are explicitly gated on "a 3rd
+platform is real" (see the Deferred section below). Rather than keep Plan 6 open indefinitely
+against work that only pays off with a future platform, we close it here; the deferred wishlist
+lives on in the `rename-tm4c-project-todo` memory and can be reopened as a fresh plan when a 3rd
+platform lands.
 
 ## Progress (2026-09-04)
 Executed as **Option B**, Model 2 (sources in tracked project folders), incrementally,
