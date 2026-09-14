@@ -213,11 +213,17 @@ static coupling analysis fully answered Phase 0's design questions. Results:
 **Recommended reorder:** design the `product_api.h` surface + the webui/mqtt_app/config cleave
 *first* (the real risk), and treat the rename as a cheap closed-CCS mechanical step done second.
 
+> **The `product_api.h` contract + the three-file cleave (webui/mqtt_app/config) are designed in
+> [`docs/FOUNDATION_PRODUCT_API_DESIGN.md`](../FOUNDATION_PRODUCT_API_DESIGN.md)** — read it before
+> Phase 1. It also revises the phase ordering: do the in-place cleave under live CCS *first*, then
+> the CCS-closed rename.
+
 ## Per-file disposition (finalized in Phase 0; initial classification)
 
 | File(s) | Destination |
 |---|---|
-| `mqtt_client`, `common/mqtt_app`, `common/sntp_client`, `common/netbiosns`, `buildinfo` | `iot_foundation/core/` |
+| `mqtt_client`, `common/sntp_client`, `common/netbiosns`, `buildinfo` | `iot_foundation/core/` |
+| `common/mqtt_app` | **SPLIT — mostly PRODUCT.** Thin connect-edge/LWT/subscribe glue → foundation; HA discovery + relay/cover/input/temp publish + command dispatch → `products/home_auto/app/ha_mqtt.c` (via `product_on_connect()`/`product_on_mqtt()`). See design doc. |
 | `common/webui` (shell), base `fs/*` (index, wifi_*, cfgrestore, factoryreset, fwupdate, tools, temp, otaack) | `iot_foundation/web/` |
 | `config.{c,h}` | `iot_foundation/config/` |
 | `ota.h` | `iot_foundation/ota/`; `mqtt_io_tm4c1294/ota.c` → `iot_foundation/platform/tm4c1294/` |
