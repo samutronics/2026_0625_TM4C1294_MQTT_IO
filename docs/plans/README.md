@@ -12,6 +12,7 @@ move its row from **Active** to **Completed** below.
 |---|------|------|----------|--------|
 | 2 | [PLAN_boot_connect_race_fix.md](PLAN_boot_connect_race_fix.md) | Robustness | Low | OPEN |
 | 4 | [PLAN_mcu_interchange_rework.md](PLAN_mcu_interchange_rework.md) | Hardware | Med | OPEN (gated) |
+| 11 | [PLAN_foundation_product_split.md](PLAN_foundation_product_split.md) | Structure | Med | OPEN (design approved) |
 
 ### Completed (archived in [`archive/`](archive/))
 
