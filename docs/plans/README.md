@@ -10,7 +10,6 @@ move its row from **Active** to **Completed** below.
 
 | # | Plan | Area | Priority | Status |
 |---|------|------|----------|--------|
-| 1 | [PLAN_web_reboot_freeze_fix.md](PLAN_web_reboot_freeze_fix.md) | Bug | High | OPEN |
 | 2 | [PLAN_boot_connect_race_fix.md](PLAN_boot_connect_race_fix.md) | Robustness | Low | OPEN |
 | 4 | [PLAN_mcu_interchange_rework.md](PLAN_mcu_interchange_rework.md) | Hardware | Med | OPEN (gated) |
 | 6 | [PLAN_restructure_perfect_symmetry.md](PLAN_restructure_perfect_symmetry.md) | Structure | Med | PARTIAL (mqtt_io_common extracted; CC35x1 fold + OTA-unify deferred) |
@@ -20,6 +19,7 @@ move its row from **Active** to **Completed** below.
 
 | # | Plan | Area | Done |
 |---|------|------|------|
+| 1 | [archive/PLAN_web_reboot_freeze_fix.md](archive/PLAN_web_reboot_freeze_fix.md) | Bug | `119cc81` (2026-08-24) |
 | 5 | [archive/PLAN_ota_version_fw_timestamp.md](archive/PLAN_ota_version_fw_timestamp.md) | OTA | `51b47cb` (2026-09-01) |
 | — | [archive/OTA_FIX_PLAN.md](archive/OTA_FIX_PLAN.md) | OTA | `00395e0` (superseded by Plan 5) |
 | 8 | [archive/PLAN_remove_ble_demo.md](archive/PLAN_remove_ble_demo.md) | Cleanup | `1c5258d` (2026-08-24) |
