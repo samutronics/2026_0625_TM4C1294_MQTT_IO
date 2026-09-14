@@ -12,7 +12,17 @@ $ErrorActionPreference = "Stop"
 
 $scriptDir  = Split-Path -Parent $MyInvocation.MyCommand.Path
 $debugDir   = Join-Path $scriptDir "Debug"
-$objcopy    = "C:/ti/ccs2100/ccs/tools/compiler/ti-cgt-armllvm_5.1.1.LTS/bin/tiarmobjcopy.exe"
+
+# Resolve objcopy path: CG_TOOL_ROOT (from CCS env), or $env:OBJCOPY override, or default.
+# CG_TOOL_ROOT is set by CCS build environment (the compiler root).
+if ($env:CG_TOOL_ROOT) {
+    $objcopy = Join-Path $env:CG_TOOL_ROOT "bin/tiarmobjcopy.exe"
+} elseif ($env:OBJCOPY) {
+    $objcopy = $env:OBJCOPY
+} else {
+    # Default (current bench value as fallback).
+    $objcopy = "C:/ti/ccs2100/ccs/tools/compiler/ti-cgt-armllvm_5.1.1.LTS/bin/tiarmobjcopy.exe"
+}
 
 $ts      = Get-Date -Format "yyyyMMddHHmm"
 $binName = "mqtt_io_tm4c1294_$ts.bin"

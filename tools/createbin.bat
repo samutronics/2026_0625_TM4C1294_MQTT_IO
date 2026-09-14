@@ -13,7 +13,23 @@ REM Uses Git Bash specifically (not WSL) for proper Windows path mapping.
 cd /d "%~dp0"
 echo [createbin.bat] Creating signed CC35x1 binary via Git Bash (no hardware)...
 echo.
-"C:\Program Files\Git\bin\bash.exe" "%~dp0../platform/cc35x1/tools/flash.sh" --sign-only %*
+
+REM Try bash on PATH first; fall back to Program Files Git
+if not defined BASH (
+  where bash.exe >nul 2>&1 && set "BASH=bash.exe"
+)
+if not defined BASH (
+  if exist "C:\Program Files\Git\bin\bash.exe" (
+    set "BASH=C:\Program Files\Git\bin\bash.exe"
+  ) else if exist "C:\Program Files (x86)\Git\bin\bash.exe" (
+    set "BASH=C:\Program Files (x86)\Git\bin\bash.exe"
+  ) else (
+    set "BASH=bash.exe"
+    echo WARNING: bash not found on PATH or Program Files; using fallback '%BASH%' - this may fail.
+  )
+)
+
+"%BASH%" "%~dp0../platform/cc35x1/tools/flash.sh" --sign-only %*
 set rc=%errorlevel%
 echo.
 if %rc% equ 0 (

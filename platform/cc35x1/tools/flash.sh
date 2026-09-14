@@ -34,11 +34,16 @@ set -uo pipefail
 SIGN_ONLY=0
 [ "${1:-}" = "--sign-only" ] && SIGN_ONLY=1
 
-SDK="C:/ti/simplelink_wifi_sdk_10_10_01_08"
-TOOLBOX="C:/ti/simplelink_wifi_toolbox_win_4_2_4"
-TOOLBOX_EXE="/c/ti/simplelink_wifi_toolbox_win_4_2_4/simplelink-wifi-toolbox.exe"
-GMAKE="/c/ti/ccs2100/ccs/utils/bin/gmake"
-XDSDFU="/c/ti/ccs2100/ccs/ccs_base/common/uscif/xds110/xdsdfu.exe"
+# Read from env vars with defaults (current bench values as fallbacks).
+# Override on command line: CCS_ROOT=C:/path/to/ccs SDK=C:/path/to/sdk ./flash.sh
+CCS_ROOT="${CCS_ROOT:-C:/ti/ccs2100}"
+SDK="${SDK:-C:/ti/simplelink_wifi_sdk_10_10_01_08}"
+TOOLBOX="${TOOLBOX:-C:/ti/simplelink_wifi_toolbox_win_4_2_4}"
+
+# Derive toolchain paths from CCS_ROOT and TOOLBOX.
+TOOLBOX_EXE="${TOOLBOX_EXE:-$TOOLBOX/simplelink-wifi-toolbox.exe}"
+GMAKE="${GMAKE:-$CCS_ROOT/ccs/utils/bin/gmake}"
+XDSDFU="${XDSDFU:-$CCS_ROOT/ccs/ccs_base/common/uscif/xds110/xdsdfu.exe}"
 
 REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)"
 REPO_WIN="$(echo "$REPO" | sed 's|^/\([a-zA-Z]\)/|\1:/|')"   # /c/... -> C:/...
@@ -120,7 +125,9 @@ else
 fi
 
 echo "[flash.sh] Invoking toolbox makefile to sign vendor image..."
-PATH="/c/ti/ccs2100/ccs/utils/bin:$PATH" \
+# Convert Windows CCS_ROOT to POSIX path for PATH injection
+CCS_ROOT_POSIX="$(echo "$CCS_ROOT" | sed 's|C:/|/c/|' | sed 's|\\|/|g')"
+PATH="$CCS_ROOT_POSIX/ccs/utils/bin:$PATH" \
 "$GMAKE" -s -f "$TOOLBOX/scripts/makefile" all \
     SDK_DIR="$SDK" \
     SYSCONFIG_ARTIFACT="$BUILD_DIR_WIN/syscfg" \

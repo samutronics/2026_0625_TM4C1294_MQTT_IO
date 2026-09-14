@@ -16,7 +16,17 @@ REM ===========================================================================
 setlocal
 cd /d "%~dp0..\..\..\"
 
-set "PY=C:\Users\tomik\AppData\Local\Microsoft\WindowsApps\python3.exe"
+REM Use python/py from PATH; override with PY env var if needed.
+REM Default (if not set): probe py.exe, python.exe, python3.exe on PATH.
+if not defined PY (
+  for %%P in (py.exe python.exe python3.exe) do @if not defined PY (
+    where %%P >nul 2>&1 && set "PY=%%P"
+  )
+)
+if not defined PY (
+  set "PY=python3.exe"
+  echo WARNING: Python not found on PATH; using fallback '%PY%' - this may fail.
+)
 
 "%PY%" platform\cc35x1\tools\makefsdata.py mqtt_io_common\fs -o platform\cc35x1\fsdata.c
 if errorlevel 1 (

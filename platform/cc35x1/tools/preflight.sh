@@ -33,7 +33,11 @@ CC35_PROBE_SN="${CC35_PROBE_SN:-}"
 CC35_PROJECT="mqtt_io_cc35x1"          # the ONLY project that may be active for a CC35x1 debug/flash
 CC35_CORE="APP_MCU"                    # the M33 core name that listCores must report
 
-XDSDFU="/c/ti/ccs2100/ccs/ccs_base/common/uscif/xds110/xdsdfu.exe"
+# Read CCS_ROOT from env; derive XDSDFU from it (current bench as default).
+CCS_ROOT="${CCS_ROOT:-C:/ti/ccs2100}"
+XDSDFU="${XDSDFU:-$CCS_ROOT/ccs/ccs_base/common/uscif/xds110/xdsdfu.exe}"
+# Convert to POSIX path for xdsdfu execution
+XDSDFU="$(echo "$XDSDFU" | sed 's|C:/|/c/|' | sed 's|\\|/|g')"
 _HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 _REPO="$(cd "$_HERE/../../.." && pwd)"
 _OUT="$_REPO/${CC35_PROJECT}/Debug/${CC35_PROJECT}.out"
