@@ -384,13 +384,13 @@ mainThread(void *pvArg0)
     UNLOCK_TCPIP_CORE();
 
     //
-    // Field-I/O chains: relays power up off with outputs enabled.
+    // Bring up the home-auto product: field-I/O chains (relays power up off,
+    // outputs enabled), per-output modes + shutter table, and the input-scan /
+    // binding engine.
     //
-    DINChainInit(ConfigGetDinDevices());
-    RelayChainInit(ConfigGetRelayDevices());
+    product_init();
     ButtonsInit();          // on-board SW1/SW2, exposed as inputs after the chain
     TempSensorInit();       // on-board TMP1075 (bit-banged I2C on GPIO10/11)
-    OutputCtrlReload();
     PalLog("io: %u input dev, %u relay dev, %d local btn\n",
            ConfigGetDinDevices(), ConfigGetRelayDevices(),
            WebPlatformLocalInputCount());
@@ -404,11 +404,6 @@ mainThread(void *pvArg0)
         MQTTAppStart();
         bMQTTStarted = true;
     }
-
-    //
-    // Wire the input-scan / binding engine to the click detector.
-    //
-    IOScanInit();
 
     //
     // Periodic application tick.

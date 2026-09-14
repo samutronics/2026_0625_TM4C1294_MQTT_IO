@@ -1007,12 +1007,11 @@ main(void)
     io_init();
 
     //
-    // Initialize the field-I/O chains with the configured device counts.  The
-    // relay chain powers up with all relays off and outputs enabled.
+    // Bring up the home-auto product: field-I/O chains at the configured device
+    // counts (relays power up off, outputs enabled), per-output modes + shutter
+    // table, and the input-scan / binding engine.
     //
-    DINChainInit(ConfigGetDinDevices());
-    RelayChainInit(ConfigGetRelayDevices());
-    OutputCtrlReload();   // load per-output modes + shutter table
+    product_init();
     UARTprintf("IO: %d input dev, %d relay dev.\n", ConfigGetDinDevices(),
                ConfigGetRelayDevices());
 
@@ -1020,11 +1019,6 @@ main(void)
     // Initialize the MQTT client subsystem (MAC seeds the HA device id).
     //
     MQTTAppInit(pui8MACArray);
-
-    //
-    // Wire the input-scan / binding engine to the click detector.
-    //
-    IOScanInit();
 
     //
     // Main loop.  Networking (lwIP, httpd, MQTT receive) runs in interrupt

@@ -296,6 +296,31 @@ IOScanTick(void)
 
 //*****************************************************************************
 //
+// product_init - Plan 11 foundation/product hook (temporary home).
+//
+// One-time home-auto bring-up, called by the foundation after the config store
+// is initialised (ConfigInit) and before the network starts.  Initialises the
+// field-I/O chains with the configured device counts, loads the per-output
+// modes + shutter table, and wires the input-scan / binding engine to the
+// pushbutton click detector.  Previously inlined (and interleaved with
+// platform-specific inits) in enet_io.c and platform/cc35x1/main.c.
+//
+// Platform-specific inits (TM4C io_init; CC35x1 ButtonsInit/TempSensorInit) and
+// MQTTAppInit stay in the per-platform entry files; they are order-independent
+// of these calls.  Relocates to products/home_auto/ with the rename.
+//
+//*****************************************************************************
+void
+product_init(void)
+{
+    DINChainInit(ConfigGetDinDevices());
+    RelayChainInit(ConfigGetRelayDevices());
+    OutputCtrlReload();   // load per-output modes + shutter table
+    IOScanInit();         // wire input-scan / binding engine to click detector
+}
+
+//*****************************************************************************
+//
 // product_poll - Plan 11 foundation/product hook (temporary home).
 //
 // The foundation super-loop calls this once per application tick to advance the
