@@ -13,7 +13,6 @@ move its row from **Active** to **Completed** below.
 | 2 | [PLAN_boot_connect_race_fix.md](PLAN_boot_connect_race_fix.md) | Robustness | Low | OPEN |
 | 4 | [PLAN_mcu_interchange_rework.md](PLAN_mcu_interchange_rework.md) | Hardware | Med | OPEN (gated) |
 | 6 | [PLAN_restructure_perfect_symmetry.md](PLAN_restructure_perfect_symmetry.md) | Structure | Med | PARTIAL (mqtt_io_common extracted; CC35x1 fold + OTA-unify deferred) |
-| 7 | [PLAN_portability_absolute_paths.md](PLAN_portability_absolute_paths.md) | Build | Med | PARTIAL (scripts portable; .cproject needs manual IDE setup per PORTABILITY.md) |
 
 ### Completed (archived in [`archive/`](archive/))
 
@@ -26,6 +25,7 @@ move its row from **Active** to **Completed** below.
 | 10 | [archive/PLAN_tm4c_build_broken_io_fsdata.md](archive/PLAN_tm4c_build_broken_io_fsdata.md) | Bug | DONE |
 | 9 | [archive/PLAN_cleanup_root_md_docs.md](archive/PLAN_cleanup_root_md_docs.md) | Cleanup | `18ccebc` (2026-09-04) |
 | 3 | [archive/PLAN_wifi_phaseH_hw_verify.md](archive/PLAN_wifi_phaseH_hw_verify.md) | Verification | HW-verified 2026-09-14 (`7cff9dc`, `15a9543`) |
+| 7 | [archive/PLAN_portability_absolute_paths.md](archive/PLAN_portability_absolute_paths.md) | Build | `1b1f01f` (2026-09-14) |
 
 The old `OTA_FIX_PLAN.md` (pre-numbering OTA design doc, delivered `00395e0`, superseded by Plan 5)
 was deleted after archiving — its outcome lives in shipped code + the `cc35x1-ota` memory + Plan 5.
