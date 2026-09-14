@@ -1,6 +1,24 @@
 # Plan 3 — Wi-Fi Phase H hardware verification (dual creds + display + AP watchdog)
 
-**Priority:** High · **Status:** OPEN (code complete, unverified) · Memory: `cc35x1-provisioning`
+**Priority:** High · **Status:** DONE (2026-09-14, HW-verified) · Memory: `cc35x1-provisioning`
+
+## Outcome (2026-09-14)
+All Phase H features HW-verified on the CC3551 bench:
+- **F1** dual creds + RSSI-ranked join ✅, cascade to backup ✅, both-fail → setup AP ✅.
+- **F2** both saved SSIDs displayed, masked with a working Show toggle, backup save-only
+  (no link drop) ✅.
+- **F3** — implemented as the **live AP fallback (no `PalReboot`)**, which is what this plan
+  prescribed as the alternative if the reboot-watchdog proved unsafe (it does — see
+  `cc35x1-web-reboot-freeze`). Forget clears both slots and brings up the setup AP **live**;
+  a bug where the live STA→AP switch after tearing down an associated link failed
+  (`Wlan_RoleUp(AP) -2147482582`, wedged until HW reset) was fixed with a bounded
+  `Wlan_RoleUp(AP)` retry+settle (commit `7cff9dc`), HW-verified.
+- Compile-time seed changed to a tracked non-joining placeholder `dummyAP`/`dummyPSW`
+  (commit `15a9543`) so an emptied store falls through to the setup AP instead of silently
+  rejoining a real bench network.
+
+Not adopted: the original F3 **reboot** watchdog (`PalReboot` on AP timeout) — it shares the
+NWP-wedge hazard, so the live-retry fallback is the shipping behavior.
 
 ## Goal
 Verify on hardware the three already-committed Wi-Fi Phase H features, and — the make-or-break item — confirm the F3 AP-reboot watchdog actually recovers Wi-Fi after `PalReboot()`. If it does not, switch F3 to the live AP→STA retry.
