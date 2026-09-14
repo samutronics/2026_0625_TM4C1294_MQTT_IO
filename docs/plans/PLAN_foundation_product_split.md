@@ -169,6 +169,50 @@ that the foundation API isn't accidentally home-auto-shaped. Commit.
 from the real extraction (a new MCU = a new `iot_foundation/platform/<mcu>/` port +
 `ota.h`/config-store/PAL impls). Update `README.md`, close this plan.
 
+## Phase 0 spike findings (2026-09-14, in-place throwaway branch)
+
+Ran a spike on a disposable branch (`spike/plan11-phase0`, since deleted; no source changed).
+The build-verify of the rename was intentionally bounded and hit a hard operational wall; the
+static coupling analysis fully answered Phase 0's design questions. Results:
+
+1. **The in-place `git mv mqtt_io_common → iot_foundation` is BLOCKED while CCS is open** —
+   it fails with *Permission denied* because CCS holds the shared files locked as linked
+   resources in both live projects. Closing CCS to release the locks also kills the CCS MCP
+   build servers, so a **build-verified rename is impossible in a live-CCS session.**
+   → **Phase 1 sequencing (revised):** the opening `git mv` + path find/replace must be done
+   with **CCS fully closed**, then reopen CCS and build. Do not expect the CCS MCP to drive the
+   rename step. (This also means the "worktree vs in-place" choice is moot for the rename itself —
+   neither builds under live CCS.)
+
+2. **The foundation/product split is a REFACTOR, not a file move.** The boundary cuts *through*
+   three files, which must be cleaved onto the `product_api.h` hooks before the foundation can
+   compile standalone (this is the bulk of Phases 1+3, and the Opus/high judgment work):
+   - `common/webui.c` — 1840 lines, ~40 product refs; **hosts the `/iocfg.cgi` + control CGI
+     handler table** (the product web logic lives here, not in `cgifuncs.c`).
+   - `common/mqtt_app.c` — 847 lines, ~29 product refs; `#include`s all six product headers,
+     publishes I/O.
+   - `config.c` — 1104 lines, ~16 product refs; product keys mixed into the store (matches
+     decision 15's "reserved product blob" — the store needs namespacing).
+   Clean foundation (move as-is): `mqtt_client.c` (0 refs), `common/cgifuncs.c` (0 refs).
+   Clean product (move as-is): `din_chain`, `relay_chain`, `common/{io_scan, output_ctrl,
+   relay_pulse, input_events}`.
+
+3. **Correction to the per-file table below:** `cgifuncs.c` is clean foundation (0 product refs)
+   — the "split cgifuncs" plan was misdirected. The CGI that must split is **`webui.c`'s handler
+   table**, not `cgifuncs.c`.
+
+4. **Rename blast radius is small/mechanical** (~8 tracked files): `mqtt_io_tm4c1294/.project`
+   (14 linked-resource locations) + `.cproject` (3 include paths); `platform/cc35x1/mqtt_io_cc35x1.projectspec`
+   (3 includes + ~15 file entries, mixed `action="link"`/`"copy"`); `platform/cc35x1/tools/prebuild_fs.bat`;
+   `.claude/settings.json`; `README.md`; `docs/PORTABILITY.md`. Trivial vs. the code untangle.
+
+5. **Open item — locate `main()`.** No `int main` was found by grep in `mqtt_io_tm4c1294/` or
+   `platform/cc35x1/` — confirm where the entry point actually lives (likely `enet_io.c` / SDK
+   `main_freertos.c`) before wiring decision 13 ("foundation owns `main()`").
+
+**Recommended reorder:** design the `product_api.h` surface + the webui/mqtt_app/config cleave
+*first* (the real risk), and treat the rename as a cheap closed-CCS mechanical step done second.
+
 ## Per-file disposition (finalized in Phase 0; initial classification)
 
 | File(s) | Destination |
@@ -180,7 +224,8 @@ from the real extraction (a new MCU = a new `iot_foundation/platform/<mcu>/` por
 | `pal/*` | `iot_foundation/pal/` |
 | `common/io_scan`, `output_ctrl`, `relay_pulse`, `input_events`, `din_chain`, `relay_chain` | `products/home_auto/app/` |
 | `fs/iocfg.shtml`, `control.shtml`, `iostate.shtml` | `products/home_auto/web/` |
-| `common/cgifuncs` | **split**: generic CGI → foundation; I/O-config/control CGI → product (decide in Phase 0) |
+| `common/cgifuncs` | **foundation as-is** (Phase 0: 0 product refs — clean). The I/O-config/control CGI to split lives in `common/webui.c`'s handler table, not here. |
+| `common/webui.c` handler table | **split**: base tabs (Status/Settings/Wi-Fi/OTA) → foundation; `/iocfg.cgi` + control handlers → product via `product_http()` |
 | `io.{c,h}`, `enet_io.c`, board glue in `mqtt_io_tm4c1294/` | split board bring-up (foundation platform) vs I/O wiring (product) in Phase 0 |
 
 ## Constraints / gotchas (carry into execution)
