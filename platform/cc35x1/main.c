@@ -56,6 +56,7 @@
 #include "webui_platform.h"
 #include "buttons.h"
 #include "temp_sensor.h"
+#include "product_api.h"    // Plan 11: product_poll() (home-auto tick group)
 
 //
 // Optional compile-time Wi-Fi station credentials for bench/dev use.  If a local
@@ -640,10 +641,7 @@ mainThread(void *pvArg0)
         // race is the deferred concurrency-hardening step.)
         //
         LOCK_TCPIP_CORE();
-        IOScanTick();
-        InputEventsTick(SYSTICKMS);
-        RelayPulseTick(SYSTICKMS);
-        OutputCtrlTick(SYSTICKMS);
+        product_poll(SYSTICKMS);
         UNLOCK_TCPIP_CORE();
 
         //

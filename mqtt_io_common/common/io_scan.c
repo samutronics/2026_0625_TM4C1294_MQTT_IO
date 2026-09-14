@@ -17,10 +17,12 @@
 #include "relay_chain.h"
 #include "input_events.h"
 #include "output_ctrl.h"
+#include "relay_pulse.h"
 #include "mqtt_app.h"
 #include "webui.h"          // g_pui8LiveInState[] (the live input matrix)
 #include "pal_log.h"
 #include "io_scan.h"
+#include "product_api.h"    // Plan 11 product hooks (product_poll defined below)
 
 //*****************************************************************************
 //
@@ -290,4 +292,30 @@ IOScanTick(void)
 {
     DINChainScan();
     RelayFaultScan();
+}
+
+//*****************************************************************************
+//
+// product_poll - Plan 11 foundation/product hook (temporary home).
+//
+// The foundation super-loop calls this once per application tick to advance the
+// home-auto product's periodic work: field-I/O scan + bindings, pushbutton
+// click timers, relay pulse timers, and the output/shutter FSM.  These four
+// calls were previously inlined in each platform's super-loop (enet_io.c and
+// platform/cc35x1/main.c); they are identical on both, so they collapse here.
+//
+// CC35x1: the foundation invokes this UNDER LOCK_TCPIP_CORE, because IOScanTick
+// / OutputCtrlTick may MQTT-publish on a state change (cc35x1-corelock-publish).
+//
+// This definition lives in io_scan.c only for the in-place cleave; it relocates
+// to products/home_auto/ when the tree is renamed to iot_foundation/.
+//
+//*****************************************************************************
+void
+product_poll(uint32_t elapsed_ms)
+{
+    IOScanTick();
+    InputEventsTick(elapsed_ms);
+    RelayPulseTick(elapsed_ms);
+    OutputCtrlTick(elapsed_ms);
 }

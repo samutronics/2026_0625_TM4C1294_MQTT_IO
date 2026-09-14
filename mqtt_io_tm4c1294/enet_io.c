@@ -60,6 +60,7 @@
 #include "buildinfo.h"
 #include "webui.h"
 #include "pal_sys.h"
+#include "product_api.h"    // Plan 11: product_poll() (home-auto tick group)
 
 //*****************************************************************************
 //
@@ -1080,17 +1081,11 @@ main(void)
         }
 
         //
-        // Poll the input chain and the relay fault line; publish changes, run
-        // bindings, log any transitions.
+        // Advance the home-auto product: field-I/O scan + bindings, pushbutton
+        // click timers, relay pulse timers and the output/shutter FSM.
         //
-        IOScanTick();
+        product_poll(SYSTICKMS);
 
-        //
-        // Advance pushbutton click-detection timers.
-        //
-        InputEventsTick(SYSTICKMS);
-        RelayPulseTick(SYSTICKMS);
-        OutputCtrlTick(SYSTICKMS);
         SntpTick(SYSTICKMS);
 
         //

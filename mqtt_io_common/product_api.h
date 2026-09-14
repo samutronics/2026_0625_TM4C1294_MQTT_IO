@@ -54,27 +54,10 @@ void product_on_connect(void);
 // An incoming MQTT message on a subscribed topic.
 void product_on_mqtt(const char *topic, const uint8_t *msg, uint16_t len);
 
-//*****************************************************************************
-// Web - foundation owns httpd + the base tabs (Status/Settings/Wi-Fi/OTA); the
-// product contributes its own CGI handlers and SSI tags, merged by the
-// foundation at httpd registration.
-//*****************************************************************************
-
-typedef struct
-{
-    const tCGI  *cgis;         // product CGI handlers (e.g. /iocfg.cgi, /control.cgi)
-    int          num_cgis;
-    const char **ssi_tags;     // product SSI tag names, appended after the foundation's
-    int          num_ssi_tags;
-} product_web_reg_t;
-
-// Foundation calls this at httpd init so the product can publish its web tables.
-// A no-op product zeroes *reg.
-void product_web_register(product_web_reg_t *reg);
-
-// Foundation SSI dispatch routes any tag index >= the foundation's tag count to
-// this handler, passing a product-relative index (0 == the product's first tag).
-u16_t product_ssi_handler(int product_tag_index, char *pcInsert, int iInsertLen);
+// NOTE: the web hooks (product_web_register / product_ssi_handler) live in
+// product_web.h, because they reference lwIP's tCGI type.  Keeping them out of
+// this header lets non-web foundation files (entry/super-loop) include the
+// lifecycle/MQTT hooks without pulling in the platform-conditional httpd.h.
 
 #ifdef __cplusplus
 }

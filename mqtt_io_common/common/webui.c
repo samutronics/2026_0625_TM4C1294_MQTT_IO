@@ -26,9 +26,10 @@
 #define UNLOCK_TCPIP_CORE()
 #endif
 
-// Foundation<->product contract (Plan 11).  Included after httpd.h so the web
-// hook types (tCGI) resolve; only prototypes today, wired as the cleave lands.
-#include "product_api.h"
+// Foundation<->product contract (Plan 11).  product_web.h is included after
+// httpd.h so the web hook types (tCGI) resolve; it pulls in product_api.h.
+// Only prototypes today, wired as the cleave lands.
+#include "product_web.h"
 
 #include "config.h"
 #include "cgifuncs.h"
