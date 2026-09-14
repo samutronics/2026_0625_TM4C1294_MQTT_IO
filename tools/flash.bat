@@ -11,10 +11,7 @@ cd /d "%~dp0"
 echo [flash.bat] Invoking flash.sh via Git Bash...
 echo.
 
-REM Try bash on PATH first; fall back to Program Files Git
-if not defined BASH (
-  where bash.exe >nul 2>&1 && set "BASH=bash.exe"
-)
+REM Resolve bash path: check Program Files first (most reliable)
 if not defined BASH (
   if exist "C:\Program Files\Git\bin\bash.exe" (
     set "BASH=C:\Program Files\Git\bin\bash.exe"
@@ -22,13 +19,12 @@ if not defined BASH (
     set "BASH=C:\Program Files (x86)\Git\bin\bash.exe"
   ) else (
     set "BASH=bash.exe"
-    echo WARNING: bash not found on PATH or Program Files; using fallback '%BASH%' - this may fail.
   )
 )
 
 REM Use any XDS110 by default (empty CC35_PROBE_SN accepts the first/only probe)
 if not defined CC35_PROBE_SN set CC35_PROBE_SN=
-"%BASH%" "%~dp0../platform/cc35x1/tools/flash.sh" %*
+call "%BASH%" "%~dp0../platform/cc35x1/tools/flash.sh" %*
 set rc=%errorlevel%
 echo.
 if %rc% equ 0 (
