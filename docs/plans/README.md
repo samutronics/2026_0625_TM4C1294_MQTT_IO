@@ -13,7 +13,7 @@ move its row from **Active** to **Completed** below.
 | 2 | [PLAN_boot_connect_race_fix.md](PLAN_boot_connect_race_fix.md) | Robustness | Low | OPEN |
 | 4 | [PLAN_mcu_interchange_rework.md](PLAN_mcu_interchange_rework.md) | Hardware | Med | OPEN (gated) |
 | 6 | [PLAN_restructure_perfect_symmetry.md](PLAN_restructure_perfect_symmetry.md) | Structure | Med | PARTIAL (mqtt_io_common extracted; CC35x1 fold + OTA-unify deferred) |
-| 7 | [PLAN_portability_absolute_paths.md](PLAN_portability_absolute_paths.md) | Build | Med | OPEN |
+| 7 | [PLAN_portability_absolute_paths.md](PLAN_portability_absolute_paths.md) | Build | Med | PARTIAL (scripts portable; .cproject needs manual IDE setup per PORTABILITY.md) |
 
 ### Completed (archived in [`archive/`](archive/))
 
