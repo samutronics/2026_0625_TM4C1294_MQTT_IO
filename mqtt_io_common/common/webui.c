@@ -205,33 +205,35 @@ static char *WifiForgetCGIHandler(int32_t iIndex, int32_t i32NumParams,
 #define CGI_INDEX_WIFICFG       13
 #define CGI_INDEX_WIFIFORGET    14
 
+// Foundation CGI handlers (base tabs: Settings/OTA/Wi-Fi + factory/reboot).  The
+// product's CGI handlers (/iocfg, /relaypulse, /nameset, /outcfg, /cover,
+// /relayset, /roomcfg) live in the PRODUCT section at the bottom of this file
+// and reach the httpd via product_web_register() (Plan 11).
 static const tCGI g_psConfigCGIURIs[] =
 {
-    { "/mqttcfg.cgi",   (tCGIHandler)MQTTConfigCGIHandler }, // CGI_INDEX_MQTTCFG
-    { "/iocfg.cgi",    (tCGIHandler)IOConfigCGIHandler   }, // CGI_INDEX_IOCFG
+    { "/mqttcfg.cgi",      (tCGIHandler)MQTTConfigCGIHandler   }, // CGI_INDEX_MQTTCFG
     { "/fwchunk.cgi",      (tCGIHandler)WebPlatformOtaChunkCGI }, // CGI_INDEX_FWCHUNK (platform seam)
-    { "/factoryreset.cgi",  (tCGIHandler)FactoryResetCGIHandler  }, // CGI_INDEX_FACTORYRESET
-    { "/ntpcfg.cgi",       (tCGIHandler)NtpCfgCGIHandler        }, // CGI_INDEX_NTPCFG
-    { "/cfgrestore.cgi",   (tCGIHandler)CfgRestoreCGIHandler     }, // CGI_INDEX_CFGRESTORE
-    { "/relaypulse.cgi",  (tCGIHandler)RelayPulseCGIHandler     }, // CGI_INDEX_RELAYPULSE
+    { "/factoryreset.cgi", (tCGIHandler)FactoryResetCGIHandler }, // CGI_INDEX_FACTORYRESET
+    { "/ntpcfg.cgi",       (tCGIHandler)NtpCfgCGIHandler       }, // CGI_INDEX_NTPCFG
+    { "/cfgrestore.cgi",   (tCGIHandler)CfgRestoreCGIHandler   }, // CGI_INDEX_CFGRESTORE
 #ifndef CC35XX
-    { "/reboot.cgi",      (tCGIHandler)RebootCGIHandler         }, // CGI_INDEX_REBOOT (TM4C only)
+    { "/reboot.cgi",       (tCGIHandler)RebootCGIHandler       }, // CGI_INDEX_REBOOT (TM4C only)
 #endif
-    { "/nameset.cgi",     (tCGIHandler)NameSetCGIHandler        }, // CGI_INDEX_NAMESET
-    { "/outcfg.cgi",      (tCGIHandler)OutCfgCGIHandler         }, // CGI_INDEX_OUTCFG
-    { "/cover.cgi",       (tCGIHandler)CoverCGIHandler          }, // CGI_INDEX_COVER
-    { "/relayset.cgi",    (tCGIHandler)RelaySetCGIHandler       }, // CGI_INDEX_RELAYSET
-    { "/roomcfg.cgi",     (tCGIHandler)RoomCfgCGIHandler        }, // CGI_INDEX_ROOMCFG
-    { "/wificfg.cgi",     (tCGIHandler)WifiCfgCGIHandler        }, // CGI_INDEX_WIFICFG
-    { "/wififorget.cgi",  (tCGIHandler)WifiForgetCGIHandler     }  // CGI_INDEX_WIFIFORGET
+    { "/wificfg.cgi",      (tCGIHandler)WifiCfgCGIHandler      }, // CGI_INDEX_WIFICFG
+    { "/wififorget.cgi",   (tCGIHandler)WifiForgetCGIHandler   }  // CGI_INDEX_WIFIFORGET
 };
 
 //*****************************************************************************
 //
-// The number of individual CGI URIs that are configured for this system.
+// The number of foundation CGI URIs.  The product appends its own via
+// product_web_register(); WebUIRegister() concatenates the two.
 //
 //*****************************************************************************
 #define NUM_CONFIG_CGI_URIS     (sizeof(g_psConfigCGIURIs) / sizeof(tCGI))
+
+// Upper bound on product CGI handlers, for the combined-table scratch buffer in
+// WebUIRegister().  The product currently registers 7.
+#define WEBUI_MAX_PRODUCT_CGI   12
 
 #define DEFAULT_CGI_RESPONSE    "/index.shtml"
 #define IOCFG_CGI_RESPONSE      "/iocfg.shtml"
@@ -1839,7 +1841,69 @@ SSIHandler(int32_t iIndex, char *pcInsert, int32_t iInsertLen)
 void
 WebUIRegister(void)
 {
+    //
+    // Combined CGI table = foundation handlers ++ the product's (Plan 11).  The
+    // product hands its table to the foundation via product_web_register(); we
+    // concatenate into a static buffer and register once.
+    //
+    static tCGI       s_psCombinedCGI[NUM_CONFIG_CGI_URIS + WEBUI_MAX_PRODUCT_CGI];
+    product_web_reg_t sReg;
+    unsigned          uN = 0, i;
+
+    memset(&sReg, 0, sizeof(sReg));
+    product_web_register(&sReg);
+
+    for(i = 0; i < NUM_CONFIG_CGI_URIS; i++)
+    {
+        s_psCombinedCGI[uN++] = g_psConfigCGIURIs[i];
+    }
+    for(i = 0; (i < (unsigned)sReg.num_cgis) && (i < WEBUI_MAX_PRODUCT_CGI); i++)
+    {
+        s_psCombinedCGI[uN++] = sReg.cgis[i];
+    }
+
     http_set_ssi_handler((tSSIHandler)SSIHandler, g_pcConfigSSITags,
                          NUM_CONFIG_SSI_TAGS);
-    http_set_cgi_handlers(g_psConfigCGIURIs, NUM_CONFIG_CGI_URIS);
+    http_set_cgi_handlers(s_psCombinedCGI, (int)uN);
+}
+
+//*****************************************************************************
+//
+// ===== PRODUCT (home-auto) web hooks — TEMPORARY HOME (Plan 11) =====
+//
+// This section relocates to products/home_auto/web/product_web.c at the rename.
+// It publishes the product's web tables (CGI now; SSI tags in the next step) to
+// the foundation httpd via product_web_register().  The product CGI *handler
+// bodies* (IOConfigCGIHandler, RelayPulseCGIHandler, NameSetCGIHandler,
+// OutCfgCGIHandler, CoverCGIHandler, RelaySetCGIHandler, RoomCfgCGIHandler)
+// remain in place above for now; they move with this section at the rename.
+//
+//*****************************************************************************
+static const tCGI g_psProductCGIURIs[] =
+{
+    { "/iocfg.cgi",      (tCGIHandler)IOConfigCGIHandler  },
+    { "/relaypulse.cgi", (tCGIHandler)RelayPulseCGIHandler },
+    { "/nameset.cgi",    (tCGIHandler)NameSetCGIHandler   },
+    { "/outcfg.cgi",     (tCGIHandler)OutCfgCGIHandler    },
+    { "/cover.cgi",      (tCGIHandler)CoverCGIHandler     },
+    { "/relayset.cgi",   (tCGIHandler)RelaySetCGIHandler  },
+    { "/roomcfg.cgi",    (tCGIHandler)RoomCfgCGIHandler   }
+};
+#define NUM_PRODUCT_CGI_URIS    (sizeof(g_psProductCGIURIs) / sizeof(tCGI))
+
+//*****************************************************************************
+//
+// product_web_register - Plan 11 product hook.  Hands the product's web tables
+// to the foundation httpd (called once from WebUIRegister()).  A no-op product
+// would zero *reg; here the home-auto product supplies its CGI handlers.  The
+// product SSI tag array is added in the next step.
+//
+//*****************************************************************************
+void
+product_web_register(product_web_reg_t *reg)
+{
+    reg->cgis         = g_psProductCGIURIs;
+    reg->num_cgis     = (int)NUM_PRODUCT_CGI_URIS;
+    reg->ssi_tags     = 0;
+    reg->num_ssi_tags = 0;
 }
