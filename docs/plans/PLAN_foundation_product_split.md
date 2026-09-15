@@ -1,6 +1,6 @@
 # Plan 11 — Split into reusable IoT foundation + home-automation product
 
-**Status:** OPEN (design approved via 20-question intake 2026-09-14; not yet executed)
+**Status:** IN PROGRESS (design approved via 20-question intake 2026-09-14; in-place cleave steps 1–3 landed — `product_api.h` contract + `product_poll()`/`product_init()` hooks, commits `34ea6bd`/`6155172`/`d424333`)
 **Area:** Structure **Priority:** Med
 
 ## Execution model guidance (pick per phase)
