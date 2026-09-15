@@ -27,6 +27,7 @@ move its row from **Active** to **Completed** below.
 | 3 | [archive/PLAN_wifi_phaseH_hw_verify.md](archive/PLAN_wifi_phaseH_hw_verify.md) | Verification | HW-verified 2026-09-14 (`7cff9dc`, `15a9543`) |
 | 6 | [archive/PLAN_restructure_perfect_symmetry.md](archive/PLAN_restructure_perfect_symmetry.md) | Structure | `788a50f`+`1d85abb` (2026-09-04); closed 2026-09-14 (Option-B remainder deferred) |
 | 7 | [archive/PLAN_portability_absolute_paths.md](archive/PLAN_portability_absolute_paths.md) | Build | `1b1f01f` (2026-09-14) |
+| — | SimpleLink Wi-Fi SDK 10.20.0.39 + Toolbox 4.3.23 migration (ad-hoc, not a numbered plan) | SDK | `4d408ac` (2026-09-15); outcome in code + `cc35x1-sdk-1020-migration` memory |
 
 The old `OTA_FIX_PLAN.md` (pre-numbering OTA design doc, delivered `00395e0`, superseded by Plan 5)
 was deleted after archiving — its outcome lives in shipped code + the `cc35x1-ota` memory + Plan 5.

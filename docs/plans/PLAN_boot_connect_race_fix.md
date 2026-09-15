@@ -2,6 +2,8 @@
 
 **Priority:** Low (cosmetic/robustness) · **Status:** OPEN · Memory: `cc35x1-boot-connect-race-todo`
 
+> Still reproducible on SDK 10.20.0.39 / Toolbox 4.3.23 (verified 2026-09-15, commit `4d408ac`): heartbeat shows `disc 1 rsn 3`, attempt 2 recovers. The SDK bump did not fix it.
+
 ## Goal
 Stop the first STA connect from firing before the NWP is ready, so the boot log no longer shows the error burst and the first attempt succeeds (saving one ~12 s retry).
 
