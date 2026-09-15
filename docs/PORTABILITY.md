@@ -58,8 +58,8 @@ If you prefer not to edit the project repeatedly:
 | Variable | Purpose | Default | Set by |
 |----------|---------|---------|--------|
 | `CCS_ROOT` | CCS installation directory | `C:/ti/ccs2100` | User env / scripts |
-| `SDK` | SimpleLink WiFi SDK path | `C:/ti/simplelink_wifi_sdk_10_10_01_08` | User env / scripts |
-| `TOOLBOX` | WiFi Toolbox path | `C:/ti/simplelink_wifi_toolbox_win_4_2_4` | User env / scripts |
+| `SDK` | SimpleLink WiFi SDK path | `C:/ti/simplelink_wifi_sdk_10_20_00_39` | User env / scripts |
+| `TOOLBOX` | WiFi Toolbox path | `C:/ti/simplelink_wifi_toolbox_win_4_3_23` | User env / scripts |
 | `PY` | Python executable | Probed from PATH | User env / `prebuild_fs.bat` |
 | `OBJCOPY` | ARM objcopy tool | `$env:CG_TOOL_ROOT` (CCS) | User env / `post_build.ps1` |
 | `BASH` | Git Bash executable | Probed from PATH or Program Files | User env / `.bat` files |

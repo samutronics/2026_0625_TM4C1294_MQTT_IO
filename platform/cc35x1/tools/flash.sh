@@ -37,8 +37,8 @@ SIGN_ONLY=0
 # Read from env vars with defaults (current bench values as fallbacks).
 # Override on command line: CCS_ROOT=C:/path/to/ccs SDK=C:/path/to/sdk ./flash.sh
 CCS_ROOT="${CCS_ROOT:-C:/ti/ccs2100}"
-SDK="${SDK:-C:/ti/simplelink_wifi_sdk_10_10_01_08}"
-TOOLBOX="${TOOLBOX:-C:/ti/simplelink_wifi_toolbox_win_4_2_4}"
+SDK="${SDK:-C:/ti/simplelink_wifi_sdk_10_20_00_39}"
+TOOLBOX="${TOOLBOX:-C:/ti/simplelink_wifi_toolbox_win_4_3_23}"
 
 # Derive toolchain paths from CCS_ROOT and TOOLBOX.
 TOOLBOX_EXE="${TOOLBOX_EXE:-$TOOLBOX/simplelink-wifi-toolbox.exe}"

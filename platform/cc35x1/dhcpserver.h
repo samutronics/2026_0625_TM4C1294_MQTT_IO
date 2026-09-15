@@ -38,14 +38,14 @@
 
 /* This is the aligned version of ip_addr_t,
    used as local variable, on the stack, etc. */
-struct ip_addr {
+struct dhcps_ip_addr {
   u32_t addr;
 };
 
 struct ip_info {
-    struct ip_addr ip;
-    struct ip_addr netmask;
-    struct ip_addr gw;
+    struct dhcps_ip_addr ip;
+    struct dhcps_ip_addr netmask;
+    struct dhcps_ip_addr gw;
 };
 
 typedef struct dhcps_state{
@@ -70,8 +70,8 @@ typedef struct dhcps_msg {
 #ifndef LWIP_OPEN_SRC
 struct dhcps_lease {
     BOOLEAN enable;
-    struct ip_addr start_ip;
-    struct ip_addr end_ip;
+    struct dhcps_ip_addr start_ip;
+    struct dhcps_ip_addr end_ip;
 };
 
 enum dhcps_offer_option{
@@ -92,7 +92,7 @@ typedef enum {
 } dhcps_state_t;
 
 struct dhcps_pool{
-    struct ip_addr ip;
+    struct dhcps_ip_addr ip;
     uint8_t mac[6];
     uint32_t lease_timer;
     dhcps_type_t type;

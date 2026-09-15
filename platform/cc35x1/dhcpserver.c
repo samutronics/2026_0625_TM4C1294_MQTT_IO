@@ -47,9 +47,9 @@ static const char mem_debug_file[]   = __FILE__;
 ////////////////////////////////////////////////////////////////////////////////////
 static const uint32_t magic_cookie   = 0x63538263;
 static struct udp_pcb *pcb_dhcps = NULL;
-static struct ip_addr broadcast_dhcps;
-static struct ip_addr server_address;
-static struct ip_addr client_address;//added
+static struct dhcps_ip_addr broadcast_dhcps;
+static struct dhcps_ip_addr server_address;
+static struct dhcps_ip_addr client_address;//added
 
 struct ip_info ap_if_ip;
 
@@ -61,15 +61,15 @@ static BOOLEAN renew = FALSE;
 #define DHCPS_LEASE_TIME_DEF    (120)
 uint32_t dhcps_lease_time = DHCPS_LEASE_TIME_DEF;  //minute
 
-void wifi_softap_dhcps_client_leave(uint8_t *bssid, struct ip_addr *ip,BOOLEAN force);
-uint32_t wifi_softap_dhcps_client_update(uint8_t *bssid, struct ip_addr *ip);
+void wifi_softap_dhcps_client_leave(uint8_t *bssid, struct dhcps_ip_addr *ip,BOOLEAN force);
+uint32_t wifi_softap_dhcps_client_update(uint8_t *bssid, struct dhcps_ip_addr *ip);
 
 
 void dhcps_set_ip_info(struct netif *netif)
 {
-    ap_if_ip.netmask.addr = netif->netmask.addr;
-    ap_if_ip.ip.addr      = netif->ip_addr.addr;
-    ap_if_ip.gw.addr      = netif->gw.addr;
+    ap_if_ip.netmask.addr = netif_ip4_netmask(netif)->addr;
+    ap_if_ip.ip.addr      = netif_ip4_addr(netif)->addr;
+    ap_if_ip.gw.addr      = netif_ip4_gw(netif)->addr;
 }
 
 void dhcps_get_ip_info(struct ip_info *if_ip)
@@ -175,7 +175,7 @@ static uint8_t*   add_msg_type(uint8_t *optptr, uint8_t type)
 ///////////////////////////////////////////////////////////////////////////////////
 static uint8_t*   add_offer_options(uint8_t *optptr)
 {
-        struct ip_addr ipadd;
+        struct dhcps_ip_addr ipadd;
 
         ipadd.addr = *( (uint32_t *) &server_address);
 
@@ -292,7 +292,7 @@ static uint8_t*   add_end(uint8_t *optptr)
 ///////////////////////////////////////////////////////////////////////////////////
 static void   create_msg(struct dhcps_msg *m)
 {
-        struct ip_addr client;
+        struct dhcps_ip_addr client;
 
         client.addr = client_address.addr;
 
@@ -383,7 +383,7 @@ static void   send_offer(struct dhcps_msg *m, u16_t len)
             return;
         }
         ip_addr_t send;
-        send.addr = broadcast_dhcps.addr;
+        ip_addr_set_ip4_u32(&send, broadcast_dhcps.addr);
 #if DHCPS_DEBUG
         err_t SendOffer_err_t;
         SendOffer_err_t = udp_sendto( pcb_dhcps, p, &send, DHCPS_CLIENT_PORT );
@@ -448,7 +448,7 @@ static void   send_nak(struct dhcps_msg *m, u16_t len)
             return;
         }
         ip_addr_t send;
-        send.addr = broadcast_dhcps.addr;
+        ip_addr_set_ip4_u32(&send, broadcast_dhcps.addr);
 #if DHCPS_DEBUG
         err_t SendNak_err_t;
         SendNak_err_t = udp_sendto( pcb_dhcps, p, &send, DHCPS_CLIENT_PORT );
@@ -515,7 +515,7 @@ static void   send_ack(struct dhcps_msg *m, u16_t len)
             return;
         }
         ip_addr_t send;
-        send.addr = broadcast_dhcps.addr;
+        ip_addr_set_ip4_u32(&send, broadcast_dhcps.addr);
 #if DHCPS_DEBUG
         err_t SendAck_err_t;
         SendAck_err_t = udp_sendto( pcb_dhcps, p, &send, DHCPS_CLIENT_PORT );
@@ -543,7 +543,7 @@ static void   send_ack(struct dhcps_msg *m, u16_t len)
 ///////////////////////////////////////////////////////////////////////////////////
 static uint8_t   parse_options(uint8_t *optptr, int16_t len)
 {
-        struct ip_addr client;
+        struct dhcps_ip_addr client;
         BOOLEAN is_dhcp_parse_end = FALSE;
         struct dhcps_state s;
 
@@ -640,7 +640,7 @@ static int16_t   parse_msg(struct dhcps_msg *m, u16_t len)
     if(os_memcmp((char *)m->options,
             &magic_cookie,
             sizeof(magic_cookie)) == 0){
-        struct ip_addr ip;
+        struct dhcps_ip_addr ip;
         os_memcpy(&ip.addr,m->ciaddr,sizeof(ip.addr));
         client_address.addr = wifi_softap_dhcps_client_update(m->chaddr,&ip);
 
@@ -863,7 +863,7 @@ void   dhcps_stop(void)
     list_node *pnode = NULL;
     list_node *pback_node = NULL;
 
-    struct ip_addr ip_zero;
+    struct dhcps_ip_addr ip_zero;
 
     os_memset(&ip_zero,0x0,sizeof(ip_zero));
     pnode = plist;
@@ -1103,7 +1103,7 @@ uint32_t   wifi_softap_get_dhcps_lease_time(void) // minute
     return dhcps_lease_time;
 }
 
-void   wifi_softap_dhcps_client_leave(uint8_t *bssid, struct ip_addr *ip,BOOLEAN force)
+void   wifi_softap_dhcps_client_leave(uint8_t *bssid, struct dhcps_ip_addr *ip,BOOLEAN force)
 {
     struct dhcps_pool *pdhcps_pool = NULL;
     list_node *pback_node = NULL;
@@ -1131,7 +1131,7 @@ void   wifi_softap_dhcps_client_leave(uint8_t *bssid, struct ip_addr *ip,BOOLEAN
                     pdhcps_pool->state = DHCPS_STATE_OFFLINE;
                 }
 
-                struct ip_addr ip_zero;
+                struct dhcps_ip_addr ip_zero;
                 os_memset(&ip_zero,0x0,sizeof(ip_zero));
                 //wifi_softap_set_station_info(bssid, &ip_zero);
                 break;
@@ -1140,7 +1140,7 @@ void   wifi_softap_dhcps_client_leave(uint8_t *bssid, struct ip_addr *ip,BOOLEAN
     }
 }
 
-uint32_t   wifi_softap_dhcps_client_update(uint8_t *bssid, struct ip_addr *ip)
+uint32_t   wifi_softap_dhcps_client_update(uint8_t *bssid, struct dhcps_ip_addr *ip)
 {
     struct dhcps_pool *pdhcps_pool = NULL;
     list_node *pback_node = NULL;

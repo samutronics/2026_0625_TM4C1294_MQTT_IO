@@ -167,7 +167,7 @@ NbReceive(void *arg, struct udp_pcb *pcb, struct pbuf *p,
     }
 
     // Only respond if we have a bound IP address to advertise.
-    if((netif_default == NULL) || (netif_default->ip_addr.addr == 0))
+    if((netif_default == NULL) || (PAL_NETIF_IP4_U32(netif_default) == 0))
     {
         pbuf_free(p);
         return;
@@ -205,7 +205,7 @@ NbReceive(void *arg, struct udp_pcb *pcb, struct pbuf *p,
     r[55] = 0x06;
     r[56] = 0x00;               // NB flags: unique, B-node
     r[57] = 0x00;
-    memcpy(&r[58], &netif_default->ip_addr.addr, 4);  // IP (network order)
+    memcpy(&r[58], PAL_NETIF_IP4_PTR(netif_default), 4);  // IP (network order)
 
     // The request pbuf is no longer needed.
     pbuf_free(p);

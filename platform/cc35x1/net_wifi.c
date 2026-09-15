@@ -285,7 +285,7 @@ link_callback(struct netif *psNetIf)
         if(bAp)
         {
             PalLog("net: AP link up, starting DHCP server\n");
-            dhcps_start(psNetIf->ip_addr.addr, psNetIf);
+            dhcps_start(netif_ip4_addr(psNetIf)->addr, psNetIf);
         }
         else if(!g_iIpAcquired)
         {

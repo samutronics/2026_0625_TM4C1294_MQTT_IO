@@ -3,7 +3,7 @@
 **Status: design note (board-independent work).** Companion to `CC35X1_PORTING_PROPOSAL.md`.
 Decision (revised 2026-07-25): **BLE provisioning is the CC35x1 onboarding path, done first.**
 
-Reference: SDK demo `ble_wifi_provisioning` (`simplelink_wifi_sdk_10_10_01_08`,
+Reference: SDK demo `ble_wifi_provisioning` (`simplelink_wifi_sdk_10_20_00_39`,
 `examples/rtos/LP_EM_CC35X1/demos/ble_wifi_provisioning/`). **Toolchain validated:** the demo's
 TICLANG projectspec imports and **builds clean** headlessly (only `-Ofast` deprecation warnings).
 

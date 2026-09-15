@@ -140,9 +140,9 @@
              omitted (they pull in BSD-socket scaffolding the port does not use);
              mainThread() is supplied by our own linked main.c below.
              ================================================================ -->
-        <file path="C:/ti/simplelink_wifi_sdk_10_10_01_08/examples/rtos/LP_EM_CC35X1/demos/network_terminal/freertos/main_freertos.c" openOnCreation="false" excludeFromBuild="false" action="copy"/>
+        <file path="C:/ti/simplelink_wifi_sdk_10_20_00_39/examples/rtos/LP_EM_CC35X1/demos/network_terminal/freertos/main_freertos.c" openOnCreation="false" excludeFromBuild="false" action="copy"/>
         <file path="C:/Users/tomik/Workspaces/Workspace2026_0625_TM4C1294_MQTT_IO/platform/cc35x1/mqtt_io_cc35x1.syscfg" openOnCreation="false" excludeFromBuild="false" action="copy"/>
-        <file path="C:/ti/simplelink_wifi_sdk_10_10_01_08/examples/rtos/LP_EM_CC35X1/demos/network_terminal/freertos/ticlang/linker.cmd" openOnCreation="false" excludeFromBuild="false" action="copy"/>
+        <file path="C:/ti/simplelink_wifi_sdk_10_20_00_39/examples/rtos/LP_EM_CC35X1/demos/network_terminal/freertos/ticlang/linker.cmd" openOnCreation="false" excludeFromBuild="false" action="copy"/>
 
         <!-- OS-interface adaptation (osi_*): the SDK's lwIP NO_SYS=0 port
              (sys_arch.c inside lwip.a) and Wi-Fi stack call the "osi" kernel
@@ -150,15 +150,15 @@
              foundational infrastructure (DPL + FreeRTOS shims), not app logic, so
              it is copied from the SDK like main_freertos.c.  Its Report() console
              sink is provided by platform/cc35x1/pal_log.c. -->
-        <file path="C:/ti/simplelink_wifi_sdk_10_10_01_08/examples/rtos/LP_EM_CC35X1/demos/network_terminal/adaptation/osi_dpl.c" openOnCreation="false" excludeFromBuild="false" action="copy"/>
+        <file path="C:/ti/simplelink_wifi_sdk_10_20_00_39/examples/rtos/LP_EM_CC35X1/demos/network_terminal/adaptation/osi_dpl.c" openOnCreation="false" excludeFromBuild="false" action="copy"/>
 
         <!-- osi_filesystem.c implements the osi_f* file API the Wi-Fi stack
              (wifi_stack.a) calls, backed by NVOCMP; nvocmp_cc35xx.c is the NV
              driver providing NVOCMP_loadApiPtrs (used both by osi_filesystem.c
              and by our pal_storage.c).  Copied from the SDK demo adaptation. -->
-        <file path="C:/ti/simplelink_wifi_sdk_10_10_01_08/examples/rtos/LP_EM_CC35X1/demos/network_terminal/adaptation/osi_filesystem.c" openOnCreation="false" excludeFromBuild="false" action="copy"/>
-        <file path="C:/ti/simplelink_wifi_sdk_10_10_01_08/examples/rtos/LP_EM_CC35X1/demos/network_terminal/nvocmp_cc35xx.c" openOnCreation="false" excludeFromBuild="false" action="copy"/>
-        <file path="C:/ti/simplelink_wifi_sdk_10_10_01_08/source/ti/common/nv/crc.c" openOnCreation="false" excludeFromBuild="false" action="copy"/>
+        <file path="C:/ti/simplelink_wifi_sdk_10_20_00_39/examples/rtos/LP_EM_CC35X1/demos/network_terminal/adaptation/osi_filesystem.c" openOnCreation="false" excludeFromBuild="false" action="copy"/>
+        <file path="C:/ti/simplelink_wifi_sdk_10_20_00_39/examples/rtos/LP_EM_CC35X1/demos/network_terminal/nvocmp_cc35xx.c" openOnCreation="false" excludeFromBuild="false" action="copy"/>
+        <file path="C:/ti/simplelink_wifi_sdk_10_20_00_39/source/ti/common/nv/crc.c" openOnCreation="false" excludeFromBuild="false" action="copy"/>
 
         <!-- ================================================================
              Repo sources referenced in place (NOT copied) via action="link" -
@@ -240,8 +240,8 @@
              LED-animation code) is a later slice - httpd here serves the static
              fs/ image; dynamic handlers + POST land with their PAL seam next.
              ================================================================ -->
-        <file path="C:/ti/simplelink_wifi_sdk_10_10_01_08/source/third_party/lwip/lwip-stack/src/apps/http/httpd.c" openOnCreation="false" excludeFromBuild="false" action="copy"/>
-        <file path="C:/ti/simplelink_wifi_sdk_10_10_01_08/source/third_party/lwip/lwip-stack/src/apps/http/fs.c" openOnCreation="false" excludeFromBuild="false" action="copy"/>
+        <file path="C:/ti/simplelink_wifi_sdk_10_20_00_39/source/third_party/lwip/lwip-stack/src/apps/http/httpd.c" openOnCreation="false" excludeFromBuild="false" action="copy"/>
+        <file path="C:/ti/simplelink_wifi_sdk_10_20_00_39/source/third_party/lwip/lwip-stack/src/apps/http/fs.c" openOnCreation="false" excludeFromBuild="false" action="copy"/>
         <file path="C:/Users/tomik/Workspaces/Workspace2026_0625_TM4C1294_MQTT_IO/platform/cc35x1/fsdata.c" openOnCreation="false" excludeFromBuild="true" action="copy"/>
 
         <!-- ================================================================
