@@ -43,6 +43,23 @@ void product_init(void);
 void product_poll(uint32_t elapsed_ms);
 
 //*****************************************************************************
+// Config store - the foundation owns the store engine (EEPROM/CRC and the
+// foundation records: broker, NTP, OTA flag).  The product owns its own schema
+// records and loads / resets them through these hooks, so the foundation store
+// never enumerates the product schema (decision 15).
+//*****************************************************************************
+
+// Load (and default / migrate) the product's config records.  The foundation's
+// ConfigInit() calls this AFTER its own records are loaded and BEFORE
+// product_init().  Implementations use the foundation store primitives
+// (ConfigCRC32 + the PAL storage layer) to persist a product-owned region.
+void product_config_load(void);
+
+// Invalidate the product's config records (zero their magic words) so the next
+// boot falls back to product defaults.  Called by ConfigFactoryReset().
+void product_config_factory_reset(void);
+
+//*****************************************************************************
 // MQTT - foundation owns the client, connect/edge handling, availability/LWT
 // and the command subscription; the product owns application semantics.
 //*****************************************************************************

@@ -1,6 +1,29 @@
 //*****************************************************************************
 //
-// config.c - Persistent MQTT configuration stored in on-chip EEPROM.
+// config.c - Persistent configuration stored in on-chip EEPROM.
+//
+// Plan 11 foundation/product split (decision 15).  This file currently hosts
+// BOTH layers; the PRODUCT half relocates to products/home_auto/config/ at the
+// rename.  The boundary:
+//
+//   FOUNDATION (store engine + foundation records — stays here):
+//     ConfigCRC32, the EEPROM-map static-asserts, ConfigInit (foundation
+//     records + the product_config_load() hand-off), ConfigSetDefaults,
+//     ConfigGet/Save/HasBroker, the packed device-count accessors (the count
+//     nibble lives in the foundation tMQTTConfig record), ConfigOta*,
+//     ConfigFactoryReset (foundation records + the product hook), ConfigNtp*.
+//
+//   PRODUCT (home-auto schema — relocates at the rename):
+//     product_config_load / product_config_factory_reset (the two hooks the
+//     foundation calls), the tIOSettings/tIOBindings/tIONames/tOutputConfig/
+//     tRoomConfig records + their accessors, ConfigOutputMigrateV1, and the
+//     per-record defaults.  These use ONLY the foundation store primitives
+//     (ConfigCRC32 + the PAL storage layer), so the dependency points one way.
+//
+// KNOWN WARTS to resolve at the rename (not now): the device-count accessors
+// stay foundation because the count nibble is physically in tMQTTConfig; and
+// config.h is not yet split (product record types still declared alongside the
+// foundation ones).
 //
 //*****************************************************************************
 
@@ -11,6 +34,7 @@
 #include "pal_storage.h"
 #include "config.h"
 #include "ota.h"
+#include "product_api.h"    // Plan 11: product_config_load/_factory_reset hooks
 
 //
 // Platform seam (implemented in webui_platform.c on the CC35x1 / enet_io.c on the
@@ -183,6 +207,60 @@ ConfigInit(void)
     ConfigSetRelayDevices((g_sConfig.ui8IoDevices >> 4) & 0x0F);
 
     //
+    // Load NTP configuration (foundation record).  Default: pool.ntp.org, TZ 0.
+    //
+    PalStorageRead((uint32_t *)&g_sNTPConfig, CFG_NTP_EEPROM_ADDR,
+               sizeof(tNTPConfig));
+    ui32Crc = ConfigCRC32((const uint8_t *)&g_sNTPConfig,
+                          sizeof(tNTPConfig) - sizeof(uint32_t));
+    if((g_sNTPConfig.ui32Magic != CFG_NTP_MAGIC) ||
+       (g_sNTPConfig.ui32Crc != ui32Crc))
+    {
+        memset(&g_sNTPConfig, 0, sizeof(tNTPConfig));
+        g_sNTPConfig.ui32Magic = CFG_NTP_MAGIC;
+        strncpy(g_sNTPConfig.pcServer, "pool.ntp.org",
+                CFG_NTP_SERVER_LEN - 1);
+        g_sNTPConfig.i8TzOffset = 0;
+        PalLog("No NTP config in EEPROM; using pool.ntp.org UTC+0.\n");
+    }
+
+    //
+    // Product config records (I/O settings, bindings, names, outputs, rooms) are
+    // owned by the product; load / default / migrate them through the product
+    // hook so the foundation store never enumerates the product schema (Plan 11).
+    // The product records read AFTER the foundation ones and BEFORE product_init.
+    //
+    product_config_load();
+}
+
+//*****************************************************************************
+//
+// ===== PRODUCT (home-auto) config — TEMPORARY HOME (Plan 11) =====
+//
+// Everything from here to the end of the file is the home-auto SCHEMA layer and
+// relocates to products/home_auto/config/ at the rename.  It owns the
+// tIOSettings / tIOBindings / tIONames / tOutputConfig / tRoomConfig records and
+// persists them using ONLY the foundation store primitives (ConfigCRC32 + the
+// PAL storage layer), so the dependency points product -> foundation.  The
+// device-count accessors are the one exception that stays foundation (their
+// nibble lives in the foundation tMQTTConfig record) — see the file header.
+//
+//*****************************************************************************
+
+//*****************************************************************************
+//
+// product_config_load - Plan 11 product hook.  Load / default / migrate the
+// product's config records.  Called by the foundation's ConfigInit() after the
+// foundation records (broker, NTP) are loaded and before product_init().  This
+// block was lifted verbatim out of ConfigInit().
+//
+//*****************************************************************************
+void
+product_config_load(void)
+{
+    uint32_t ui32Crc;
+
+    //
     // Load the I/O settings record (per-input type) from its own EEPROM block.
     // A missing or corrupt record silently defaults to all-switches (all zeros).
     //
@@ -247,24 +325,6 @@ ConfigInit(void)
     }
 
     //
-    // Load NTP configuration.  Default: pool.ntp.org, TZ offset 0.
-    //
-    PalStorageRead((uint32_t *)&g_sNTPConfig, CFG_NTP_EEPROM_ADDR,
-               sizeof(tNTPConfig));
-    ui32Crc = ConfigCRC32((const uint8_t *)&g_sNTPConfig,
-                          sizeof(tNTPConfig) - sizeof(uint32_t));
-    if((g_sNTPConfig.ui32Magic != CFG_NTP_MAGIC) ||
-       (g_sNTPConfig.ui32Crc != ui32Crc))
-    {
-        memset(&g_sNTPConfig, 0, sizeof(tNTPConfig));
-        g_sNTPConfig.ui32Magic = CFG_NTP_MAGIC;
-        strncpy(g_sNTPConfig.pcServer, "pool.ntp.org",
-                CFG_NTP_SERVER_LEN - 1);
-        g_sNTPConfig.i8TzOffset = 0;
-        PalLog("No NTP config in EEPROM; using pool.ntp.org UTC+0.\n");
-    }
-
-    //
     // Load channel names record.  On invalid or missing record all names
     // default to empty strings (channels use generated labels In01/Out01).
     //
@@ -323,6 +383,31 @@ ConfigInit(void)
         ConfigRoomSetDefaults();
         ConfigRoomSave();
         PalLog("No room config in EEPROM; all outputs/shutters unassigned.\n");
+    }
+}
+
+//*****************************************************************************
+//
+// product_config_factory_reset - Plan 11 product hook.  Zero the magic word of
+// each product config record so ConfigInit() reloads product defaults on the
+// next boot.  Called by the foundation's ConfigFactoryReset() (which handles the
+// foundation records itself).
+//
+//*****************************************************************************
+void
+product_config_factory_reset(void)
+{
+    uint32_t ui32Zero = 0u;
+    uint32_t ui32Rc   = 0u;
+    ui32Rc |= PalStorageWrite(&ui32Zero, CFG_IO_EEPROM_ADDR,   4);   // tIOSettings
+    ui32Rc |= PalStorageWrite(&ui32Zero, CFG_IO_BINDINGS_ADDR, 4);   // tIOBindings
+    ui32Rc |= PalStorageWrite(&ui32Zero, CFG_IO_NAMES_ADDR,    4);   // tIONames
+    ui32Rc |= PalStorageWrite(&ui32Zero, CFG_OUTCFG_ADDR,      4);   // tOutputConfig
+    ui32Rc |= PalStorageWrite(&ui32Zero, CFG_ROOMCFG_ADDR,     4);   // tRoomConfig
+    if(ui32Rc != 0)
+    {
+        PalLog("Product config: factory reset EEPROM write error(s) (0x%x).\n",
+               ui32Rc);
     }
 }
 
@@ -685,14 +770,15 @@ ConfigFactoryReset(void)
 {
     uint32_t ui32Zero = 0u;
     uint32_t ui32Rc   = 0u;
+
+    //
+    // Foundation records.  The product records are invalidated by the product
+    // hook so the foundation store never names the product schema (Plan 11).
+    //
     ui32Rc |= PalStorageWrite(&ui32Zero, CFG_EEPROM_ADDR,      4);   // tMQTTConfig
-    ui32Rc |= PalStorageWrite(&ui32Zero, CFG_IO_EEPROM_ADDR,   4);   // tIOSettings
-    ui32Rc |= PalStorageWrite(&ui32Zero, CFG_IO_BINDINGS_ADDR, 4);   // tIOBindings
     ui32Rc |= PalStorageWrite(&ui32Zero, CFG_OTA_EEPROM_ADDR,  4);   // OTA flag
     ui32Rc |= PalStorageWrite(&ui32Zero, CFG_NTP_EEPROM_ADDR,  4);   // tNTPConfig
-    ui32Rc |= PalStorageWrite(&ui32Zero, CFG_IO_NAMES_ADDR,    4);   // tIONames
-    ui32Rc |= PalStorageWrite(&ui32Zero, CFG_OUTCFG_ADDR,      4);   // tOutputConfig
-    ui32Rc |= PalStorageWrite(&ui32Zero, CFG_ROOMCFG_ADDR,     4);   // tRoomConfig
+    product_config_factory_reset();
     if(ui32Rc != 0)
     {
         PalLog("Config: factory reset had EEPROM write error(s) (0x%x).\n",
