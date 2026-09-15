@@ -1,6 +1,13 @@
 # Plan 11 — Split into reusable IoT foundation + home-automation product
 
-**Status:** IN PROGRESS (design approved via 20-question intake 2026-09-14; in-place cleave steps 1–3 landed — `product_api.h` contract + `product_poll()`/`product_init()` hooks, commits `34ea6bd`/`6155172`/`d424333`)
+**Status:** IN PROGRESS (design approved 2026-09-14. Early hooks: `product_api.h` +
+`product_poll()`/`product_init()`, commits `34ea6bd`/`6155172`/`d424333`. **The three-file
+in-place cleave is now COMPLETE** (2026-09-15): `mqtt_app` → `product_on_connect`/`product_on_mqtt`
+(`9983517`); `webui` CGI+SSI table → `product_web_register`/`product_ssi_handler` (`e17f7f8`+`ecec2f8`);
+`config` store → `product_config_load`/`product_config_factory_reset` (`5c8bbb0`). Both MCUs build
+green; CC35x1 web/OTA + factory-reset HW-verified. **NEXT: the CCS-closed directory rename** —
+`git mv mqtt_io_common → iot_foundation` + move product halves to `products/home_auto/` — done in a
+separate CCS-closed session per spike finding 1.)
 **Area:** Structure **Priority:** Med
 
 ## Execution model guidance (pick per phase)
