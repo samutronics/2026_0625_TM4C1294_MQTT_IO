@@ -30,6 +30,7 @@
 #include "input_events.h"
 #include "relay_pulse.h"
 #include "output_ctrl.h"
+#include "product_api.h"    // Plan 11: product_on_connect() / product_on_mqtt() hooks
 
 //
 // Home Assistant default discovery prefix.
@@ -478,12 +479,18 @@ MQTTAppParseCoverSet(const char *pcTopic, uint16_t ui16Len, int *piShutter)
 
 //*****************************************************************************
 //
-// Incoming-message callback: handle relay and cover command topics.
+// product_on_mqtt - Plan 11 product hook (temporary home in mqtt_app.c;
+// relocates to products/home_auto/app/ha_mqtt.c at the rename).
+//
+// The home-auto command dispatch: an incoming MQTT message on a subscribed
+// topic is parsed here and routed to the output controller / relay-pulse
+// engine.  The topic is length-delimited (ui16TopicLen), not NUL-terminated.
+// The foundation's MQTT glue (MQTTAppMsgCB) forwards every message here.
 //
 //*****************************************************************************
-static void
-MQTTAppMsgCB(const char *pcTopic, uint16_t ui16TopicLen,
-             const uint8_t *pui8Payload, uint16_t ui16PayloadLen)
+void
+product_on_mqtt(const char *pcTopic, uint16_t ui16TopicLen,
+                const uint8_t *pui8Payload, uint16_t ui16PayloadLen)
 {
     int iRelay;
     int iShutter;
@@ -576,6 +583,20 @@ MQTTAppBuildTopics(const char *pcBase)
     g_pcBase[sizeof(g_pcBase) - 1] = '\0';
 
     PalSnprintf(g_pcTopicStatus, sizeof(g_pcTopicStatus), "%s/status", pcBase);
+}
+
+//*****************************************************************************
+//
+// Foundation MQTT glue: incoming-message callback registered with the client.
+// Routes every message to the product hook (product_on_mqtt).  The product
+// owns all application semantics; the foundation only forwards.
+//
+//*****************************************************************************
+static void
+MQTTAppMsgCB(const char *pcTopic, uint16_t ui16TopicLen,
+             const uint8_t *pui8Payload, uint16_t ui16PayloadLen)
+{
+    product_on_mqtt(pcTopic, ui16TopicLen, pui8Payload, ui16PayloadLen);
 }
 
 //*****************************************************************************
@@ -739,8 +760,60 @@ MQTTAppPostConnect(int iStep)
 
 //*****************************************************************************
 //
-// Periodic service.  Detects the connect edge and drives the staggered
-// post-connect publish sequence (status, discovery, state, subscribe).
+// product_on_connect - Plan 11 product hook (temporary home in mqtt_app.c;
+// relocates to products/home_auto/app/ha_mqtt.c at the rename).
+//
+// The MQTT session has (re)connected.  Arm the staggered post-connect publish
+// sequence (status, HA discovery, retained state, subscribe) and snapshot the
+// inputs so their initial retained state is published.  The foundation's MQTT
+// glue (MQTTAppTick) calls this on the connect rising edge; MQTTAppPubServiceTick
+// then advances the sequence one item per tick.
+//
+//*****************************************************************************
+void
+product_on_connect(void)
+{
+    g_iPubStep = 1;
+    g_iPubMax = 2 + (2 * (int)ConfigGetRelayDevices() * 8) +
+                (2 * (int)IOInputCount()) +
+                (2 * CFG_MAX_SHUTTERS) + 1 + // + cover disc/state + cover sub
+                (WebPlatformHasTempSensor() ? 1 : 0);  // + temp discovery
+    IOInputReadAll(g_pui8InSnap, sizeof(g_pui8InSnap));
+}
+
+//*****************************************************************************
+//
+// MQTTAppPubServiceTick - Plan 11 product hook helper (temporary home; moves
+// with the sequencer to ha_mqtt.c at the rename).
+//
+// Advances the staggered post-connect publish sequence one item per call.
+// Driven by the foundation's product_poll() hook (see io_scan.c), which on the
+// CC35x1 runs under LOCK_TCPIP_CORE - required because MQTTAppPostConnect
+// publishes (cc35x1-corelock-publish).  Resets the sequence while disconnected.
+//
+//*****************************************************************************
+void
+MQTTAppPubServiceTick(void)
+{
+    if(!MQTTClientIsReady())
+    {
+        g_iPubStep = 0;
+        return;
+    }
+
+    if((g_iPubStep > 0) && (g_iPubStep <= g_iPubMax))
+    {
+        MQTTAppPostConnect(g_iPubStep);
+        g_iPubStep++;
+    }
+}
+
+//*****************************************************************************
+//
+// Periodic service (foundation MQTT glue).  Services the MQTT client and
+// detects the connect rising edge, handing off to the product's
+// product_on_connect() hook.  The staggered publish sequence itself is advanced
+// by the product via MQTTAppPubServiceTick() from product_poll().
 //
 //*****************************************************************************
 void
@@ -753,31 +826,9 @@ MQTTAppTick(uint32_t ui32ElapsedMs)
     bConnected = MQTTClientIsReady();
     if(bConnected && !g_bWasConnected)
     {
-        //
-        // Freshly connected: kick off the post-connect publish sequence and
-        // snapshot the inputs so their initial retained state is published.
-        //
-        g_iPubStep = 1;
-        g_iPubMax = 2 + (2 * (int)ConfigGetRelayDevices() * 8) +
-                    (2 * (int)IOInputCount()) +
-                    (2 * CFG_MAX_SHUTTERS) + 1 + // + cover disc/state + cover sub
-                    (WebPlatformHasTempSensor() ? 1 : 0);  // + temp discovery
-        IOInputReadAll(g_pui8InSnap, sizeof(g_pui8InSnap));
-    }
-    if(!bConnected)
-    {
-        g_iPubStep = 0;
+        product_on_connect();
     }
     g_bWasConnected = bConnected;
-
-    //
-    // Advance the publish sequence, one item per tick.
-    //
-    if(bConnected && (g_iPubStep > 0) && (g_iPubStep <= g_iPubMax))
-    {
-        MQTTAppPostConnect(g_iPubStep);
-        g_iPubStep++;
-    }
 }
 
 //*****************************************************************************

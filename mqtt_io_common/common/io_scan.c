@@ -325,12 +325,14 @@ product_init(void)
 //
 // The foundation super-loop calls this once per application tick to advance the
 // home-auto product's periodic work: field-I/O scan + bindings, pushbutton
-// click timers, relay pulse timers, and the output/shutter FSM.  These four
-// calls were previously inlined in each platform's super-loop (enet_io.c and
+// click timers, relay pulse timers, the output/shutter FSM, and advancing the
+// staggered post-connect HA publish sequence (MQTTAppPubServiceTick).  The first
+// four calls were previously inlined in each platform's super-loop (enet_io.c and
 // platform/cc35x1/main.c); they are identical on both, so they collapse here.
+// The publish-sequence step was previously driven from MQTTAppTick (Plan 11).
 //
-// CC35x1: the foundation invokes this UNDER LOCK_TCPIP_CORE, because IOScanTick
-// / OutputCtrlTick may MQTT-publish on a state change (cc35x1-corelock-publish).
+// CC35x1: the foundation invokes this UNDER LOCK_TCPIP_CORE, because IOScanTick /
+// OutputCtrlTick and the publish sequence may MQTT-publish (cc35x1-corelock-publish).
 //
 // This definition lives in io_scan.c only for the in-place cleave; it relocates
 // to products/home_auto/ when the tree is renamed to iot_foundation/.
@@ -343,4 +345,5 @@ product_poll(uint32_t elapsed_ms)
     InputEventsTick(elapsed_ms);
     RelayPulseTick(elapsed_ms);
     OutputCtrlTick(elapsed_ms);
+    MQTTAppPubServiceTick();   // advance the post-connect HA publish sequence
 }

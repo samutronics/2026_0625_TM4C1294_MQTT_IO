@@ -51,8 +51,11 @@ void product_poll(uint32_t elapsed_ms);
 // subscribe to product command topics.
 void product_on_connect(void);
 
-// An incoming MQTT message on a subscribed topic.
-void product_on_mqtt(const char *topic, const uint8_t *msg, uint16_t len);
+// An incoming MQTT message on a subscribed topic.  The topic is length-delimited
+// (topic_len), NOT NUL-terminated: the foundation's MQTT client delivers it as a
+// slice of the RX buffer immediately followed by the payload (see mqtt_client.c).
+void product_on_mqtt(const char *topic, uint16_t topic_len,
+                     const uint8_t *msg, uint16_t msg_len);
 
 // NOTE: the web hooks (product_web_register / product_ssi_handler) live in
 // product_web.h, because they reference lwIP's tCGI type.  Keeping them out of

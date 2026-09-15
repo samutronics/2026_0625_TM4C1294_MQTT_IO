@@ -40,6 +40,13 @@ void MQTTAppStop(void);
 void MQTTAppTick(uint32_t ui32ElapsedMs);
 
 //
+// Advance the staggered post-connect publish sequence one item per call.  Plan
+// 11: this is product work driven by product_poll() (on CC35x1 under the TCP/IP
+// core lock).  No-op / resets while the broker is disconnected.
+//
+void MQTTAppPubServiceTick(void);
+
+//
 // Publish one SN65HVS882 input channel's state (retained "ON"/"OFF").  Called
 // from the input-chain scan when a channel transitions (switch-type inputs).
 //
