@@ -56,7 +56,10 @@
 #define ustrncpy     strncpy       // TivaWare ustrncpy == C strncpy (copy n, NUL-pad)
 #define ustrlen      strlen        // TivaWare ustrlen  == C strlen
 
-// ---- SSI tag indices (enet_io.c) ----
+// ---- Foundation SSI tag indices (base tabs: Status/Settings/Wi-Fi/OTA) ----
+// The product's SSI tags (I/O Config + Control) are appended AFTER these by
+// product_web_register(); their product-relative indices are the PSSI_INDEX_*
+// values in the PRODUCT section at the bottom of this file (Plan 11).
 #define SSI_INDEX_HOST      0
 #define SSI_INDEX_PORT      1
 #define SSI_INDEX_CLIENT    2
@@ -65,38 +68,22 @@
 #define SSI_INDEX_AUTH      5
 #define SSI_INDEX_STATUS    6
 #define SSI_INDEX_IP        7
-#define SSI_INDEX_DIN       8
-#define SSI_INDEX_RELAY     9
-#define SSI_INDEX_IOTYPES   10
-#define SSI_INDEX_IOBINDS   11
-#define SSI_INDEX_FWVER     12
-#define SSI_INDEX_NTPTIME   13
-#define SSI_INDEX_NTPSVR    14
-#define SSI_INDEX_NTPTZ     15
-#define SSI_INDEX_MQPASS    16
-#define SSI_INDEX_INNAMES   17
-#define SSI_INDEX_OUTNAMES  18
-#define SSI_INDEX_INSTATES  19
-#define SSI_INDEX_OUTSTATES 20
-#define SSI_INDEX_OUTMODES  21
-#define SSI_INDEX_OUTTMO    22
-#define SSI_INDEX_SHUTTERS  23
-#define SSI_INDEX_SHNAMES   24
-#define SSI_INDEX_RMNAMES   25
-#define SSI_INDEX_OUTROOMS  26
-#define SSI_INDEX_SHROOMS   27
-#define SSI_INDEX_OTAMAX    28
-#define SSI_INDEX_OTAPOST   29
-#define SSI_INDEX_OTAERROR  30
-#define SSI_INDEX_WIFIOPTS  31
-#define SSI_INDEX_WIFITAB   32
-#define SSI_INDEX_NLOC      33
-#define SSI_INDEX_TEMP      34
-#define SSI_INDEX_SHOWREBOOT 35
-#define SSI_INDEX_WSSID1    36
-#define SSI_INDEX_WPASS1    37
-#define SSI_INDEX_WSSID2    38
-#define SSI_INDEX_WPASS2    39
+#define SSI_INDEX_FWVER     8
+#define SSI_INDEX_NTPTIME   9
+#define SSI_INDEX_NTPSVR    10
+#define SSI_INDEX_NTPTZ     11
+#define SSI_INDEX_MQPASS    12
+#define SSI_INDEX_OTAMAX    13
+#define SSI_INDEX_OTAPOST   14
+#define SSI_INDEX_OTAERROR  15
+#define SSI_INDEX_WIFIOPTS  16
+#define SSI_INDEX_WIFITAB   17
+#define SSI_INDEX_TEMP      18
+#define SSI_INDEX_SHOWREBOOT 19
+#define SSI_INDEX_WSSID1    20
+#define SSI_INDEX_WPASS1    21
+#define SSI_INDEX_WSSID2    22
+#define SSI_INDEX_WPASS2    23
 
 static const char *g_pcConfigSSITags[] =
 {
@@ -108,32 +95,16 @@ static const char *g_pcConfigSSITags[] =
     "mqauth",        // SSI_INDEX_AUTH
     "mqstatus",      // SSI_INDEX_STATUS
     "ipaddr",        // SSI_INDEX_IP
-    "mqdin",         // SSI_INDEX_DIN
-    "mqrelay",       // SSI_INDEX_RELAY
-    "iotypes",       // SSI_INDEX_IOTYPES
-    "iobinds",       // SSI_INDEX_IOBINDS
     "fwver",         // SSI_INDEX_FWVER  — build timestamp YYYYMMDDHHMM
     "ntptime",       // SSI_INDEX_NTPTIME — current time HH:MM:SS
     "ntpsvr",        // SSI_INDEX_NTPSVR  — NTP server hostname
     "ntptz",         // SSI_INDEX_NTPTZ   — UTC offset (signed integer)
     "mqpass",        // SSI_INDEX_MQPASS  — MQTT password (for backup page)
-    "innames",       // SSI_INDEX_INNAMES  — packed input names (12 B each, up to 64)
-    "outnames",      // SSI_INDEX_OUTNAMES — packed output names (12 B each, up to 64)
-    "instates",      // SSI_INDEX_INSTATES  — live input states as hex bytes
-    "outstats",      // SSI_INDEX_OUTSTATES — live relay states as hex bytes (8-char limit)
-    "outmodes",      // SSI_INDEX_OUTMODES  — per-output mode hex (1 char each, up to 16)
-    "outtmo",        // SSI_INDEX_OUTTMO    — timed durations, comma list (up to 16)
-    "shutters",      // SSI_INDEX_SHUTTERS  — packed "up:down:travel;" list
-    "shnames",       // SSI_INDEX_SHNAMES   — packed shutter names (12 B each, up to 32)
-    "rmnames",       // SSI_INDEX_RMNAMES   — packed room names (12 B each, 16 rooms)
-    "outrooms",      // SSI_INDEX_OUTROOMS  — room index per output (comma list)
-    "shrooms",       // SSI_INDEX_SHROOMS   — room index per defined shutter (comma list)
     "otamax",        // SSI_INDEX_OTAMAX    — max OTA image size (bytes), per platform
     "otapost",       // SSI_INDEX_OTAPOST   — 1: upload via streaming POST, 0: hex-GET
     "otaerror",      // SSI_INDEX_OTAERROR  — last OTA error message (CC35x1), empty string if none
     "wifiopts",      // SSI_INDEX_WIFIOPTS  — setup-page SSID dropdown <option>s (CC35x1)
     "wifitab",       // SSI_INDEX_WIFITAB   — Settings MQTT/Wi-Fi sub-tab bar (CC35x1 only)
-    "nloc",          // SSI_INDEX_NLOC      — count of platform-local inputs (CC35x1 buttons)
     "temp",          // SSI_INDEX_TEMP      — on-board temperature reading (CC35x1)
     "showreboot",    // SSI_INDEX_SHOWREBOOT — 1 (TM4C), 0 (CC35x1 - reboot disabled due to NWP wedge)
     "wssid1",        // SSI_INDEX_WSSID1 — saved primary SSID prefill (CC35x1)
@@ -149,6 +120,10 @@ static const char *g_pcConfigSSITags[] =
 //
 //*****************************************************************************
 #define NUM_CONFIG_SSI_TAGS     (sizeof(g_pcConfigSSITags) / sizeof (char *))
+
+// Upper bound on product SSI tags, for the combined-table scratch buffer in
+// WebUIRegister().  The product currently registers 16.
+#define WEBUI_MAX_PRODUCT_SSI   24
 
 // ---- CGI handler prototypes (OTA handler is the platform seam) ----
 static char *MQTTConfigCGIHandler(int32_t iIndex, int32_t i32NumParams,
@@ -1332,6 +1307,18 @@ SSIHandler(int32_t iIndex, char *pcInsert, int32_t iInsertLen)
     tMQTTConfig *psCfg = ConfigGet();
 
     //
+    // Product SSI tags are registered after the foundation's, so any index at or
+    // beyond the foundation tag count belongs to the product (Plan 11).  Forward
+    // it to the product handler with a product-relative index.
+    //
+    if(iIndex >= (int32_t)NUM_CONFIG_SSI_TAGS)
+    {
+        return((int32_t)product_ssi_handler(
+                   (int)(iIndex - (int32_t)NUM_CONFIG_SSI_TAGS),
+                   pcInsert, iInsertLen));
+    }
+
+    //
     // Which SSI tag have we been passed?  (The password is intentionally never
     // echoed back to the browser.)
     //
@@ -1357,19 +1344,6 @@ SSIHandler(int32_t iIndex, char *pcInsert, int32_t iInsertLen)
             usnprintf(pcInsert, iInsertLen, "%s", psCfg->pcTopicBase);
             break;
 
-        case SSI_INDEX_DIN:
-            usnprintf(pcInsert, iInsertLen, "%d", ConfigGetDinDevices());
-            break;
-
-        case SSI_INDEX_NLOC:
-            //
-            // Count of platform-local inputs appended after the SPI chain (the
-            // CC35x1 on-board buttons; 0 on the TM4C).  The I/O config page adds
-            // this to D*8 to size its Inputs table.
-            //
-            usnprintf(pcInsert, iInsertLen, "%d", WebPlatformLocalInputCount());
-            break;
-
         case SSI_INDEX_TEMP:
             //
             // On-board temperature reading, rendered by the platform (CC35x1
@@ -1392,10 +1366,6 @@ SSIHandler(int32_t iIndex, char *pcInsert, int32_t iInsertLen)
 #endif
             break;
 
-        case SSI_INDEX_RELAY:
-            usnprintf(pcInsert, iInsertLen, "%d", ConfigGetRelayDevices());
-            break;
-
         case SSI_INDEX_AUTH:
             usnprintf(pcInsert, iInsertLen, "%s",
                       psCfg->ui8UseAuth ? "checked" : "");
@@ -1411,71 +1381,6 @@ SSIHandler(int32_t iIndex, char *pcInsert, int32_t iInsertLen)
                       (g_ui32IPAddress >> 16) & 0xff,
                       (g_ui32IPAddress >> 24) & 0xff);
             break;
-
-        case SSI_INDEX_IOTYPES:
-        {
-            //
-            // Emit one byte (2 hex chars) per input byte, LSB = input 0 of that
-            // byte.  Covers the whole logical input space (SPI chain + the
-            // appended platform-local inputs), so the button byte is included.
-            // The I/O config page uses this to seed each Type select.
-            //
-            static const char pcHex[] = "0123456789abcdef";
-            int iBytes = ((int)IOInputCount() + 7) / 8;
-            int iByte, iBit;
-            int iPos = 0;
-            for(iByte = 0; (iByte < iBytes) && ((iPos + 2) < iInsertLen);
-                iByte++)
-            {
-                uint8_t ui8Val = 0;
-                for(iBit = 0; iBit < 8; iBit++)
-                {
-                    if(ConfigInputIsPushbutton(iByte * 8 + iBit))
-                    {
-                        ui8Val |= (uint8_t)(1u << iBit);
-                    }
-                }
-                pcInsert[iPos++] = pcHex[(ui8Val >> 4) & 0xF];
-                pcInsert[iPos++] = pcHex[ui8Val & 0xF];
-            }
-            pcInsert[iPos] = '\0';
-            break;
-        }
-
-        case SSI_INDEX_IOBINDS:
-        {
-            //
-            // Emit up to D*8 inputs x 4 slots x 3 hex chars (12 B/input).  The
-            // loop guard below caps it at the SSI insert buffer
-            // (LWIP_HTTPD_MAX_TAG_INSERT_LEN, 800 B = 66 inputs).  Per slot:
-            // 12-bit value = (output<<5)|(action<<3)|trigger as "XYZ";
-            // "000" = unused slot.
-            //
-            static const char pcHexB[] = "0123456789abcdef";
-            int iMaxIn = (int)IOInputCount();
-            int iInput, iSlot, iPos = 0;
-            if(iMaxIn > CFG_MAX_INPUTS) { iMaxIn = CFG_MAX_INPUTS; }
-            for(iInput = 0; (iInput < iMaxIn) && ((iPos + 3) < iInsertLen);
-                iInput++)
-            {
-                for(iSlot = 0; (iSlot < CFG_BIND_SLOTS) &&
-                               ((iPos + 3) < iInsertLen); iSlot++)
-                {
-                    uint8_t ta  = ConfigBindingGetTrigAct(iInput, iSlot);
-                    uint8_t out = ConfigBindingGetOutput(iInput, iSlot);
-                    uint16_t v  = 0;
-                    if(((ta & 0x07u) != 0) && (out != BIND_OUTPUT_NONE))
-                    {
-                        v = (uint16_t)(((uint16_t)out << 5) | (ta & 0x1Fu));
-                    }
-                    pcInsert[iPos++] = pcHexB[(v >> 8) & 0xFu];
-                    pcInsert[iPos++] = pcHexB[(v >> 4) & 0xFu];
-                    pcInsert[iPos++] = pcHexB[v & 0xFu];
-                }
-            }
-            pcInsert[iPos] = '\0';
-            break;
-        }
 
         case SSI_INDEX_FWVER:
         {
@@ -1530,227 +1435,6 @@ SSIHandler(int32_t iIndex, char *pcInsert, int32_t iInsertLen)
         case SSI_INDEX_MQPASS:
             usnprintf(pcInsert, iInsertLen, "%s", ConfigGet()->pcPass);
             break;
-
-        case SSI_INDEX_INNAMES:
-        case SSI_INDEX_OUTNAMES:
-        {
-            //
-            // Emit one CFG_NAME_LEN (12) char block per channel, space-padded,
-            // no NUL separators so JS can index by i*12.  Bounded by the names
-            // record capacity (64) and by the SSI insert buffer
-            // (LWIP_HTTPD_MAX_TAG_INSERT_LEN, 800 B = up to 66 blocks) via the
-            // loop guard below.  Previously hard-capped at 16, so output/input
-            // names past #16 never reached the browser.
-            //
-            bool bIn = (iIndex == SSI_INDEX_INNAMES);
-            int iMax = bIn ? CFG_NAMES_MAX_INPUTS : CFG_NAMES_MAX_OUTPUTS;
-            int iCount = bIn ? (int)IOInputCount()
-                             : (int)ConfigGetRelayDevices() * 8;
-            int i, j, iPos = 0;
-            if(iCount > iMax) { iCount = iMax; }
-            for(i = 0; i < iCount && (iPos + CFG_NAME_LEN) <= iInsertLen; i++)
-            {
-                const char *pcN = bIn ? ConfigGetInputName(i)
-                                      : ConfigGetOutputName(i);
-                for(j = 0; j < CFG_NAME_LEN; j++)
-                {
-                    pcInsert[iPos++] = (j < CFG_NAME_LEN - 1 && pcN[j])
-                                       ? pcN[j] : ' ';
-                }
-            }
-            pcInsert[iPos] = '\0';
-            break;
-        }
-
-        case SSI_INDEX_INSTATES:
-        case SSI_INDEX_OUTSTATES:
-        {
-            //
-            // Emit one hex byte per configured device (8 inputs or relays
-            // per byte).  Bit b of byte d = channel d*8+b is active/ON.
-            //
-            static const char pcH[] = "0123456789abcdef";
-            bool bIn   = (iIndex == SSI_INDEX_INSTATES);
-            int  nDev  = bIn ? (((int)IOInputCount() + 7) / 8)
-                              : (int)ConfigGetRelayDevices();
-            int  iPos = 0, d, b;
-            if(nDev > 8) { nDev = 8; }  // cap: 8 devices = 64 channels
-            for(d = 0; d < nDev && iPos + 2 <= iInsertLen; d++)
-            {
-                uint8_t ui8B = 0;
-                for(b = 0; b < 8; b++)
-                {
-                    if(bIn)
-                    {
-                        if(g_pui8LiveInState[d] & (1u << b)) { ui8B |= (1u << b); }
-                    }
-                    else
-                    {
-                        if(RelayChainGet((uint16_t)(d * 8 + b))) { ui8B |= (1u << b); }
-                    }
-                }
-                pcInsert[iPos++] = pcH[ui8B >> 4];
-                pcInsert[iPos++] = pcH[ui8B & 0xFu];
-            }
-            pcInsert[iPos] = '\0';
-            break;
-        }
-
-        case SSI_INDEX_OUTMODES:
-        {
-            //
-            // One character per output: '1' = Timed, '0' = Standard (up to 16).
-            //
-            int n = (int)ConfigGetRelayDevices() * 8, i, iPos = 0;
-            if(n > 16) { n = 16; }
-            for(i = 0; (i < n) && ((iPos + 1) < iInsertLen); i++)
-            {
-                pcInsert[iPos++] = (ConfigOutMode(i) == OUT_MODE_TIMED) ? '1' : '0';
-            }
-            pcInsert[iPos] = '\0';
-            break;
-        }
-
-        case SSI_INDEX_OUTTMO:
-        {
-            //
-            // Comma-separated timed auto-OFF durations (ms), one per output.
-            //
-            int n = (int)ConfigGetRelayDevices() * 8, i, iPos = 0;
-            if(n > 16) { n = 16; }
-            for(i = 0; i < n; i++)
-            {
-                char tmp[12];
-                int  L;
-                usnprintf(tmp, sizeof(tmp), "%u", ConfigOutTimedMs(i));
-                L = (int)strlen(tmp);
-                if((iPos + L + 2) >= iInsertLen) { break; }
-                if(i > 0) { pcInsert[iPos++] = ','; }
-                memcpy(pcInsert + iPos, tmp, L);
-                iPos += L;
-            }
-            pcInsert[iPos] = '\0';
-            break;
-        }
-
-        case SSI_INDEX_SHUTTERS:
-        {
-            //
-            // Configured shutters as "up:down:travel;" entries.
-            //
-            int i, iPos = 0;
-            for(i = 0; i < CFG_MAX_SHUTTERS; i++)
-            {
-                uint8_t  up, down;
-                uint32_t travel;
-                char     tmp[24];
-                int      L;
-                if(!ConfigShutterGet(i, &up, &down, &travel)) { continue; }
-                usnprintf(tmp, sizeof(tmp), "%d:%d:%u;", up, down, travel);
-                L = (int)strlen(tmp);
-                if((iPos + L) >= iInsertLen) { break; }
-                memcpy(pcInsert + iPos, tmp, L);
-                iPos += L;
-            }
-            pcInsert[iPos] = '\0';
-            break;
-        }
-
-        case SSI_INDEX_SHNAMES:
-        {
-            //
-            // One CFG_NAME_LEN (12) char space-padded block per DEFINED shutter,
-            // in slot order - same skip condition and ordering as SSI_INDEX_SHUTTERS
-            // so block n aligns with shutter entry n on the client.  Up to
-            // 32 x 12 = 384 B, within the SSI insert buffer.
-            //
-            int i, j, iPos = 0;
-            for(i = 0; i < CFG_MAX_SHUTTERS &&
-                       (iPos + CFG_NAME_LEN) <= iInsertLen; i++)
-            {
-                uint8_t  up, down;
-                uint32_t travel;
-                const char *pcN;
-                if(!ConfigShutterGet(i, &up, &down, &travel)) { continue; }
-                pcN = ConfigShutterName(i);
-                for(j = 0; j < CFG_NAME_LEN; j++)
-                {
-                    pcInsert[iPos++] = (j < CFG_NAME_LEN - 1 && pcN[j])
-                                       ? pcN[j] : ' ';
-                }
-            }
-            pcInsert[iPos] = '\0';
-            break;
-        }
-
-        case SSI_INDEX_RMNAMES:
-        {
-            //
-            // 12-char space-padded block for EVERY room (0..CFG_MAX_ROOMS-1) so
-            // the client can index by room number.  16 x 12 = 192 B.
-            //
-            int i, j, iPos = 0;
-            for(i = 0; i < CFG_MAX_ROOMS &&
-                       (iPos + CFG_NAME_LEN) <= iInsertLen; i++)
-            {
-                const char *pcN = ConfigRoomName(i);
-                for(j = 0; j < CFG_NAME_LEN; j++)
-                {
-                    pcInsert[iPos++] = (j < CFG_NAME_LEN - 1 && pcN[j])
-                                       ? pcN[j] : ' ';
-                }
-            }
-            pcInsert[iPos] = '\0';
-            break;
-        }
-
-        case SSI_INDEX_OUTROOMS:
-        {
-            //
-            // Comma-separated room index per output (ROOM_NONE = 255).
-            //
-            int i, iCount = (int)ConfigGetRelayDevices() * 8;
-            int iPos = 0;
-            char tmp[8];
-            for(i = 0; i < iCount; i++)
-            {
-                int L;
-                usnprintf(tmp, sizeof(tmp), (i == 0) ? "%d" : ",%d",
-                          (int)ConfigOutRoom(i));
-                L = (int)strlen(tmp);
-                if((iPos + L) >= iInsertLen) { break; }
-                memcpy(pcInsert + iPos, tmp, L);
-                iPos += L;
-            }
-            pcInsert[iPos] = '\0';
-            break;
-        }
-
-        case SSI_INDEX_SHROOMS:
-        {
-            //
-            // Comma-separated room index per DEFINED shutter, slot order (same
-            // skip as SSI_INDEX_SHUTTERS so entry n aligns with client SH[n]).
-            //
-            int i, iPos = 0, iEmit = 0;
-            char tmp[8];
-            for(i = 0; i < CFG_MAX_SHUTTERS; i++)
-            {
-                uint8_t  up, down;
-                uint32_t travel;
-                int      L;
-                if(!ConfigShutterGet(i, &up, &down, &travel)) { continue; }
-                usnprintf(tmp, sizeof(tmp), (iEmit == 0) ? "%d" : ",%d",
-                          (int)ConfigShRoom(i));
-                L = (int)strlen(tmp);
-                if((iPos + L) >= iInsertLen) { break; }
-                memcpy(pcInsert + iPos, tmp, L);
-                iPos += L;
-                iEmit++;
-            }
-            pcInsert[iPos] = '\0';
-            break;
-        }
 
         case SSI_INDEX_OTAMAX:
             //
@@ -1846,13 +1530,17 @@ WebUIRegister(void)
     // product hands its table to the foundation via product_web_register(); we
     // concatenate into a static buffer and register once.
     //
-    static tCGI       s_psCombinedCGI[NUM_CONFIG_CGI_URIS + WEBUI_MAX_PRODUCT_CGI];
-    product_web_reg_t sReg;
-    unsigned          uN = 0, i;
+    static tCGI        s_psCombinedCGI[NUM_CONFIG_CGI_URIS + WEBUI_MAX_PRODUCT_CGI];
+    static const char *s_ppcCombinedSSI[NUM_CONFIG_SSI_TAGS + WEBUI_MAX_PRODUCT_SSI];
+    product_web_reg_t  sReg;
+    unsigned           uN = 0, uM = 0, i;
 
     memset(&sReg, 0, sizeof(sReg));
     product_web_register(&sReg);
 
+    //
+    // CGI: foundation handlers ++ product handlers, registered as one table.
+    //
     for(i = 0; i < NUM_CONFIG_CGI_URIS; i++)
     {
         s_psCombinedCGI[uN++] = g_psConfigCGIURIs[i];
@@ -1862,8 +1550,22 @@ WebUIRegister(void)
         s_psCombinedCGI[uN++] = sReg.cgis[i];
     }
 
-    http_set_ssi_handler((tSSIHandler)SSIHandler, g_pcConfigSSITags,
-                         NUM_CONFIG_SSI_TAGS);
+    //
+    // SSI: foundation tags first, product tags appended.  The registered index
+    // order is what SSIHandler keys on: [0..NUM_CONFIG_SSI_TAGS) foundation,
+    // the rest forwarded to product_ssi_handler() rebased to 0.
+    //
+    for(i = 0; i < NUM_CONFIG_SSI_TAGS; i++)
+    {
+        s_ppcCombinedSSI[uM++] = g_pcConfigSSITags[i];
+    }
+    for(i = 0; (i < (unsigned)sReg.num_ssi_tags) && (i < WEBUI_MAX_PRODUCT_SSI);
+        i++)
+    {
+        s_ppcCombinedSSI[uM++] = sReg.ssi_tags[i];
+    }
+
+    http_set_ssi_handler((tSSIHandler)SSIHandler, s_ppcCombinedSSI, (int)uM);
     http_set_cgi_handlers(s_psCombinedCGI, (int)uN);
 }
 
@@ -1891,12 +1593,54 @@ static const tCGI g_psProductCGIURIs[] =
 };
 #define NUM_PRODUCT_CGI_URIS    (sizeof(g_psProductCGIURIs) / sizeof(tCGI))
 
+// ---- Product SSI tag indices (I/O Config + Control tabs) ----
+// These are PRODUCT-RELATIVE: the foundation registers its own tags first, then
+// appends this array, and forwards any tag index >= the foundation count to
+// product_ssi_handler() with the index rebased to 0 here (Plan 11).
+#define PSSI_INDEX_DIN       0
+#define PSSI_INDEX_RELAY     1
+#define PSSI_INDEX_IOTYPES   2
+#define PSSI_INDEX_IOBINDS   3
+#define PSSI_INDEX_INNAMES   4
+#define PSSI_INDEX_OUTNAMES  5
+#define PSSI_INDEX_INSTATES  6
+#define PSSI_INDEX_OUTSTATES 7
+#define PSSI_INDEX_OUTMODES  8
+#define PSSI_INDEX_OUTTMO    9
+#define PSSI_INDEX_SHUTTERS  10
+#define PSSI_INDEX_SHNAMES   11
+#define PSSI_INDEX_RMNAMES   12
+#define PSSI_INDEX_OUTROOMS  13
+#define PSSI_INDEX_SHROOMS   14
+#define PSSI_INDEX_NLOC      15
+
+static const char *g_pcProductSSITags[] =
+{
+    "mqdin",         // PSSI_INDEX_DIN       — SN65HVS882 input device count
+    "mqrelay",       // PSSI_INDEX_RELAY     — relay device count
+    "iotypes",       // PSSI_INDEX_IOTYPES   — per-input type bitmask (hex)
+    "iobinds",       // PSSI_INDEX_IOBINDS   — input->output binding table (hex)
+    "innames",       // PSSI_INDEX_INNAMES   — packed input names (12 B each)
+    "outnames",      // PSSI_INDEX_OUTNAMES  — packed output names (12 B each)
+    "instates",      // PSSI_INDEX_INSTATES  — live input states as hex bytes
+    "outstats",      // PSSI_INDEX_OUTSTATES — live relay states as hex bytes
+    "outmodes",      // PSSI_INDEX_OUTMODES  — per-output mode hex (1 char each)
+    "outtmo",        // PSSI_INDEX_OUTTMO    — timed durations, comma list
+    "shutters",      // PSSI_INDEX_SHUTTERS  — packed "up:down:travel;" list
+    "shnames",       // PSSI_INDEX_SHNAMES   — packed shutter names (12 B each)
+    "rmnames",       // PSSI_INDEX_RMNAMES   — packed room names (12 B each)
+    "outrooms",      // PSSI_INDEX_OUTROOMS  — room index per output (comma list)
+    "shrooms",       // PSSI_INDEX_SHROOMS   — room index per defined shutter
+    "nloc"           // PSSI_INDEX_NLOC      — count of platform-local inputs
+};
+#define NUM_PRODUCT_SSI_TAGS    (sizeof(g_pcProductSSITags) / sizeof(char *))
+
 //*****************************************************************************
 //
 // product_web_register - Plan 11 product hook.  Hands the product's web tables
 // to the foundation httpd (called once from WebUIRegister()).  A no-op product
-// would zero *reg; here the home-auto product supplies its CGI handlers.  The
-// product SSI tag array is added in the next step.
+// would zero *reg; here the home-auto product supplies its CGI handlers and SSI
+// tags.
 //
 //*****************************************************************************
 void
@@ -1904,6 +1648,330 @@ product_web_register(product_web_reg_t *reg)
 {
     reg->cgis         = g_psProductCGIURIs;
     reg->num_cgis     = (int)NUM_PRODUCT_CGI_URIS;
-    reg->ssi_tags     = 0;
-    reg->num_ssi_tags = 0;
+    reg->ssi_tags     = g_pcProductSSITags;
+    reg->num_ssi_tags = (int)NUM_PRODUCT_SSI_TAGS;
+}
+
+//*****************************************************************************
+//
+// product_ssi_handler - Plan 11 product hook.  Renders the product's SSI tags,
+// keyed by the PRODUCT-RELATIVE index (0 == the product's first tag).  Bodies
+// were moved verbatim out of the foundation SSIHandler; the only change is the
+// switch key (product_tag_index / PSSI_INDEX_*).
+//
+//*****************************************************************************
+u16_t
+product_ssi_handler(int product_tag_index, char *pcInsert, int iInsertLen)
+{
+    switch(product_tag_index)
+    {
+        case PSSI_INDEX_DIN:
+            usnprintf(pcInsert, iInsertLen, "%d", ConfigGetDinDevices());
+            break;
+
+        case PSSI_INDEX_RELAY:
+            usnprintf(pcInsert, iInsertLen, "%d", ConfigGetRelayDevices());
+            break;
+
+        case PSSI_INDEX_NLOC:
+            //
+            // Count of platform-local inputs appended after the SPI chain (the
+            // CC35x1 on-board buttons; 0 on the TM4C).  The I/O config page adds
+            // this to D*8 to size its Inputs table.
+            //
+            usnprintf(pcInsert, iInsertLen, "%d", WebPlatformLocalInputCount());
+            break;
+
+        case PSSI_INDEX_IOTYPES:
+        {
+            //
+            // Emit one byte (2 hex chars) per input byte, LSB = input 0 of that
+            // byte.  Covers the whole logical input space (SPI chain + the
+            // appended platform-local inputs), so the button byte is included.
+            // The I/O config page uses this to seed each Type select.
+            //
+            static const char pcHex[] = "0123456789abcdef";
+            int iBytes = ((int)IOInputCount() + 7) / 8;
+            int iByte, iBit;
+            int iPos = 0;
+            for(iByte = 0; (iByte < iBytes) && ((iPos + 2) < iInsertLen);
+                iByte++)
+            {
+                uint8_t ui8Val = 0;
+                for(iBit = 0; iBit < 8; iBit++)
+                {
+                    if(ConfigInputIsPushbutton(iByte * 8 + iBit))
+                    {
+                        ui8Val |= (uint8_t)(1u << iBit);
+                    }
+                }
+                pcInsert[iPos++] = pcHex[(ui8Val >> 4) & 0xF];
+                pcInsert[iPos++] = pcHex[ui8Val & 0xF];
+            }
+            pcInsert[iPos] = '\0';
+            break;
+        }
+
+        case PSSI_INDEX_IOBINDS:
+        {
+            //
+            // Emit up to D*8 inputs x 4 slots x 3 hex chars (12 B/input).  The
+            // loop guard below caps it at the SSI insert buffer
+            // (LWIP_HTTPD_MAX_TAG_INSERT_LEN, 800 B = 66 inputs).  Per slot:
+            // 12-bit value = (output<<5)|(action<<3)|trigger as "XYZ";
+            // "000" = unused slot.
+            //
+            static const char pcHexB[] = "0123456789abcdef";
+            int iMaxIn = (int)IOInputCount();
+            int iInput, iSlot, iPos = 0;
+            if(iMaxIn > CFG_MAX_INPUTS) { iMaxIn = CFG_MAX_INPUTS; }
+            for(iInput = 0; (iInput < iMaxIn) && ((iPos + 3) < iInsertLen);
+                iInput++)
+            {
+                for(iSlot = 0; (iSlot < CFG_BIND_SLOTS) &&
+                               ((iPos + 3) < iInsertLen); iSlot++)
+                {
+                    uint8_t ta  = ConfigBindingGetTrigAct(iInput, iSlot);
+                    uint8_t out = ConfigBindingGetOutput(iInput, iSlot);
+                    uint16_t v  = 0;
+                    if(((ta & 0x07u) != 0) && (out != BIND_OUTPUT_NONE))
+                    {
+                        v = (uint16_t)(((uint16_t)out << 5) | (ta & 0x1Fu));
+                    }
+                    pcInsert[iPos++] = pcHexB[(v >> 8) & 0xFu];
+                    pcInsert[iPos++] = pcHexB[(v >> 4) & 0xFu];
+                    pcInsert[iPos++] = pcHexB[v & 0xFu];
+                }
+            }
+            pcInsert[iPos] = '\0';
+            break;
+        }
+
+        case PSSI_INDEX_INNAMES:
+        case PSSI_INDEX_OUTNAMES:
+        {
+            //
+            // Emit one CFG_NAME_LEN (12) char block per channel, space-padded,
+            // no NUL separators so JS can index by i*12.  Bounded by the names
+            // record capacity (64) and by the SSI insert buffer
+            // (LWIP_HTTPD_MAX_TAG_INSERT_LEN, 800 B = up to 66 blocks) via the
+            // loop guard below.  Previously hard-capped at 16, so output/input
+            // names past #16 never reached the browser.
+            //
+            bool bIn = (product_tag_index == PSSI_INDEX_INNAMES);
+            int iMax = bIn ? CFG_NAMES_MAX_INPUTS : CFG_NAMES_MAX_OUTPUTS;
+            int iCount = bIn ? (int)IOInputCount()
+                             : (int)ConfigGetRelayDevices() * 8;
+            int i, j, iPos = 0;
+            if(iCount > iMax) { iCount = iMax; }
+            for(i = 0; i < iCount && (iPos + CFG_NAME_LEN) <= iInsertLen; i++)
+            {
+                const char *pcN = bIn ? ConfigGetInputName(i)
+                                      : ConfigGetOutputName(i);
+                for(j = 0; j < CFG_NAME_LEN; j++)
+                {
+                    pcInsert[iPos++] = (j < CFG_NAME_LEN - 1 && pcN[j])
+                                       ? pcN[j] : ' ';
+                }
+            }
+            pcInsert[iPos] = '\0';
+            break;
+        }
+
+        case PSSI_INDEX_INSTATES:
+        case PSSI_INDEX_OUTSTATES:
+        {
+            //
+            // Emit one hex byte per configured device (8 inputs or relays
+            // per byte).  Bit b of byte d = channel d*8+b is active/ON.
+            //
+            static const char pcH[] = "0123456789abcdef";
+            bool bIn   = (product_tag_index == PSSI_INDEX_INSTATES);
+            int  nDev  = bIn ? (((int)IOInputCount() + 7) / 8)
+                              : (int)ConfigGetRelayDevices();
+            int  iPos = 0, d, b;
+            if(nDev > 8) { nDev = 8; }  // cap: 8 devices = 64 channels
+            for(d = 0; d < nDev && iPos + 2 <= iInsertLen; d++)
+            {
+                uint8_t ui8B = 0;
+                for(b = 0; b < 8; b++)
+                {
+                    if(bIn)
+                    {
+                        if(g_pui8LiveInState[d] & (1u << b)) { ui8B |= (1u << b); }
+                    }
+                    else
+                    {
+                        if(RelayChainGet((uint16_t)(d * 8 + b))) { ui8B |= (1u << b); }
+                    }
+                }
+                pcInsert[iPos++] = pcH[ui8B >> 4];
+                pcInsert[iPos++] = pcH[ui8B & 0xFu];
+            }
+            pcInsert[iPos] = '\0';
+            break;
+        }
+
+        case PSSI_INDEX_OUTMODES:
+        {
+            //
+            // One character per output: '1' = Timed, '0' = Standard (up to 16).
+            //
+            int n = (int)ConfigGetRelayDevices() * 8, i, iPos = 0;
+            if(n > 16) { n = 16; }
+            for(i = 0; (i < n) && ((iPos + 1) < iInsertLen); i++)
+            {
+                pcInsert[iPos++] = (ConfigOutMode(i) == OUT_MODE_TIMED) ? '1' : '0';
+            }
+            pcInsert[iPos] = '\0';
+            break;
+        }
+
+        case PSSI_INDEX_OUTTMO:
+        {
+            //
+            // Comma-separated timed auto-OFF durations (ms), one per output.
+            //
+            int n = (int)ConfigGetRelayDevices() * 8, i, iPos = 0;
+            if(n > 16) { n = 16; }
+            for(i = 0; i < n; i++)
+            {
+                char tmp[12];
+                int  L;
+                usnprintf(tmp, sizeof(tmp), "%u", ConfigOutTimedMs(i));
+                L = (int)strlen(tmp);
+                if((iPos + L + 2) >= iInsertLen) { break; }
+                if(i > 0) { pcInsert[iPos++] = ','; }
+                memcpy(pcInsert + iPos, tmp, L);
+                iPos += L;
+            }
+            pcInsert[iPos] = '\0';
+            break;
+        }
+
+        case PSSI_INDEX_SHUTTERS:
+        {
+            //
+            // Configured shutters as "up:down:travel;" entries.
+            //
+            int i, iPos = 0;
+            for(i = 0; i < CFG_MAX_SHUTTERS; i++)
+            {
+                uint8_t  up, down;
+                uint32_t travel;
+                char     tmp[24];
+                int      L;
+                if(!ConfigShutterGet(i, &up, &down, &travel)) { continue; }
+                usnprintf(tmp, sizeof(tmp), "%d:%d:%u;", up, down, travel);
+                L = (int)strlen(tmp);
+                if((iPos + L) >= iInsertLen) { break; }
+                memcpy(pcInsert + iPos, tmp, L);
+                iPos += L;
+            }
+            pcInsert[iPos] = '\0';
+            break;
+        }
+
+        case PSSI_INDEX_SHNAMES:
+        {
+            //
+            // One CFG_NAME_LEN (12) char space-padded block per DEFINED shutter,
+            // in slot order - same skip condition and ordering as PSSI_INDEX_SHUTTERS
+            // so block n aligns with shutter entry n on the client.  Up to
+            // 32 x 12 = 384 B, within the SSI insert buffer.
+            //
+            int i, j, iPos = 0;
+            for(i = 0; i < CFG_MAX_SHUTTERS &&
+                       (iPos + CFG_NAME_LEN) <= iInsertLen; i++)
+            {
+                uint8_t  up, down;
+                uint32_t travel;
+                const char *pcN;
+                if(!ConfigShutterGet(i, &up, &down, &travel)) { continue; }
+                pcN = ConfigShutterName(i);
+                for(j = 0; j < CFG_NAME_LEN; j++)
+                {
+                    pcInsert[iPos++] = (j < CFG_NAME_LEN - 1 && pcN[j])
+                                       ? pcN[j] : ' ';
+                }
+            }
+            pcInsert[iPos] = '\0';
+            break;
+        }
+
+        case PSSI_INDEX_RMNAMES:
+        {
+            //
+            // 12-char space-padded block for EVERY room (0..CFG_MAX_ROOMS-1) so
+            // the client can index by room number.  16 x 12 = 192 B.
+            //
+            int i, j, iPos = 0;
+            for(i = 0; i < CFG_MAX_ROOMS &&
+                       (iPos + CFG_NAME_LEN) <= iInsertLen; i++)
+            {
+                const char *pcN = ConfigRoomName(i);
+                for(j = 0; j < CFG_NAME_LEN; j++)
+                {
+                    pcInsert[iPos++] = (j < CFG_NAME_LEN - 1 && pcN[j])
+                                       ? pcN[j] : ' ';
+                }
+            }
+            pcInsert[iPos] = '\0';
+            break;
+        }
+
+        case PSSI_INDEX_OUTROOMS:
+        {
+            //
+            // Comma-separated room index per output (ROOM_NONE = 255).
+            //
+            int i, iCount = (int)ConfigGetRelayDevices() * 8;
+            int iPos = 0;
+            char tmp[8];
+            for(i = 0; i < iCount; i++)
+            {
+                int L;
+                usnprintf(tmp, sizeof(tmp), (i == 0) ? "%d" : ",%d",
+                          (int)ConfigOutRoom(i));
+                L = (int)strlen(tmp);
+                if((iPos + L) >= iInsertLen) { break; }
+                memcpy(pcInsert + iPos, tmp, L);
+                iPos += L;
+            }
+            pcInsert[iPos] = '\0';
+            break;
+        }
+
+        case PSSI_INDEX_SHROOMS:
+        {
+            //
+            // Comma-separated room index per DEFINED shutter, slot order (same
+            // skip as PSSI_INDEX_SHUTTERS so entry n aligns with client SH[n]).
+            //
+            int i, iPos = 0, iEmit = 0;
+            char tmp[8];
+            for(i = 0; i < CFG_MAX_SHUTTERS; i++)
+            {
+                uint8_t  up, down;
+                uint32_t travel;
+                int      L;
+                if(!ConfigShutterGet(i, &up, &down, &travel)) { continue; }
+                usnprintf(tmp, sizeof(tmp), (iEmit == 0) ? "%d" : ",%d",
+                          (int)ConfigShRoom(i));
+                L = (int)strlen(tmp);
+                if((iPos + L) >= iInsertLen) { break; }
+                memcpy(pcInsert + iPos, tmp, L);
+                iPos += L;
+                iEmit++;
+            }
+            pcInsert[iPos] = '\0';
+            break;
+        }
+
+        default:
+            pcInsert[0] = '\0';
+            break;
+    }
+
+    return((u16_t)strlen(pcInsert));
 }
