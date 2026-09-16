@@ -21,72 +21,72 @@
 		<link>
 			<name>buildinfo.c</name>
 			<type>1</type>
-			<location>C:/Users/tomik/Workspaces/Workspace2026_0625_TM4C1294_MQTT_IO/mqtt_io_common/buildinfo.c</location>
+			<location>C:/Users/tomik/Workspaces/Workspace2026_0625_TM4C1294_MQTT_IO/iot_foundation/buildinfo.c</location>
 		</link>
 		<link>
 			<name>config.c</name>
 			<type>1</type>
-			<location>C:/Users/tomik/Workspaces/Workspace2026_0625_TM4C1294_MQTT_IO/mqtt_io_common/config.c</location>
+			<location>C:/Users/tomik/Workspaces/Workspace2026_0625_TM4C1294_MQTT_IO/iot_foundation/config.c</location>
 		</link>
 		<link>
 			<name>mqtt_client.c</name>
 			<type>1</type>
-			<location>C:/Users/tomik/Workspaces/Workspace2026_0625_TM4C1294_MQTT_IO/mqtt_io_common/mqtt_client.c</location>
+			<location>C:/Users/tomik/Workspaces/Workspace2026_0625_TM4C1294_MQTT_IO/iot_foundation/mqtt_client.c</location>
 		</link>
 		<link>
 			<name>din_chain.c</name>
 			<type>1</type>
-			<location>C:/Users/tomik/Workspaces/Workspace2026_0625_TM4C1294_MQTT_IO/mqtt_io_common/din_chain.c</location>
+			<location>C:/Users/tomik/Workspaces/Workspace2026_0625_TM4C1294_MQTT_IO/iot_foundation/din_chain.c</location>
 		</link>
 		<link>
 			<name>relay_chain.c</name>
 			<type>1</type>
-			<location>C:/Users/tomik/Workspaces/Workspace2026_0625_TM4C1294_MQTT_IO/mqtt_io_common/relay_chain.c</location>
+			<location>C:/Users/tomik/Workspaces/Workspace2026_0625_TM4C1294_MQTT_IO/iot_foundation/relay_chain.c</location>
 		</link>
 		<link>
 			<name>cgifuncs.c</name>
 			<type>1</type>
-			<location>C:/Users/tomik/Workspaces/Workspace2026_0625_TM4C1294_MQTT_IO/mqtt_io_common/common/cgifuncs.c</location>
+			<location>C:/Users/tomik/Workspaces/Workspace2026_0625_TM4C1294_MQTT_IO/iot_foundation/common/cgifuncs.c</location>
 		</link>
 		<link>
 			<name>input_events.c</name>
 			<type>1</type>
-			<location>C:/Users/tomik/Workspaces/Workspace2026_0625_TM4C1294_MQTT_IO/mqtt_io_common/common/input_events.c</location>
+			<location>C:/Users/tomik/Workspaces/Workspace2026_0625_TM4C1294_MQTT_IO/iot_foundation/common/input_events.c</location>
 		</link>
 		<link>
 			<name>io_scan.c</name>
 			<type>1</type>
-			<location>C:/Users/tomik/Workspaces/Workspace2026_0625_TM4C1294_MQTT_IO/mqtt_io_common/common/io_scan.c</location>
+			<location>C:/Users/tomik/Workspaces/Workspace2026_0625_TM4C1294_MQTT_IO/iot_foundation/common/io_scan.c</location>
 		</link>
 		<link>
 			<name>mqtt_app.c</name>
 			<type>1</type>
-			<location>C:/Users/tomik/Workspaces/Workspace2026_0625_TM4C1294_MQTT_IO/mqtt_io_common/common/mqtt_app.c</location>
+			<location>C:/Users/tomik/Workspaces/Workspace2026_0625_TM4C1294_MQTT_IO/iot_foundation/common/mqtt_app.c</location>
 		</link>
 		<link>
 			<name>netbiosns.c</name>
 			<type>1</type>
-			<location>C:/Users/tomik/Workspaces/Workspace2026_0625_TM4C1294_MQTT_IO/mqtt_io_common/common/netbiosns.c</location>
+			<location>C:/Users/tomik/Workspaces/Workspace2026_0625_TM4C1294_MQTT_IO/iot_foundation/common/netbiosns.c</location>
 		</link>
 		<link>
 			<name>output_ctrl.c</name>
 			<type>1</type>
-			<location>C:/Users/tomik/Workspaces/Workspace2026_0625_TM4C1294_MQTT_IO/mqtt_io_common/common/output_ctrl.c</location>
+			<location>C:/Users/tomik/Workspaces/Workspace2026_0625_TM4C1294_MQTT_IO/iot_foundation/common/output_ctrl.c</location>
 		</link>
 		<link>
 			<name>relay_pulse.c</name>
 			<type>1</type>
-			<location>C:/Users/tomik/Workspaces/Workspace2026_0625_TM4C1294_MQTT_IO/mqtt_io_common/common/relay_pulse.c</location>
+			<location>C:/Users/tomik/Workspaces/Workspace2026_0625_TM4C1294_MQTT_IO/iot_foundation/common/relay_pulse.c</location>
 		</link>
 		<link>
 			<name>sntp_client.c</name>
 			<type>1</type>
-			<location>C:/Users/tomik/Workspaces/Workspace2026_0625_TM4C1294_MQTT_IO/mqtt_io_common/common/sntp_client.c</location>
+			<location>C:/Users/tomik/Workspaces/Workspace2026_0625_TM4C1294_MQTT_IO/iot_foundation/common/sntp_client.c</location>
 		</link>
 		<link>
 			<name>webui.c</name>
 			<type>1</type>
-			<location>C:/Users/tomik/Workspaces/Workspace2026_0625_TM4C1294_MQTT_IO/mqtt_io_common/common/webui.c</location>
+			<location>C:/Users/tomik/Workspaces/Workspace2026_0625_TM4C1294_MQTT_IO/iot_foundation/common/webui.c</location>
 		</link>
 	</linkedResources>
 </projectDescription>

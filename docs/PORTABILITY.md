@@ -26,7 +26,7 @@ The `.cproject` file contains hardcoded include paths that should be replaced wi
 C:/ti/TivaWare_C_Series-2.2.0.295/
 C:/ti/TivaWare_C_Series-2.2.0.295/examples/boards/ek-tm4c1294xl
 C:/ti/TivaWare_C_Series-2.2.0.295/third_party/lwip-1.4.1/...
-C:/Users/tomik/Workspaces/Workspace2026_0625_TM4C1294_MQTT_IO/mqtt_io_common
+C:/Users/tomik/Workspaces/Workspace2026_0625_TM4C1294_MQTT_IO/iot_foundation
 ```
 
 **To make this machine-independent:**
@@ -36,7 +36,7 @@ C:/Users/tomik/Workspaces/Workspace2026_0625_TM4C1294_MQTT_IO/mqtt_io_common
 3. **Under the "Includes" tab:**
    - Create a path variable `TIVAWARE_INSTALL` pointing to your TivaWare location
    - Replace each hardcoded TivaWare path with `${TIVAWARE_INSTALL}/...`
-   - Use `${WORKSPACE_LOC}/mqtt_io_common` instead of the absolute workspace path
+   - Use `${WORKSPACE_LOC}/iot_foundation` instead of the absolute workspace path
 
 4. **Click "Apply and Close"**
 
