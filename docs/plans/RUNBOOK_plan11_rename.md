@@ -1,5 +1,12 @@
 # Runbook — Plan 11 CCS-closed directory rename (`mqtt_io_common → iot_foundation`)
 
+> **DONE 2026-09-16 — commit `f3c5f45`.** Executed exactly as below with one deviation
+> (chose option (b): hand-edit the CC35x1 generated `.project`/`.cproject` instead of reimport,
+> to keep the build steps). One trap not in this doc: after reopening CCS, stale `Debug/*.d`
+> dep files still pinned `mqtt_io_common/*.h` → silent `gmake ... not remade because of errors`;
+> fix = delete the stale `.d`/`.o` pairs so they regenerate. Both MCUs built green. Kept for
+> reference; Scope B/C continue in `PLAN_foundation_product_split.md`.
+
 Operational checklist for the next Plan 11 step. Companion to
 [`PLAN_foundation_product_split.md`](PLAN_foundation_product_split.md) (see Phase 0 spike
 finding 1 + finding 4) and [`../FOUNDATION_PRODUCT_API_DESIGN.md`](../FOUNDATION_PRODUCT_API_DESIGN.md).

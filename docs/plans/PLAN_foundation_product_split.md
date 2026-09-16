@@ -5,9 +5,13 @@
 in-place cleave is now COMPLETE** (2026-09-15): `mqtt_app` → `product_on_connect`/`product_on_mqtt`
 (`9983517`); `webui` CGI+SSI table → `product_web_register`/`product_ssi_handler` (`e17f7f8`+`ecec2f8`);
 `config` store → `product_config_load`/`product_config_factory_reset` (`5c8bbb0`). Both MCUs build
-green; CC35x1 web/OTA + factory-reset HW-verified. **NEXT: the CCS-closed directory rename** —
-`git mv mqtt_io_common → iot_foundation` + move product halves to `products/home_auto/` — done in a
-separate CCS-closed session per spike finding 1.)
+green; CC35x1 web/OTA + factory-reset HW-verified. **The CCS-closed directory rename (Scope A) is
+now DONE** (2026-09-16, `f3c5f45`): `git mv mqtt_io_common → iot_foundation` (51 renames, history
+preserved) + 7 path-fixup files; CC35x1 generated `.project`/`.cproject` hand-edited in place (no
+reimport, build steps preserved). Both MCUs build green after reopen (had to clear stale `Debug/*.d`
+dep files pinning the old path). **NEXT: Scope B/C** — `git mv` the whole-file product TUs into
+`products/home_auto/`, then split the dual-half `mqtt_app`/`webui`/`config` PRODUCT sections into
+separate `products/home_auto/…` TUs (Scope C adds new .c files → real projectspec/.project surgery).)
 **Area:** Structure **Priority:** Med
 
 ## Execution model guidance (pick per phase)
