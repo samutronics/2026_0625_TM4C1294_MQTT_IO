@@ -51,6 +51,7 @@
             -IC:/Users/tomik/Workspaces/Workspace2026_0625_TM4C1294_MQTT_IO/iot_foundation
             -IC:/Users/tomik/Workspaces/Workspace2026_0625_TM4C1294_MQTT_IO/iot_foundation/common
             -IC:/Users/tomik/Workspaces/Workspace2026_0625_TM4C1294_MQTT_IO/iot_foundation/pal
+            -IC:/Users/tomik/Workspaces/Workspace2026_0625_TM4C1294_MQTT_IO/products/home_auto/app
             -DSNTP_SUPPORT
             -DMBEDTLS_CONFIG_FILE=\&quot;config-hsm.h\&quot;
             -DNVOCMP_SPS_USE_CBC
@@ -194,12 +195,12 @@
              (A cleaner long-term fix is to relocate board_pins.h out of mqtt_io/
              root into each platform dir, but that modifies the shipped TM4C project's
              include paths - deferred.) -->
-        <file path="C:/Users/tomik/Workspaces/Workspace2026_0625_TM4C1294_MQTT_IO/iot_foundation/din_chain.c" openOnCreation="false" excludeFromBuild="false" action="copy"/>
-        <file path="C:/Users/tomik/Workspaces/Workspace2026_0625_TM4C1294_MQTT_IO/iot_foundation/relay_chain.c" openOnCreation="false" excludeFromBuild="false" action="copy"/>
+        <file path="C:/Users/tomik/Workspaces/Workspace2026_0625_TM4C1294_MQTT_IO/products/home_auto/app/din_chain.c" openOnCreation="false" excludeFromBuild="false" action="copy"/>
+        <file path="C:/Users/tomik/Workspaces/Workspace2026_0625_TM4C1294_MQTT_IO/products/home_auto/app/relay_chain.c" openOnCreation="false" excludeFromBuild="false" action="copy"/>
 
         <!-- Portable common/ modules (no external stack deps in this subset). -->
         <file path="C:/Users/tomik/Workspaces/Workspace2026_0625_TM4C1294_MQTT_IO/iot_foundation/common/cgifuncs.c" openOnCreation="false" excludeFromBuild="false" action="link"/>
-        <file path="C:/Users/tomik/Workspaces/Workspace2026_0625_TM4C1294_MQTT_IO/iot_foundation/common/input_events.c" openOnCreation="false" excludeFromBuild="false" action="link"/>
+        <file path="C:/Users/tomik/Workspaces/Workspace2026_0625_TM4C1294_MQTT_IO/products/home_auto/app/input_events.c" openOnCreation="false" excludeFromBuild="false" action="link"/>
 
         <!-- ================================================================
              Checkpoint B2: config + storage + the MQTT/network cluster.
@@ -216,9 +217,9 @@
         <file path="C:/Users/tomik/Workspaces/Workspace2026_0625_TM4C1294_MQTT_IO/iot_foundation/config.c" openOnCreation="false" excludeFromBuild="false" action="link"/>
         <file path="C:/Users/tomik/Workspaces/Workspace2026_0625_TM4C1294_MQTT_IO/iot_foundation/mqtt_client.c" openOnCreation="false" excludeFromBuild="false" action="link"/>
         <file path="C:/Users/tomik/Workspaces/Workspace2026_0625_TM4C1294_MQTT_IO/iot_foundation/common/mqtt_app.c" openOnCreation="false" excludeFromBuild="false" action="link"/>
-        <file path="C:/Users/tomik/Workspaces/Workspace2026_0625_TM4C1294_MQTT_IO/iot_foundation/common/relay_pulse.c" openOnCreation="false" excludeFromBuild="false" action="link"/>
-        <file path="C:/Users/tomik/Workspaces/Workspace2026_0625_TM4C1294_MQTT_IO/iot_foundation/common/output_ctrl.c" openOnCreation="false" excludeFromBuild="false" action="link"/>
-        <file path="C:/Users/tomik/Workspaces/Workspace2026_0625_TM4C1294_MQTT_IO/iot_foundation/common/io_scan.c" openOnCreation="false" excludeFromBuild="false" action="link"/>
+        <file path="C:/Users/tomik/Workspaces/Workspace2026_0625_TM4C1294_MQTT_IO/products/home_auto/app/relay_pulse.c" openOnCreation="false" excludeFromBuild="false" action="link"/>
+        <file path="C:/Users/tomik/Workspaces/Workspace2026_0625_TM4C1294_MQTT_IO/products/home_auto/app/output_ctrl.c" openOnCreation="false" excludeFromBuild="false" action="link"/>
+        <file path="C:/Users/tomik/Workspaces/Workspace2026_0625_TM4C1294_MQTT_IO/products/home_auto/app/io_scan.c" openOnCreation="false" excludeFromBuild="false" action="link"/>
         <file path="C:/Users/tomik/Workspaces/Workspace2026_0625_TM4C1294_MQTT_IO/iot_foundation/common/netbiosns.c" openOnCreation="false" excludeFromBuild="false" action="link"/>
         <file path="C:/Users/tomik/Workspaces/Workspace2026_0625_TM4C1294_MQTT_IO/iot_foundation/common/sntp_client.c" openOnCreation="false" excludeFromBuild="false" action="link"/>
 

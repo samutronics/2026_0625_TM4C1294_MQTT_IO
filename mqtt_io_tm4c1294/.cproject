@@ -49,6 +49,7 @@
                                     <listOptionValue value="C:/Users/tomik/Workspaces/Workspace2026_0625_TM4C1294_MQTT_IO/iot_foundation"/>
                                     <listOptionValue value="C:/Users/tomik/Workspaces/Workspace2026_0625_TM4C1294_MQTT_IO/iot_foundation/common"/>
                                     <listOptionValue value="C:/Users/tomik/Workspaces/Workspace2026_0625_TM4C1294_MQTT_IO/iot_foundation/pal"/>
+                                    <listOptionValue value="C:/Users/tomik/Workspaces/Workspace2026_0625_TM4C1294_MQTT_IO/products/home_auto/app"/>
                                 </option>
                                 <option id="com.ti.ccstudio.buildDefinitions.TMS470_TICLANG_5.1.compilerID.DEFINE.272602982" superClass="com.ti.ccstudio.buildDefinitions.TMS470_TICLANG_5.1.compilerID.DEFINE" valueType="definedSymbols">
                                     <listOptionValue value="gcc"/>

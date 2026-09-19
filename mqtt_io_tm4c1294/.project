@@ -36,12 +36,12 @@
 		<link>
 			<name>din_chain.c</name>
 			<type>1</type>
-			<location>C:/Users/tomik/Workspaces/Workspace2026_0625_TM4C1294_MQTT_IO/iot_foundation/din_chain.c</location>
+			<location>C:/Users/tomik/Workspaces/Workspace2026_0625_TM4C1294_MQTT_IO/products/home_auto/app/din_chain.c</location>
 		</link>
 		<link>
 			<name>relay_chain.c</name>
 			<type>1</type>
-			<location>C:/Users/tomik/Workspaces/Workspace2026_0625_TM4C1294_MQTT_IO/iot_foundation/relay_chain.c</location>
+			<location>C:/Users/tomik/Workspaces/Workspace2026_0625_TM4C1294_MQTT_IO/products/home_auto/app/relay_chain.c</location>
 		</link>
 		<link>
 			<name>cgifuncs.c</name>
@@ -51,12 +51,12 @@
 		<link>
 			<name>input_events.c</name>
 			<type>1</type>
-			<location>C:/Users/tomik/Workspaces/Workspace2026_0625_TM4C1294_MQTT_IO/iot_foundation/common/input_events.c</location>
+			<location>C:/Users/tomik/Workspaces/Workspace2026_0625_TM4C1294_MQTT_IO/products/home_auto/app/input_events.c</location>
 		</link>
 		<link>
 			<name>io_scan.c</name>
 			<type>1</type>
-			<location>C:/Users/tomik/Workspaces/Workspace2026_0625_TM4C1294_MQTT_IO/iot_foundation/common/io_scan.c</location>
+			<location>C:/Users/tomik/Workspaces/Workspace2026_0625_TM4C1294_MQTT_IO/products/home_auto/app/io_scan.c</location>
 		</link>
 		<link>
 			<name>mqtt_app.c</name>
@@ -71,12 +71,12 @@
 		<link>
 			<name>output_ctrl.c</name>
 			<type>1</type>
-			<location>C:/Users/tomik/Workspaces/Workspace2026_0625_TM4C1294_MQTT_IO/iot_foundation/common/output_ctrl.c</location>
+			<location>C:/Users/tomik/Workspaces/Workspace2026_0625_TM4C1294_MQTT_IO/products/home_auto/app/output_ctrl.c</location>
 		</link>
 		<link>
 			<name>relay_pulse.c</name>
 			<type>1</type>
-			<location>C:/Users/tomik/Workspaces/Workspace2026_0625_TM4C1294_MQTT_IO/iot_foundation/common/relay_pulse.c</location>
+			<location>C:/Users/tomik/Workspaces/Workspace2026_0625_TM4C1294_MQTT_IO/products/home_auto/app/relay_pulse.c</location>
 		</link>
 		<link>
 			<name>sntp_client.c</name>
