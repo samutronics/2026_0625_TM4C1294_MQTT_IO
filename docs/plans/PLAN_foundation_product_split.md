@@ -9,9 +9,39 @@ green; CC35x1 web/OTA + factory-reset HW-verified. **The CCS-closed directory re
 now DONE** (2026-09-16, `f3c5f45`): `git mv mqtt_io_common → iot_foundation` (51 renames, history
 preserved) + 7 path-fixup files; CC35x1 generated `.project`/`.cproject` hand-edited in place (no
 reimport, build steps preserved). Both MCUs build green after reopen (had to clear stale `Debug/*.d`
-dep files pinning the old path). **NEXT: Scope B/C** — `git mv` the whole-file product TUs into
-`products/home_auto/`, then split the dual-half `mqtt_app`/`webui`/`config` PRODUCT sections into
-separate `products/home_auto/…` TUs (Scope C adds new .c files → real projectspec/.project surgery).)
+dep files pinning the old path). **Scope B (whole-file product TU move) is now DONE** (2026-09-19,
+`3c17537`): `git mv` the six product TUs (`io_scan`/`output_ctrl`/`relay_pulse`/`input_events`/
+`din_chain`/`relay_chain`, .c+.h) into `products/home_auto/app/` — 12 100%-similarity renames, contents
+unchanged. All `#include`s are basename-resolved so no source lines changed; only build wiring followed:
+TM4C `.project` (6 `<location>`) + `.cproject` (+1 include path), CC35x1 projectspec (6 `<file>` + 1
+`-I`), and the live gitignored CC35x1 `.project`/`.cproject` hand-edited in place. **The three product
+`.shtml` pages were deliberately LEFT in `iot_foundation/fs/`** — both web-FS generators
+(`makefsfile.exe -i`, `makefsdata.py`) take a SINGLE root dir, so moving the pages out drops the I/O
+tabs from firmware unless a merge/collate step exists; that step + the shtml move are folded into
+Scope C. Both MCUs build green (moved objects in both link images); CC35x1 post-build ran sign-only
+(no HW reflash — pure path churn, `fs/` untouched, not HW-re-smoked). **Scope C code phases C1–C3 are
+now DONE** (2026-09-19; both MCUs build green after each; not yet HW-re-smoked): the dual-half PRODUCT
+sections were extracted into new product TUs (real project surgery — new `.c` files added to TM4C
+`.project` + CC35x1 projectspec + live gitignored `.project`, all `action="link"`).
+• **C1 `30786e6`** — `config.c` product schema → `products/home_auto/app/product_config_store.c` (the
+  2 hooks + 5 records + ~30 accessors + migration/defaults; foundation keeps store engine, device
+  counts, Ota/Ntp/FactoryReset; all accessors already in `config.h` so no header/call-site changes).
+• **C2 `341873f`** — `mqtt_app.c` HA layer → `products/home_auto/app/ha_mqtt.c` (discovery/state
+  publishers, parsers, `product_on_mqtt`/`on_connect`, post-connect sequencer). Foundation keeps
+  client/connect-edge/LWT and exposes `g_pcBase`/`g_pcDevId`/`g_pcTopicStatus` via 3 new read
+  accessors (`MQTTAppBaseTopic/DevId/StatusTopic`); dropped 3 now-redundant `g_iPubStep=0` resets.
+• **C3 `4c44f80`** — `webui.c` product web → `products/home_auto/web/product_web.c` (7 product CGI
+  handlers + `UrlDecodeParam` + product CGI/SSI tables + `product_web_register`/`product_ssi_handler`
+  + IOCFG/CONTROL response macros). Foundation keeps httpd shell + base tabs + `SSIHandler`/
+  `WebUIRegister`. Deltas: product handlers now call `WebUIRequestMqttApply/Republish()` instead of
+  writing the static flags; `product_web.c` keeps its own static `HexNibble` (matches enet_io.c
+  precedent; avoids clash with enet_io.c's static copy). Added `products/home_auto/web` to both -I lists.
+Pattern (all C1–C3): extract product line-ranges verbatim → new TU; delete from foundation file; wire
+via existing `product_api.h`/`product_web.h` hooks (call sites unchanged). **NEXT: C4 (deferred, own
+session)** — build the fsdata multi-root/collate step and `git mv` the 3 product `.shtml`
+(iocfg/control/iostate) into `products/home_auto/web/`; gated on the unrelated `#wifitab` WIP that
+currently dirties `io_fsdata.h`/`fsdata.c`/`index.shtml` (C4 regenerates those). Optional: HW-smoke
+C1–C3 (web UI + I/O tabs + relay toggle) before/with C4.)
 **Area:** Structure **Priority:** Med
 
 ## Execution model guidance (pick per phase)
