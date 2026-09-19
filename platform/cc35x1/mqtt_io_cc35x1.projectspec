@@ -221,6 +221,7 @@
         <file path="C:/Users/tomik/Workspaces/Workspace2026_0625_TM4C1294_MQTT_IO/products/home_auto/app/output_ctrl.c" openOnCreation="false" excludeFromBuild="false" action="link"/>
         <file path="C:/Users/tomik/Workspaces/Workspace2026_0625_TM4C1294_MQTT_IO/products/home_auto/app/io_scan.c" openOnCreation="false" excludeFromBuild="false" action="link"/>
         <file path="C:/Users/tomik/Workspaces/Workspace2026_0625_TM4C1294_MQTT_IO/products/home_auto/app/product_config_store.c" openOnCreation="false" excludeFromBuild="false" action="link"/>
+        <file path="C:/Users/tomik/Workspaces/Workspace2026_0625_TM4C1294_MQTT_IO/products/home_auto/app/ha_mqtt.c" openOnCreation="false" excludeFromBuild="false" action="link"/>
         <file path="C:/Users/tomik/Workspaces/Workspace2026_0625_TM4C1294_MQTT_IO/iot_foundation/common/netbiosns.c" openOnCreation="false" excludeFromBuild="false" action="link"/>
         <file path="C:/Users/tomik/Workspaces/Workspace2026_0625_TM4C1294_MQTT_IO/iot_foundation/common/sntp_client.c" openOnCreation="false" excludeFromBuild="false" action="link"/>
 

@@ -40,6 +40,16 @@ void MQTTAppStop(void);
 void MQTTAppTick(uint32_t ui32ElapsedMs);
 
 //
+// Foundation-owned topic / identity strings, exposed read-only to the product
+// (home-auto) MQTT layer in products/home_auto/app/ha_mqtt.c.  The foundation
+// builds these at connect (MQTTAppInit/MQTTAppStart); the product reads them when
+// composing its discovery/state topics and parsing incoming commands.  Plan 11.
+//
+const char *MQTTAppBaseTopic(void);    // configured base topic, e.g. "tm4c1294"
+const char *MQTTAppDevId(void);        // stable HA device id, e.g. "tm4c1294_a1b2c3"
+const char *MQTTAppStatusTopic(void);  // "<base>/status" availability topic
+
+//
 // Advance the staggered post-connect publish sequence one item per call.  Plan
 // 11: this is product work driven by product_poll() (on CC35x1 under the TCP/IP
 // core lock).  No-op / resets while the broker is disconnected.

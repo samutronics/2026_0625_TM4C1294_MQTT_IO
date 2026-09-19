@@ -1,0 +1,751 @@
+//*****************************************************************************
+//
+// ha_mqtt.c - Home Assistant MQTT application layer for the home-auto product.
+//
+// Extracted from iot_foundation/common/mqtt_app.c (Plan 11 Scope C). This is the
+// PRODUCT half of the MQTT glue: Home Assistant auto-discovery + retained state
+// for relays / covers / inputs / temperature, the incoming-command dispatch, and
+// the staggered post-connect publish sequencer. The foundation (mqtt_app.c) owns
+// the client, connect-edge detection, base-topic/LWT build and subscribe glue,
+// and calls into here through the product_api.h hooks (product_on_connect,
+// product_on_mqtt) plus MQTTAppPubServiceTick() (driven from product_poll()).
+//
+// The foundation-owned topic/identity strings are read via the accessors
+// MQTTAppBaseTopic() / MQTTAppDevId() / MQTTAppStatusTopic() (mqtt_app.h), so the
+// dependency points product -> foundation.
+//
+// Topic scheme (base topic is configurable on the web page):
+//   <base>/status              -> "online" (retained) / LWT "offline"
+//   <base>/relay/<n>/set        <- "ON" / "OFF"   (subscribed, wildcard)
+//   <base>/relay/<n>/state      -> "ON" / "OFF"   (retained)
+//   <base>/input/<i>/state      -> "ON" / "OFF"   (retained, switch inputs)
+//   <base>/input/<i>/event      -> {"event_type":"single"|"double"} (pushbuttons)
+//   <base>/cover/<n>/set        <- OPEN / CLOSE / STOP           (shutters)
+//   <base>/cover/<n>/state      -> opening/closing/open/closed/stopped (retained)
+//
+//*****************************************************************************
+
+#include <stdbool.h>
+#include <stdint.h>
+#include <string.h>
+#include "pal_str.h"
+#include "pal_log.h"
+#include "config.h"
+#include "relay_chain.h"
+#include "din_chain.h"
+#include "io_scan.h"
+#include "webui.h"
+#include "mqtt_client.h"
+#include "mqtt_app.h"
+#include "input_events.h"
+#include "relay_pulse.h"
+#include "output_ctrl.h"
+#include "product_api.h"    // Plan 11: product_on_connect() / product_on_mqtt() hooks
+
+//
+// Home Assistant default discovery prefix.
+//
+#define HA_PREFIX           "homeassistant"
+
+//
+// Post-connect publish sequencer state.  Steps:
+//   1                    -> status "online"
+//   2 .. 1+N             -> relay discovery config (N = relay count)
+//   2+N .. 1+2N          -> relay state
+//   2+2N                 -> subscribe to the command wildcard
+//   ...                  -> input discovery/state, cover discovery/state, temp
+//
+static int  g_iPubStep;
+static int  g_iPubMax;
+
+//
+// Scratch buffers for building topics / discovery payloads.
+//
+static char g_pcScratchTopic[80];
+static char g_pcDiscTopic[96];
+static char g_pcDiscPayload[512];
+
+//
+// Snapshot of the input chain taken at connect, used to publish the initial
+// retained state of every input during the post-connect sequence.
+//
+static uint8_t g_pui8InSnap[IO_MAX_BYTES];
+
+//*****************************************************************************
+//
+// Publish one relay's current state (retained).
+//
+//*****************************************************************************
+static void
+MQTTAppPublishRelayState(int iRelay)
+{
+    const char *pcMsg = RelayChainGet((uint16_t)iRelay) ? "ON" : "OFF";
+
+    PalSnprintf(g_pcScratchTopic, sizeof(g_pcScratchTopic), "%s/relay/%d/state",
+              MQTTAppBaseTopic(), iRelay);
+    MQTTClientPublish(g_pcScratchTopic, (const uint8_t *)pcMsg,
+                      (uint16_t)strlen(pcMsg), 1);
+}
+
+//*****************************************************************************
+//
+// Publish one relay's Home Assistant discovery config (retained switch).
+//
+//*****************************************************************************
+static void
+MQTTAppPublishRelayDiscovery(int iRelay)
+{
+    PalSnprintf(g_pcDiscTopic, sizeof(g_pcDiscTopic),
+              HA_PREFIX "/switch/%s/relay%d/config", MQTTAppDevId(), iRelay);
+
+    //
+    // Relays that belong to a shutter are exposed as a cover, not a switch.
+    // Clear any stale retained switch config so HA drops the switch entity.
+    //
+    if(OutputCtrlIsShutterMember(iRelay))
+    {
+        MQTTClientPublish(g_pcDiscTopic, (const uint8_t *)"", 0, 1);
+        return;
+    }
+
+    PalSnprintf(g_pcDiscPayload, sizeof(g_pcDiscPayload),
+              "{\"~\":\"%s\",\"name\":\"Out%02d\",\"uniq_id\":\"%s_relay%d\","
+              "\"cmd_t\":\"~/relay/%d/set\",\"stat_t\":\"~/relay/%d/state\","
+              "\"pl_on\":\"ON\",\"pl_off\":\"OFF\",\"avty_t\":\"~/status\","
+              "\"dev\":{\"ids\":[\"%s\"],\"name\":\"SaKaHub\","
+              "\"mdl\":\"%s\",\"mf\":\"TomArts\"}}",
+              MQTTAppBaseTopic(), iRelay + 1, MQTTAppDevId(), iRelay, iRelay, iRelay,
+              MQTTAppDevId(), ConfigGet()->pcClientID);
+
+    MQTTClientPublish(g_pcDiscTopic, (const uint8_t *)g_pcDiscPayload,
+                      (uint16_t)strlen(g_pcDiscPayload), 1);
+}
+
+//*****************************************************************************
+//
+// Publish one shutter's current cover state (retained).  Called from the
+// shutter FSM in output_ctrl.c and from the post-connect sequence.
+//
+//*****************************************************************************
+void
+MQTTAppPublishCoverState(int iShutter, const char *pcState)
+{
+    if(!MQTTClientIsReady())
+    {
+        return;
+    }
+    PalSnprintf(g_pcScratchTopic, sizeof(g_pcScratchTopic), "%s/cover/%d/state",
+              MQTTAppBaseTopic(), iShutter);
+    MQTTClientPublish(g_pcScratchTopic, (const uint8_t *)pcState,
+                      (uint16_t)strlen(pcState), 1);
+}
+
+//*****************************************************************************
+//
+// Publish one shutter's Home Assistant cover discovery config (retained).
+// Empty (unconfigured) slots clear any stale retained config.
+//
+//*****************************************************************************
+static void
+MQTTAppPublishCoverDiscovery(int iShutter)
+{
+    PalSnprintf(g_pcDiscTopic, sizeof(g_pcDiscTopic),
+              HA_PREFIX "/cover/%s/cover%d/config", MQTTAppDevId(), iShutter);
+
+    if(!OutputCtrlShutterValid(iShutter))
+    {
+        MQTTClientPublish(g_pcDiscTopic, (const uint8_t *)"", 0, 1);
+        return;
+    }
+
+    //
+    // Friendly name: the user-assigned shutter name if set, else "Shutter NN".
+    //
+    {
+        const char *pcShN = ConfigShutterName(iShutter);
+        char        acName[CFG_NAME_LEN + 8];
+        if(pcShN && pcShN[0])
+        {
+            PalSnprintf(acName, sizeof(acName), "%s", pcShN);
+        }
+        else
+        {
+            PalSnprintf(acName, sizeof(acName), "Shutter%02d", iShutter + 1);
+        }
+
+        PalSnprintf(g_pcDiscPayload, sizeof(g_pcDiscPayload),
+                  "{\"~\":\"%s\",\"name\":\"%s\",\"uniq_id\":\"%s_cover%d\","
+                  "\"cmd_t\":\"~/cover/%d/set\",\"stat_t\":\"~/cover/%d/state\","
+                  "\"pl_open\":\"OPEN\",\"pl_cls\":\"CLOSE\",\"pl_stop\":\"STOP\","
+                  "\"stat_open\":\"open\",\"stat_clsd\":\"closed\","
+                  "\"stat_opening\":\"opening\",\"stat_closing\":\"closing\","
+                  "\"dev_cla\":\"shutter\",\"avty_t\":\"~/status\","
+                  "\"dev\":{\"ids\":[\"%s\"],\"name\":\"SaKaHub\","
+                  "\"mdl\":\"%s\",\"mf\":\"TomArts\"}}",
+                  MQTTAppBaseTopic(), acName, MQTTAppDevId(), iShutter, iShutter, iShutter,
+                  MQTTAppDevId(), ConfigGet()->pcClientID);
+    }
+
+    MQTTClientPublish(g_pcDiscTopic, (const uint8_t *)g_pcDiscPayload,
+                      (uint16_t)strlen(g_pcDiscPayload), 1);
+}
+
+//*****************************************************************************
+//
+// Publish one input channel's Home Assistant discovery config.  The entity
+// type depends on whether the input is configured as a switch (binary_sensor)
+// or a pushbutton (event).  The stale config for the other type is cleared by
+// publishing an empty retained payload to its topic.
+//
+//*****************************************************************************
+static void
+MQTTAppPublishInputDiscovery(int iInput)
+{
+    bool bPB = ConfigInputIsPushbutton(iInput);
+    const char *pcActiveComp  = bPB ? "event"         : "binary_sensor";
+    const char *pcStaleComp   = bPB ? "binary_sensor" : "event";
+
+    //
+    // Clear the stale component's retained config first.
+    //
+    PalSnprintf(g_pcDiscTopic, sizeof(g_pcDiscTopic),
+              HA_PREFIX "/%s/%s/input%d/config", pcStaleComp, MQTTAppDevId(), iInput);
+    MQTTClientPublish(g_pcDiscTopic, (const uint8_t *)"", 0, 1);
+
+    //
+    // Publish the active component's config.
+    //
+    PalSnprintf(g_pcDiscTopic, sizeof(g_pcDiscTopic),
+              HA_PREFIX "/%s/%s/input%d/config", pcActiveComp, MQTTAppDevId(), iInput);
+
+    if(bPB)
+    {
+        PalSnprintf(g_pcDiscPayload, sizeof(g_pcDiscPayload),
+                  "{\"~\":\"%s\",\"name\":\"In%02d\",\"uniq_id\":\"%s_input%d\","
+                  "\"stat_t\":\"~/input/%d/event\","
+                  "\"event_types\":[\"single\",\"double\"],"
+                  "\"avty_t\":\"~/status\",\"dev\":{\"ids\":[\"%s\"],"
+                  "\"name\":\"SaKaHub\",\"mdl\":\"%s\","
+                  "\"mf\":\"TomArts\"}}",
+                  MQTTAppBaseTopic(), iInput + 1, MQTTAppDevId(), iInput, iInput,
+                  MQTTAppDevId(), ConfigGet()->pcClientID);
+    }
+    else
+    {
+        PalSnprintf(g_pcDiscPayload, sizeof(g_pcDiscPayload),
+                  "{\"~\":\"%s\",\"name\":\"In%02d\",\"uniq_id\":\"%s_input%d\","
+                  "\"stat_t\":\"~/input/%d/state\",\"pl_on\":\"ON\",\"pl_off\":"
+                  "\"OFF\",\"avty_t\":\"~/status\",\"dev\":{\"ids\":[\"%s\"],"
+                  "\"name\":\"SaKaHub\",\"mdl\":\"%s\","
+                  "\"mf\":\"TomArts\"}}",
+                  MQTTAppBaseTopic(), iInput + 1, MQTTAppDevId(), iInput, iInput,
+                  MQTTAppDevId(), ConfigGet()->pcClientID);
+    }
+
+    MQTTClientPublish(g_pcDiscTopic, (const uint8_t *)g_pcDiscPayload,
+                      (uint16_t)strlen(g_pcDiscPayload), 1);
+}
+
+//*****************************************************************************
+//
+// Publish one input channel's state (retained).
+//
+//*****************************************************************************
+void
+MQTTAppPublishInput(int iInput, bool bOn)
+{
+    if(!MQTTClientIsReady())
+    {
+        return;
+    }
+    PalSnprintf(g_pcScratchTopic, sizeof(g_pcScratchTopic), "%s/input/%d/state",
+              MQTTAppBaseTopic(), iInput);
+    MQTTClientPublish(g_pcScratchTopic, (const uint8_t *)(bOn ? "ON" : "OFF"),
+                      (uint16_t)(bOn ? 2 : 3), 1);
+}
+
+//*****************************************************************************
+//
+// Publish a pushbutton click event (NOT retained) to the HA event topic.
+//
+//*****************************************************************************
+void
+MQTTAppPublishInputEvent(int iInput, const char *pcEvt)
+{
+    char pcPayload[48];
+
+    if(!MQTTClientIsReady())
+    {
+        return;
+    }
+    PalSnprintf(g_pcScratchTopic, sizeof(g_pcScratchTopic), "%s/input/%d/event",
+              MQTTAppBaseTopic(), iInput);
+    PalSnprintf(pcPayload, sizeof(pcPayload), "{\"event_type\":\"%s\"}", pcEvt);
+    MQTTClientPublish(g_pcScratchTopic, (const uint8_t *)pcPayload,
+                      (uint16_t)strlen(pcPayload), 0);
+}
+
+//*****************************************************************************
+//
+// Publish the on-board temperature sensor's Home Assistant discovery config as a
+// numeric temperature sensor entity (retained).  Called once from the post-connect
+// sequence on platforms that have a sensor (WebPlatformHasTempSensor()).
+//
+//*****************************************************************************
+static void
+MQTTAppPublishTempDiscovery(void)
+{
+    PalSnprintf(g_pcDiscTopic, sizeof(g_pcDiscTopic),
+              HA_PREFIX "/sensor/%s/temp/config", MQTTAppDevId());
+    PalSnprintf(g_pcDiscPayload, sizeof(g_pcDiscPayload),
+              "{\"~\":\"%s\",\"name\":\"Temperature\",\"uniq_id\":\"%s_temp\","
+              "\"stat_t\":\"~/temperature/state\",\"dev_cla\":\"temperature\","
+              "\"unit_of_meas\":\"\xC2\xB0" "C\",\"stat_cla\":\"measurement\","
+              "\"avty_t\":\"~/status\",\"dev\":{\"ids\":[\"%s\"],"
+              "\"name\":\"SaKaHub\",\"mdl\":\"%s\",\"mf\":\"TomArts\"}}",
+              MQTTAppBaseTopic(), MQTTAppDevId(), MQTTAppDevId(), ConfigGet()->pcClientID);
+    MQTTClientPublish(g_pcDiscTopic, (const uint8_t *)g_pcDiscPayload,
+                      (uint16_t)strlen(g_pcDiscPayload), 1);
+}
+
+//*****************************************************************************
+//
+// Publish the current temperature (retained) to "<base>/temperature/state" as a
+// decimal string, e.g. "23.44".  Skipped when the reading is invalid or the
+// client is not connected.  Driven by the platform's 5 s poll in its main loop;
+// i32CentiC is centi-degrees Celsius.
+//
+//*****************************************************************************
+void
+MQTTAppPublishTemp(int32_t i32CentiC, bool bValid)
+{
+    char    pcPayload[16];
+    int32_t i32Abs;
+
+    if(!bValid || !MQTTClientIsReady())
+    {
+        return;
+    }
+    i32Abs = (i32CentiC < 0) ? -i32CentiC : i32CentiC;
+    PalSnprintf(pcPayload, sizeof(pcPayload), "%s%d.%02d",
+                (i32CentiC < 0) ? "-" : "",
+                (int)(i32Abs / 100), (int)(i32Abs % 100));
+    PalSnprintf(g_pcScratchTopic, sizeof(g_pcScratchTopic),
+                "%s/temperature/state", MQTTAppBaseTopic());
+    MQTTClientPublish(g_pcScratchTopic, (const uint8_t *)pcPayload,
+                      (uint16_t)strlen(pcPayload), 1);
+}
+
+//*****************************************************************************
+//
+// Parse a "<base>/relay/<n>/set" topic and extract the relay index.  Returns
+// true and sets *piRelay on a match.
+//
+//*****************************************************************************
+//*****************************************************************************
+//
+// Parse a "<base>/relay/<n>/pulse" topic.  Same logic as MQTTAppParseRelaySet
+// but matches the "/pulse" suffix.
+//
+//*****************************************************************************
+static bool
+MQTTAppParseRelayPulse(const char *pcTopic, uint16_t ui16Len, int *piRelay)
+{
+    static const char pcMid[] = "/relay/";
+    static const char pcSuf[] = "/pulse";
+    int iBaseLen = (int)strlen(MQTTAppBaseTopic());
+    int iMidLen  = (int)(sizeof(pcMid) - 1);
+    int iSufLen  = (int)(sizeof(pcSuf) - 1);
+    int iPos = 0, iNum = 0, iDigits = 0;
+
+    if((int)ui16Len < iBaseLen + iMidLen + 1 + iSufLen) { return(false); }
+    if(memcmp(pcTopic, MQTTAppBaseTopic(), iBaseLen) != 0)         { return(false); }
+    iPos = iBaseLen;
+    if(memcmp(pcTopic + iPos, pcMid, iMidLen) != 0)      { return(false); }
+    iPos += iMidLen;
+
+    while((iPos < (int)ui16Len) && (pcTopic[iPos] >= '0') &&
+          (pcTopic[iPos] <= '9'))
+    {
+        iNum = (iNum * 10) + (pcTopic[iPos] - '0');
+        iPos++;
+        iDigits++;
+    }
+    if(iDigits == 0)                               { return(false); }
+    if(((int)ui16Len - iPos) != iSufLen)           { return(false); }
+    if(memcmp(pcTopic + iPos, pcSuf, iSufLen) != 0) { return(false); }
+
+    *piRelay = iNum;
+    return(true);
+}
+
+static bool
+MQTTAppParseRelaySet(const char *pcTopic, uint16_t ui16Len, int *piRelay)
+{
+    static const char pcMid[] = "/relay/";
+    static const char pcSuf[] = "/set";
+    int iBaseLen = (int)strlen(MQTTAppBaseTopic());
+    int iMidLen = (int)(sizeof(pcMid) - 1);
+    int iSufLen = (int)(sizeof(pcSuf) - 1);
+    int iPos = 0;
+    int iNum = 0;
+    int iDigits = 0;
+
+    //
+    // Base prefix + "/relay/".
+    //
+    if((int)ui16Len < iBaseLen + iMidLen + 1 + iSufLen)
+    {
+        return(false);
+    }
+    if(memcmp(pcTopic, MQTTAppBaseTopic(), iBaseLen) != 0)
+    {
+        return(false);
+    }
+    iPos = iBaseLen;
+    if(memcmp(pcTopic + iPos, pcMid, iMidLen) != 0)
+    {
+        return(false);
+    }
+    iPos += iMidLen;
+
+    //
+    // Decimal relay index.
+    //
+    while((iPos < (int)ui16Len) && (pcTopic[iPos] >= '0') &&
+          (pcTopic[iPos] <= '9'))
+    {
+        iNum = (iNum * 10) + (pcTopic[iPos] - '0');
+        iPos++;
+        iDigits++;
+    }
+    if(iDigits == 0)
+    {
+        return(false);
+    }
+
+    //
+    // Trailing "/set".
+    //
+    if(((int)ui16Len - iPos) != iSufLen)
+    {
+        return(false);
+    }
+    if(memcmp(pcTopic + iPos, pcSuf, iSufLen) != 0)
+    {
+        return(false);
+    }
+
+    *piRelay = iNum;
+    return(true);
+}
+
+//*****************************************************************************
+//
+// Parse a "<base>/cover/<n>/set" topic and extract the shutter index.
+//
+//*****************************************************************************
+static bool
+MQTTAppParseCoverSet(const char *pcTopic, uint16_t ui16Len, int *piShutter)
+{
+    static const char pcMid[] = "/cover/";
+    static const char pcSuf[] = "/set";
+    int iBaseLen = (int)strlen(MQTTAppBaseTopic());
+    int iMidLen  = (int)(sizeof(pcMid) - 1);
+    int iSufLen  = (int)(sizeof(pcSuf) - 1);
+    int iPos = 0, iNum = 0, iDigits = 0;
+
+    if((int)ui16Len < iBaseLen + iMidLen + 1 + iSufLen) { return(false); }
+    if(memcmp(pcTopic, MQTTAppBaseTopic(), iBaseLen) != 0)         { return(false); }
+    iPos = iBaseLen;
+    if(memcmp(pcTopic + iPos, pcMid, iMidLen) != 0)      { return(false); }
+    iPos += iMidLen;
+
+    while((iPos < (int)ui16Len) && (pcTopic[iPos] >= '0') &&
+          (pcTopic[iPos] <= '9'))
+    {
+        iNum = (iNum * 10) + (pcTopic[iPos] - '0');
+        iPos++;
+        iDigits++;
+    }
+    if(iDigits == 0)                                { return(false); }
+    if(((int)ui16Len - iPos) != iSufLen)            { return(false); }
+    if(memcmp(pcTopic + iPos, pcSuf, iSufLen) != 0) { return(false); }
+
+    *piShutter = iNum;
+    return(true);
+}
+
+//*****************************************************************************
+//
+// product_on_mqtt - Plan 11 product hook (temporary home in mqtt_app.c;
+// relocates to products/home_auto/app/ha_mqtt.c at the rename).
+//
+// The home-auto command dispatch: an incoming MQTT message on a subscribed
+// topic is parsed here and routed to the output controller / relay-pulse
+// engine.  The topic is length-delimited (ui16TopicLen), not NUL-terminated.
+// The foundation's MQTT glue (MQTTAppMsgCB) forwards every message here.
+//
+//*****************************************************************************
+void
+product_on_mqtt(const char *pcTopic, uint16_t ui16TopicLen,
+                const uint8_t *pui8Payload, uint16_t ui16PayloadLen)
+{
+    int iRelay;
+    int iShutter;
+    bool bOn;
+
+    //
+    // Relay ON/OFF command — routed through the output controller so the
+    // output's mode (Standard / Timed / shutter member) is honored.
+    //
+    if(MQTTAppParseRelaySet(pcTopic, ui16TopicLen, &iRelay))
+    {
+        if((uint16_t)iRelay >= (uint16_t)ConfigGetRelayDevices() * 8)
+        {
+            return;
+        }
+        bOn = (ui16PayloadLen >= 2) && (pui8Payload[0] == 'O') &&
+              (pui8Payload[1] == 'N');
+        OutputCtrlCommand(iRelay, bOn ? OUT_CMD_ON : OUT_CMD_OFF);
+        PalLog("MQTT: relay %d -> %s\n", iRelay, bOn ? "ON" : "OFF");
+        return;
+    }
+
+    //
+    // Cover (shutter) command — payload OPEN / CLOSE / STOP.
+    //
+    if(MQTTAppParseCoverSet(pcTopic, ui16TopicLen, &iShutter))
+    {
+        tShCmd eCmd;
+        if(ui16PayloadLen == 0) { return; }
+        switch(pui8Payload[0])
+        {
+            case 'O': eCmd = SH_CMD_OPEN;  break;   // OPEN  (direct)
+            case 'C': eCmd = SH_CMD_CLOSE; break;   // CLOSE (direct)
+            case 'S': eCmd = SH_CMD_STOP;  break;   // STOP
+            default:  return;
+        }
+        OutputCtrlShutter(iShutter, eCmd);
+        PalLog("MQTT: cover %d cmd %d\n", iShutter, (int)eCmd);
+        return;
+    }
+
+    //
+    // Relay pulse command — payload is duration in milliseconds.
+    //
+    if(MQTTAppParseRelayPulse(pcTopic, ui16TopicLen, &iRelay))
+    {
+        uint32_t ui32Ms;
+        char acNum[12];
+        if((uint16_t)iRelay >= (uint16_t)ConfigGetRelayDevices() * 8)
+        {
+            return;
+        }
+        if(OutputCtrlIsShutterMember(iRelay))
+        {
+            return;   // shutter relays are driven via the cover interface
+        }
+        //
+        // Copy payload to null-terminated buffer for PalStrToUl.
+        //
+        if(ui16PayloadLen >= sizeof(acNum))
+        {
+            ui16PayloadLen = (uint16_t)(sizeof(acNum) - 1);
+        }
+        memcpy(acNum, pui8Payload, ui16PayloadLen);
+        acNum[ui16PayloadLen] = '\0';
+        ui32Ms = PalStrToUl(acNum, NULL, 10);
+        if(ui32Ms == 0)
+        {
+            ui32Ms = 1000;   // implicit default: empty/0 payload pulses for 1 s
+        }
+        if(ui32Ms > 3600000u)
+        {
+            return;   // reject durations > 1 hour
+        }
+        PalLog("MQTT: relay %d pulse %u ms\n", iRelay, ui32Ms);
+        RelayPulseStart(iRelay, ui32Ms);
+        return;
+    }
+}
+
+//*****************************************************************************
+//
+// Run one step of the post-connect publish sequence.
+//
+//*****************************************************************************
+static void
+MQTTAppPostConnect(int iStep)
+{
+    int iRelays = (int)ConfigGetRelayDevices() * 8;
+    int iInputs = (int)IOInputCount();
+    int iShut   = CFG_MAX_SHUTTERS;
+    int iSub    = 2 + (2 * iRelays);        // relay command-topic subscribe step
+    int iInBase = iSub;                     // input block starts after iSub
+    int iCvBase = iSub + (2 * iInputs);     // cover block starts after inputs
+    int iCvSub  = iCvBase + (2 * iShut) + 1;// cover command-topic subscribe step
+
+    if(iStep == 1)
+    {
+        MQTTClientPublish(MQTTAppStatusTopic(), (const uint8_t *)"online", 6, 1);
+    }
+    else if(iStep <= (1 + iRelays))
+    {
+        // Relay switch discovery (shutter-member relays are cleared instead).
+        MQTTAppPublishRelayDiscovery(iStep - 2);
+    }
+    else if(iStep <= (1 + (2 * iRelays)))
+    {
+        int iRelay = iStep - (2 + iRelays);
+        if(!OutputCtrlIsShutterMember(iRelay))
+        {
+            MQTTAppPublishRelayState(iRelay);
+        }
+    }
+    else if(iStep == iSub)
+    {
+        if(iRelays > 0)
+        {
+            PalSnprintf(g_pcScratchTopic, sizeof(g_pcScratchTopic),
+                      "%s/relay/+/set", MQTTAppBaseTopic());
+            MQTTClientSubscribe(g_pcScratchTopic);
+            PalSnprintf(g_pcScratchTopic, sizeof(g_pcScratchTopic),
+                      "%s/relay/+/pulse", MQTTAppBaseTopic());
+            MQTTClientSubscribe(g_pcScratchTopic);
+        }
+        PalLog("MQTT: %d relays published (HA discovery).\n", iRelays);
+    }
+    else if(iStep <= (iInBase + iInputs))
+    {
+        MQTTAppPublishInputDiscovery(iStep - iInBase - 1);
+    }
+    else if(iStep <= (iInBase + (2 * iInputs)))
+    {
+        //
+        // Initial retained state for switch-type inputs only.  Pushbuttons have
+        // no retained level state — they publish events on click.
+        //
+        int iInput = iStep - iInBase - iInputs - 1;
+        if(!ConfigInputIsPushbutton(iInput))
+        {
+            int iMask = 1 << (iInput & 7);   // LSB-first: input d*8+b -> bit b
+            MQTTAppPublishInput(iInput,
+                                (g_pui8InSnap[iInput / 8] & iMask) != 0);
+        }
+        if(iInput == (iInputs - 1))
+        {
+            PalLog("MQTT: %d inputs published (HA discovery).\n", iInputs);
+        }
+    }
+    else if(iStep <= (iCvBase + iShut))
+    {
+        // Cover discovery (unconfigured slots clear stale retained config).
+        MQTTAppPublishCoverDiscovery(iStep - iCvBase - 1);
+    }
+    else if(iStep <= (iCvBase + (2 * iShut)))
+    {
+        int iSh = iStep - iCvBase - iShut - 1;
+        if(OutputCtrlShutterValid(iSh))
+        {
+            MQTTAppPublishCoverState(iSh, OutputCtrlCoverState(iSh));
+        }
+    }
+    else if(iStep == iCvSub)
+    {
+        PalSnprintf(g_pcScratchTopic, sizeof(g_pcScratchTopic),
+                  "%s/cover/+/set", MQTTAppBaseTopic());
+        MQTTClientSubscribe(g_pcScratchTopic);
+    }
+    else if(WebPlatformHasTempSensor() && (iStep == (iCvSub + 1)))
+    {
+        // Optional trailing step: on-board temperature sensor discovery.  The
+        // 5 s state publishes (MQTTAppPublishTemp) populate it thereafter.
+        MQTTAppPublishTempDiscovery();
+    }
+}
+
+//*****************************************************************************
+//
+// product_on_connect - Plan 11 product hook (temporary home in mqtt_app.c;
+// relocates to products/home_auto/app/ha_mqtt.c at the rename).
+//
+// The MQTT session has (re)connected.  Arm the staggered post-connect publish
+// sequence (status, HA discovery, retained state, subscribe) and snapshot the
+// inputs so their initial retained state is published.  The foundation's MQTT
+// glue (MQTTAppTick) calls this on the connect rising edge; MQTTAppPubServiceTick
+// then advances the sequence one item per tick.
+//
+//*****************************************************************************
+void
+product_on_connect(void)
+{
+    g_iPubStep = 1;
+    g_iPubMax = 2 + (2 * (int)ConfigGetRelayDevices() * 8) +
+                (2 * (int)IOInputCount()) +
+                (2 * CFG_MAX_SHUTTERS) + 1 + // + cover disc/state + cover sub
+                (WebPlatformHasTempSensor() ? 1 : 0);  // + temp discovery
+    IOInputReadAll(g_pui8InSnap, sizeof(g_pui8InSnap));
+}
+
+//*****************************************************************************
+//
+// MQTTAppPubServiceTick - Plan 11 product hook helper (temporary home; moves
+// with the sequencer to ha_mqtt.c at the rename).
+//
+// Advances the staggered post-connect publish sequence one item per call.
+// Driven by the foundation's product_poll() hook (see io_scan.c), which on the
+// CC35x1 runs under LOCK_TCPIP_CORE - required because MQTTAppPostConnect
+// publishes (cc35x1-corelock-publish).  Resets the sequence while disconnected.
+//
+//*****************************************************************************
+void
+MQTTAppPubServiceTick(void)
+{
+    if(!MQTTClientIsReady())
+    {
+        g_iPubStep = 0;
+        return;
+    }
+
+    if((g_iPubStep > 0) && (g_iPubStep <= g_iPubMax))
+    {
+        MQTTAppPostConnect(g_iPubStep);
+        g_iPubStep++;
+    }
+}
+
+//*****************************************************************************
+//
+// Set one relay and publish its new state (retained).  Called from the local
+// input→output binding logic; mirrors what the relay MQTT command handler does.
+//
+//*****************************************************************************
+void
+MQTTAppSetRelay(int iRelay, bool bOn)
+{
+    if((iRelay < 0) || ((uint16_t)iRelay >= (uint16_t)ConfigGetRelayDevices() * 8))
+    {
+        return;
+    }
+    RelayChainSet((uint16_t)iRelay, bOn);
+    MQTTAppPublishRelayState(iRelay);
+}
+
+//*****************************************************************************
+//
+// Re-run the full post-connect publish sequence (discovery + state) without
+// reconnecting.  Call this after the I/O configuration changes so Home
+// Assistant sees updated entity types immediately.
+//
+//*****************************************************************************
+void
+MQTTAppRepublish(void)
+{
+    if(!MQTTClientIsReady())
+    {
+        return;
+    }
+    IOInputReadAll(g_pui8InSnap, sizeof(g_pui8InSnap));
+    g_iPubStep = 1;
+}
