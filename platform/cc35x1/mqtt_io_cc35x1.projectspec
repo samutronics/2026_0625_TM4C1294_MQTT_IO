@@ -52,6 +52,7 @@
             -IC:/Users/tomik/Workspaces/Workspace2026_0625_TM4C1294_MQTT_IO/iot_foundation/common
             -IC:/Users/tomik/Workspaces/Workspace2026_0625_TM4C1294_MQTT_IO/iot_foundation/pal
             -IC:/Users/tomik/Workspaces/Workspace2026_0625_TM4C1294_MQTT_IO/products/home_auto/app
+            -IC:/Users/tomik/Workspaces/Workspace2026_0625_TM4C1294_MQTT_IO/products/home_auto/web
             -DSNTP_SUPPORT
             -DMBEDTLS_CONFIG_FILE=\&quot;config-hsm.h\&quot;
             -DNVOCMP_SPS_USE_CBC
@@ -222,6 +223,7 @@
         <file path="C:/Users/tomik/Workspaces/Workspace2026_0625_TM4C1294_MQTT_IO/products/home_auto/app/io_scan.c" openOnCreation="false" excludeFromBuild="false" action="link"/>
         <file path="C:/Users/tomik/Workspaces/Workspace2026_0625_TM4C1294_MQTT_IO/products/home_auto/app/product_config_store.c" openOnCreation="false" excludeFromBuild="false" action="link"/>
         <file path="C:/Users/tomik/Workspaces/Workspace2026_0625_TM4C1294_MQTT_IO/products/home_auto/app/ha_mqtt.c" openOnCreation="false" excludeFromBuild="false" action="link"/>
+        <file path="C:/Users/tomik/Workspaces/Workspace2026_0625_TM4C1294_MQTT_IO/products/home_auto/web/product_web.c" openOnCreation="false" excludeFromBuild="false" action="link"/>
         <file path="C:/Users/tomik/Workspaces/Workspace2026_0625_TM4C1294_MQTT_IO/iot_foundation/common/netbiosns.c" openOnCreation="false" excludeFromBuild="false" action="link"/>
         <file path="C:/Users/tomik/Workspaces/Workspace2026_0625_TM4C1294_MQTT_IO/iot_foundation/common/sntp_client.c" openOnCreation="false" excludeFromBuild="false" action="link"/>
 

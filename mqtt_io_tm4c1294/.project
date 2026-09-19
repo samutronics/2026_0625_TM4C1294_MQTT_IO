@@ -69,6 +69,11 @@
 			<location>C:/Users/tomik/Workspaces/Workspace2026_0625_TM4C1294_MQTT_IO/products/home_auto/app/ha_mqtt.c</location>
 		</link>
 		<link>
+			<name>product_web.c</name>
+			<type>1</type>
+			<location>C:/Users/tomik/Workspaces/Workspace2026_0625_TM4C1294_MQTT_IO/products/home_auto/web/product_web.c</location>
+		</link>
+		<link>
 			<name>mqtt_app.c</name>
 			<type>1</type>
 			<location>C:/Users/tomik/Workspaces/Workspace2026_0625_TM4C1294_MQTT_IO/iot_foundation/common/mqtt_app.c</location>
