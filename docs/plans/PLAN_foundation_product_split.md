@@ -37,11 +37,21 @@ sections were extracted into new product TUs (real project surgery — new `.c` 
   writing the static flags; `product_web.c` keeps its own static `HexNibble` (matches enet_io.c
   precedent; avoids clash with enet_io.c's static copy). Added `products/home_auto/web` to both -I lists.
 Pattern (all C1–C3): extract product line-ranges verbatim → new TU; delete from foundation file; wire
-via existing `product_api.h`/`product_web.h` hooks (call sites unchanged). **NEXT: C4 (deferred, own
-session)** — build the fsdata multi-root/collate step and `git mv` the 3 product `.shtml`
-(iocfg/control/iostate) into `products/home_auto/web/`; gated on the unrelated `#wifitab` WIP that
-currently dirties `io_fsdata.h`/`fsdata.c`/`index.shtml` (C4 regenerates those). Optional: HW-smoke
-C1–C3 (web UI + I/O tabs + relay toggle) before/with C4.)
+via existing `product_api.h`/`product_web.h` hooks (call sites unchanged).
+• **C4 `87007c8`** — moved the 3 product pages (iocfg/control/iostate.shtml) from `iot_foundation/fs/`
+  → `products/home_auto/web/` and taught both web-FS generators to merge two roots into one image:
+  `makefsdata.py` (CC35x1) now takes multiple roots + embeds only web extensions (so `product_web.c`
+  in the web root is skipped; dup URL = error), `prebuild_fs.bat` passes both roots; the TM4C manual
+  regen (single-root `makefsfile.exe`) collates both roots into a `Debug/.fsstage` staging dir first
+  (`.claude/settings.json` allow-rule + README updated). Both MCUs build green (CC35x1 prebuild wrote
+  fsdata.c = 12 files; TM4C links with `products/home_auto/web` on -I). Generated `io_fsdata.h` +
+  `platform/cc35x1/fsdata.c` kept UNCOMMITTED — they carry unrelated in-flight `#wifitab` WIP, and
+  moving pages doesn't change embedded content (fsdata keys on URL path), so a clean regen on top of
+  committed `#wifitab` yields no page-content delta. **SCOPE C COMPLETE (C1–C4).**
+NEXT: optional HW-smoke of C1–C4 (web UI base + I/O Config/Control tabs render, relay toggles over
+MQTT, inputs read) — proves the moved CGI/SSI/publish/config paths + the collated fsdata on real HW;
+neither MCU has been reflashed since the split. Then Phase 2+ (foundation demo projects, emeter stub,
+docs) per the phase plan above.)
 **Area:** Structure **Priority:** Med
 
 ## Execution model guidance (pick per phase)
