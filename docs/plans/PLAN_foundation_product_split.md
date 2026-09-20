@@ -48,9 +48,14 @@ via existing `product_api.h`/`product_web.h` hooks (call sites unchanged).
   `platform/cc35x1/fsdata.c` kept UNCOMMITTED — they carry unrelated in-flight `#wifitab` WIP, and
   moving pages doesn't change embedded content (fsdata keys on URL path), so a clean regen on top of
   committed `#wifitab` yields no page-content delta. **SCOPE C COMPLETE (C1–C4).**
-NEXT: optional HW-smoke of C1–C4 (web UI base + I/O Config/Control tabs render, relay toggles over
-MQTT, inputs read) — proves the moved CGI/SSI/publish/config paths + the collated fsdata on real HW;
-neither MCU has been reflashed since the split. Then Phase 2+ (foundation demo projects, emeter stub,
+**CC35x1 HW-smoke PASSED 2026-09-20** (flash.sh real program): booted the split firmware; heartbeat
+`ip 192.168.1.139 mqtt 1 conn 1 disc 1 temp 29.56C` (config load + Wi-Fi + MQTT connect + HA discovery
++ temp poll); web /index + /iocfg + /control served 200, /iostate SSI rendered `00|0000` with no
+unrendered tags (product_web CGI/SSI + collated moved pages); relay toggle via /relayset.cgi flipped
+outstats 0000->0100->0000 (CGI -> OutputCtrlCommand -> ha_mqtt publish). TM4C NOT smoked (its ICDI probe
+wasn't connected this session; it flashes OTA-over-Ethernet, not via the CC35x1 XDS110). Not exercised:
+direct MQTT publish (no host MQTT client; the web CGI drives the same command path) and factory-reset
+(destructive). NEXT: TM4C HW-smoke when connected, then Phase 2+ (foundation demo projects, emeter stub,
 docs) per the phase plan above.)
 **Area:** Structure **Priority:** Med
 
