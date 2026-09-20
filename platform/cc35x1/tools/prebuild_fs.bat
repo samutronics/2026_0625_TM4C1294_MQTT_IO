@@ -6,7 +6,10 @@ REM  The CC35x1 httpd serves its pages from platform/cc35x1/fsdata.c, which
 REM  fs.c pulls in via `#include HTTPD_FSDATA_FILE` (= "fsdata.c").  CCS resolves
 REM  that include against the PROJECT-ROOT copy mqtt_io_cc35x1\fsdata.c (the
 REM  projectspec copies it in with action="copy"), so BOTH files must be
-REM  refreshed from iot_foundation/fs/ or HTML edits never reach the firmware.
+REM  refreshed from the collated web roots (iot_foundation/fs = foundation base
+REM  pages, products/home_auto/web = product I/O pages) or HTML edits never reach
+REM  the firmware.  makefsdata.py merges both roots into one flat URL space and
+REM  embeds only web-servable extensions (product_web.c in the web root is skipped).
 REM
 REM  NOTE: Do NOT regenerate mqtt_io_tm4c1294/io_fsdata.h (the TM4C header) here.
 REM  TM4C uses lwip-1.4.1 with includes in httpserver_raw/, which differ from
@@ -28,7 +31,7 @@ if not defined PY (
   echo WARNING: Python not found on PATH; using fallback '%PY%' - this may fail.
 )
 
-"%PY%" platform\cc35x1\tools\makefsdata.py iot_foundation\fs -o platform\cc35x1\fsdata.c
+"%PY%" platform\cc35x1\tools\makefsdata.py iot_foundation\fs products\home_auto\web -o platform\cc35x1\fsdata.c
 if errorlevel 1 (
   echo WARNING: FS regeneration failed, continuing with existing fsdata.c
   exit /b 0

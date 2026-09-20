@@ -97,14 +97,23 @@ cd mqtt_io_tm4c1294/Debug
 The post-build step writes a timestamped `mqtt_io_tm4c1294_YYYYMMDDHHMM.bin` (and copies it to
 `mqtt_io_tm4c1294.bin`).
 
-The web UI now lives in the shared tree at `iot_foundation/fs/`. If it is changed, regenerate
-the compiled FS image **first** (run from `mqtt_io_tm4c1294/`; `io_fsdata.h` is the TM4C loader
-and stays in the TM4C project), then force a rebuild of the FS object so the new content is linked in:
+The web UI is split across two roots: the foundation base pages in `iot_foundation/fs/` and the
+home-auto product pages in `products/home_auto/web/` (`iocfg`/`control`/`iostate.shtml`). If either
+is changed, regenerate the compiled FS image **first** (run from `mqtt_io_tm4c1294/`; `io_fsdata.h`
+is the TM4C loader and stays in the TM4C project). `makefsfile.exe` takes a single input dir, so
+collate both roots into a staging dir first (copy only the product `*.shtml`, never `product_web.c`),
+then force a rebuild of the FS object so the new content is linked in:
 
 ```
-"C:/ti/TivaWare_C_Series-2.2.0.295/tools/bin/makefsfile.exe" -i ../iot_foundation/fs -o io_fsdata.h -r -h -q
+rm -rf Debug/.fsstage && mkdir -p Debug/.fsstage
+cp ../iot_foundation/fs/* Debug/.fsstage/
+cp ../products/home_auto/web/*.shtml Debug/.fsstage/
+"C:/ti/TivaWare_C_Series-2.2.0.295/tools/bin/makefsfile.exe" -i Debug/.fsstage -o io_fsdata.h -r -h -q
 rm -f Debug/io_fs.o
 ```
+
+(The CC35x1 build regenerates its own `fsdata.c` automatically in its pre-build step, passing both
+roots to `platform/cc35x1/tools/makefsdata.py`.)
 
 Flashing is **OTA over Ethernet** (Tools → firmware update); the device reboots into the new image
 and EEPROM config is preserved. Keep the previous known-good `.bin` for rollback.
